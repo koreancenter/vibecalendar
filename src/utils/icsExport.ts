@@ -1,7 +1,7 @@
 import { CalendarEventItem } from '../types';
 import { addDays } from '../shared/dateUtils';
 import { detectBrowserTimeZone, isValidTimeZone } from '../shared/timeZoneUtils';
-import { formatCombinedLocation } from '../shared/locationUtils';
+import { formatCombinedLocation, hasValidCoordinates } from '../shared/locationUtils';
 
 function formatIcsDateTime(dateStr: string, timeStr?: string, isAllDay = false): string {
   const [y, m, d] = dateStr.split('-');
@@ -84,6 +84,9 @@ export function generateIcsContent(
     const combinedLocation = formatCombinedLocation(ev.location, ev.locationAddress, ', ');
     if (combinedLocation) {
       lines.push(`LOCATION:${escapeIcsText(combinedLocation)}`);
+    }
+    if (hasValidCoordinates(ev.locationLat, ev.locationLng)) {
+      lines.push(`GEO:${ev.locationLat!.toFixed(6)};${ev.locationLng!.toFixed(6)}`);
     }
     if (ev.category) {
       lines.push(`CATEGORIES:${escapeIcsText(ev.category)}`);

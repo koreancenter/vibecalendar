@@ -9,7 +9,9 @@ import {
 } from '../types';
 import { parseNaturalDateFromText } from '../shared/dateUtils';
 import {
+  hasValidCoordinates,
   isInternalOrVirtualLocation,
+  normalizeCoordinates,
   normalizePlaceAndAddress,
 } from '../shared/locationUtils';
 import { calculateFreeTimeSlots } from '../shared/scheduleUtils';
@@ -20,7 +22,11 @@ import {
   parseExplicitTimeZoneFromText,
   projectEventToViewerTimeZone,
 } from '../shared/timeZoneUtils';
-import { ValidatedAgentRequest, ValidatedGroundingDiscoveryRequest } from './security';
+import {
+  ValidatedAgentRequest,
+  ValidatedGroundingDiscoveryRequest,
+  ValidatedLocationResolveRequest,
+} from './security';
 import {
   executeGroundedDateDiscovery,
   extractPlanningRangeMonths,
@@ -115,6 +121,14 @@ const EVENT_ITEM_SCHEMA: Schema = {
       type: Type.STRING,
       description: '시/도 시/군/구 도로명 건물번호 전체 상세 주소 (~인근 표현 절대 금지)',
     },
+    locationLat: {
+      type: Type.NUMBER,
+      description: '확인된 WGS84 위도(불확실하면 생략)',
+    },
+    locationLng: {
+      type: Type.NUMBER,
+      description: '확인된 WGS84 경도(불확실하면 생략)',
+    },
     content: { type: Type.STRING },
     checklist: {
       type: Type.ARRAY,
@@ -180,6 +194,8 @@ const AGENT_RESPONSE_SCHEMA: Schema = {
           name: { type: Type.STRING },
           category: { type: Type.STRING },
           address: { type: Type.STRING },
+          lat: { type: Type.NUMBER },
+          lng: { type: Type.NUMBER },
           capacityInfo: { type: Type.STRING },
           priceRange: { type: Type.STRING },
           reason: { type: Type.STRING },
@@ -207,6 +223,8 @@ const AGENT_RESPONSE_SCHEMA: Schema = {
             timeZone: { type: Type.STRING },
             location: { type: Type.STRING },
             locationAddress: { type: Type.STRING },
+            locationLat: { type: Type.NUMBER },
+            locationLng: { type: Type.NUMBER },
             content: { type: Type.STRING },
             category: { type: Type.STRING },
           },
@@ -320,6 +338,7 @@ function normalizeEventList(
             : defaultProjectId,
         location,
         locationAddress,
+        ...normalizeCoordinates(ev.locationLat, ev.locationLng),
         content: typeof ev.content === 'string' && ev.content.trim() ? ev.content.trim() : undefined,
         isCompleted: false,
         checklist,
@@ -338,11 +357,14 @@ function normalizeVenues(rawList: unknown, defaultDate: string): RecommendedVenu
         v.name,
         v.address
       );
+      const normCoords = normalizeCoordinates(v.lat, v.lng);
       return {
         id: typeof v.id === 'string' && v.id ? v.id : `venue-${now}-${idx}`,
         name: cleanName || String(v.name).trim(),
         category: typeof v.category === 'string' ? v.category.trim() : '추천 장소',
         address: cleanAddr || '',
+        lat: normCoords.locationLat,
+        lng: normCoords.locationLng,
         capacityInfo: typeof v.capacityInfo === 'string' ? v.capacityInfo.trim() : '사전 예약 권장',
         priceRange: typeof v.priceRange === 'string' ? v.priceRange.trim() : undefined,
         reason: typeof v.reason === 'string' ? v.reason.trim() : '모임 조건에 부합하는 장소입니다.',
@@ -369,26 +391,30 @@ async function enrichLocationsWithGoogleSearch(
   const targets: Array<{
     key: string;
     queryName: string;
-    apply: (officialName?: string, roadAddress?: string) => void;
+    apply: (officialName?: string, roadAddress?: string, lat?: unknown, lng?: unknown) => void;
   }> = [];
 
   for (const ev of createdEvents) {
-    if (
-      ev.location &&
-      !ev.locationAddress &&
-      !isInternalOrVirtualLocation(ev.location) &&
-      targets.length < 6
-    ) {
+    const needsEnrich =
+      Boolean(ev.location) &&
+      (!ev.locationAddress || !hasValidCoordinates(ev.locationLat, ev.locationLng));
+    if (needsEnrich && !isInternalOrVirtualLocation(ev.location) && targets.length < 6) {
+      const queryText = [ev.location, ev.locationAddress].filter(Boolean).join(' ');
       targets.push({
         key: `ev:${ev.id}`,
-        queryName: ev.location,
-        apply: (officialName, roadAddress) => {
+        queryName: queryText,
+        apply: (officialName, roadAddress, lat, lng) => {
           const norm = normalizePlaceAndAddress(
             officialName || ev.location,
-            roadAddress
+            roadAddress || ev.locationAddress
           );
           if (norm.location) ev.location = norm.location;
           if (norm.locationAddress) ev.locationAddress = norm.locationAddress;
+          const coords = normalizeCoordinates(lat, lng);
+          if (coords.locationLat !== undefined && coords.locationLng !== undefined) {
+            ev.locationLat = coords.locationLat;
+            ev.locationLng = coords.locationLng;
+          }
         },
       });
     }
@@ -396,32 +422,52 @@ async function enrichLocationsWithGoogleSearch(
 
   if (
     updatedEvent?.updates?.location &&
-    !updatedEvent.updates.locationAddress &&
+    (!updatedEvent.updates.locationAddress ||
+      !hasValidCoordinates(
+        updatedEvent.updates.locationLat,
+        updatedEvent.updates.locationLng
+      )) &&
     !isInternalOrVirtualLocation(updatedEvent.updates.location) &&
     targets.length < 6
   ) {
     const rawLoc = updatedEvent.updates.location;
+    const rawAddr = updatedEvent.updates.locationAddress;
     targets.push({
       key: `upd:${updatedEvent.id}`,
-      queryName: rawLoc,
-      apply: (officialName, roadAddress) => {
+      queryName: [rawLoc, rawAddr].filter(Boolean).join(' '),
+      apply: (officialName, roadAddress, lat, lng) => {
         if (!updatedEvent?.updates) return;
-        const norm = normalizePlaceAndAddress(officialName || rawLoc, roadAddress);
+        const norm = normalizePlaceAndAddress(officialName || rawLoc, roadAddress || rawAddr);
         if (norm.location) updatedEvent.updates.location = norm.location;
         if (norm.locationAddress) updatedEvent.updates.locationAddress = norm.locationAddress;
+        const coords = normalizeCoordinates(lat, lng);
+        if (coords.locationLat !== undefined && coords.locationLng !== undefined) {
+          updatedEvent.updates.locationLat = coords.locationLat;
+          updatedEvent.updates.locationLng = coords.locationLng;
+        }
       },
     });
   }
 
   for (const venue of recommendedVenues) {
-    if (venue.name && !venue.address && !isInternalOrVirtualLocation(venue.name) && targets.length < 6) {
+    const needsVenueEnrich =
+      Boolean(venue.name) && (!venue.address || !hasValidCoordinates(venue.lat, venue.lng));
+    if (needsVenueEnrich && !isInternalOrVirtualLocation(venue.name) && targets.length < 6) {
       targets.push({
         key: `ven:${venue.id}`,
-        queryName: venue.name,
-        apply: (officialName, roadAddress) => {
-          const norm = normalizePlaceAndAddress(officialName || venue.name, roadAddress);
+        queryName: [venue.name, venue.address].filter(Boolean).join(' '),
+        apply: (officialName, roadAddress, lat, lng) => {
+          const norm = normalizePlaceAndAddress(
+            officialName || venue.name,
+            roadAddress || venue.address
+          );
           if (norm.location) venue.name = norm.location;
           if (norm.locationAddress) venue.address = norm.locationAddress;
+          const coords = normalizeCoordinates(lat, lng);
+          if (coords.locationLat !== undefined && coords.locationLng !== undefined) {
+            venue.lat = coords.locationLat;
+            venue.lng = coords.locationLng;
+          }
         },
       });
     }
@@ -433,10 +479,10 @@ async function enrichLocationsWithGoogleSearch(
 
   try {
     const lookupPrompt = [
-      '다음 장소들의 정확한 공식 명칭(officialName)과 전체 도로명 상세 주소(roadAddress)를 Google 검색으로 확인하여 코드 펜스 없는 순수 JSON 객체 하나로만 응답하십시오.',
+      '다음 장소들의 정확한 공식 명칭(officialName), 전체 도로명 상세 주소(roadAddress), 그리고 WGS84 위도(lat)·경도(lng)를 Google 검색으로 확인하여 코드 펜스 없는 순수 JSON 객체 하나로만 응답하십시오.',
       '- "~인근", "~근처", "~부근" 같은 모호한 표현은 절대 금지합니다.',
-      '- 검색으로 실제 주소가 확인되지 않는 가상/내부 명칭이면 roadAddress를 빈 문자열("")로 반환하십시오.',
-      '출력 형식: {"items":[{"key":"...","officialName":"...","roadAddress":"..."}]}',
+      '- 검색으로 실제 주소나 좌표가 확인되지 않는 가상/내부 명칭이면 roadAddress는 빈 문자열(""), lat/lng는 null로 반환하십시오.',
+      '출력 형식: {"items":[{"key":"...","officialName":"...","roadAddress":"...","lat":37.566535,"lng":126.977969}]}',
       `조회 대상: ${JSON.stringify(targets.map((t) => ({ key: t.key, queryName: t.queryName })))}`,
     ].join('\n');
 
@@ -453,7 +499,13 @@ async function enrichLocationsWithGoogleSearch(
     const endIdx = text.lastIndexOf('}');
     if (startIdx !== -1 && endIdx > startIdx) {
       const parsedLookup = JSON.parse(text.slice(startIdx, endIdx + 1)) as {
-        items?: Array<{ key?: string; officialName?: string; roadAddress?: string }>;
+        items?: Array<{
+          key?: string;
+          officialName?: string;
+          roadAddress?: string;
+          lat?: number | string | null;
+          lng?: number | string | null;
+        }>;
       };
       if (Array.isArray(parsedLookup.items)) {
         const byKey = new Map(targets.map((t) => [t.key, t]));
@@ -461,7 +513,7 @@ async function enrichLocationsWithGoogleSearch(
           if (item && typeof item.key === 'string') {
             const found = byKey.get(item.key);
             if (found) {
-              found.apply(item.officialName, item.roadAddress);
+              found.apply(item.officialName, item.roadAddress, item.lat, item.lng);
             }
           }
         }
@@ -492,6 +544,103 @@ async function enrichLocationsWithGoogleSearch(
   } catch {
     return { groundingSources: [], searchQueries: [] };
   }
+}
+
+export interface ResolvedLocationResult {
+  found: boolean;
+  location?: string;
+  locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
+  sources?: GroundingWebSource[];
+}
+
+export async function executeResolveLocationCommand(
+  reqData: ValidatedLocationResolveRequest
+): Promise<ResolvedLocationResult> {
+  const ai = getGeminiClient();
+  if (!ai) {
+    const err = new Error('AI 위치 탐색을 위한 GEMINI_API_KEY가 서버에 설정되어 있지 않습니다.');
+    (err as Error & { statusCode?: number }).statusCode = 503;
+    throw err;
+  }
+
+  const queryCombined = [reqData.location, reqData.locationAddress]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  const prompt = [
+    '다음 장소 또는 주소의 정확한 공식 장소명(officialName), 전체 도로명 상세 주소(roadAddress), 그리고 WGS84 위도(lat)·경도(lng) 소수점 6자리를 Google 검색으로 확인하여 코드 펜스 없는 순수 JSON 객체 하나로만 응답하십시오.',
+    '- "~인근", "~근처", "~부근" 같은 모호한 수식어는 절대 사용하지 마십시오.',
+    '- 실존하지 않는 가상 장소이거나 사내 내부 회의실 등 외부 주소 확인이 불가한 경우 found를 false로 반환하십시오.',
+    '출력 형식: {"found":true,"officialName":"...","roadAddress":"...","lat":37.566535,"lng":126.977969}',
+    `조회 대상: ${JSON.stringify({ location: reqData.location, locationAddress: reqData.locationAddress, query: queryCombined })}`,
+  ].join('\n');
+
+  const gRes = await ai.models.generateContent({
+    model: reqData.modelId || 'gemini-3.8-flash',
+    contents: prompt,
+    config: {
+      tools: [{ googleSearch: {} }],
+    },
+  });
+
+  const text = gRes.text?.trim() || '';
+  const startIdx = text.indexOf('{');
+  const endIdx = text.lastIndexOf('}');
+  if (startIdx === -1 || endIdx <= startIdx) {
+    return { found: false };
+  }
+
+  let parsed: {
+    found?: boolean;
+    officialName?: string;
+    roadAddress?: string;
+    lat?: number | string | null;
+    lng?: number | string | null;
+  } = {};
+
+  try {
+    parsed = JSON.parse(text.slice(startIdx, endIdx + 1));
+  } catch {
+    return { found: false };
+  }
+
+  const normLoc = normalizePlaceAndAddress(
+    parsed.officialName || reqData.location,
+    parsed.roadAddress || reqData.locationAddress
+  );
+  const normCoords = normalizeCoordinates(parsed.lat, parsed.lng);
+
+  const meta = gRes.candidates?.[0]?.groundingMetadata;
+  const sources: GroundingWebSource[] = [];
+  const seen = new Set<string>();
+  for (const chunk of meta?.groundingChunks || []) {
+    const uri = chunk.web?.uri?.trim();
+    if (!uri || !/^https?:\/\//i.test(uri) || seen.has(uri)) continue;
+    seen.add(uri);
+    sources.push({
+      uri,
+      title: chunk.web?.title?.trim() || uri,
+    });
+    if (sources.length >= 3) break;
+  }
+
+  const hasResult = Boolean(
+    parsed.found !== false &&
+      (normLoc.locationAddress ||
+        (normCoords.locationLat !== undefined && normCoords.locationLng !== undefined))
+  );
+
+  return {
+    found: hasResult,
+    location: normLoc.location,
+    locationAddress: normLoc.locationAddress,
+    locationLat: normCoords.locationLat,
+    locationLng: normCoords.locationLng,
+    sources: sources.length > 0 ? sources : undefined,
+  };
 }
 
 /**
@@ -706,6 +855,11 @@ export async function executeGeminiAgentCommand(
       if (typeof rawUpdates.locationAddress === 'string' || locationAddress) {
         updates.locationAddress = locationAddress;
       }
+    }
+    const updCoords = normalizeCoordinates(rawUpdates.locationLat, rawUpdates.locationLng);
+    if (updCoords.locationLat !== undefined && updCoords.locationLng !== undefined) {
+      updates.locationLat = updCoords.locationLat;
+      updates.locationLng = updCoords.locationLng;
     }
     if (typeof rawUpdates.content === 'string') {
       updates.content = rawUpdates.content.trim();

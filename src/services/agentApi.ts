@@ -145,3 +145,33 @@ export async function requestGroundedDateSuggestions(
 
   return res.json() as Promise<AgentCommandResponse>;
 }
+
+export interface ResolveLocationResponse {
+  found: boolean;
+  location?: string;
+  locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
+}
+
+export async function resolveLocationDetails(params: {
+  location: string;
+  locationAddress?: string;
+  modelId?: string;
+}): Promise<ResolveLocationResponse> {
+  const res = await fetch('/api/agent/resolve-location', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errData = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(errData.error || `위치 탐색 오류 (${res.status})`);
+  }
+
+  return res.json() as Promise<ResolveLocationResponse>;
+}
+

@@ -1,6 +1,12 @@
 import { CalendarCategory, CalendarEventItem, ChecklistItem, ProjectItem } from '../types';
 import { formatKoreanDateWithDay } from '../shared/dateUtils';
-import { formatCombinedLocation, normalizePlaceAndAddress } from '../shared/locationUtils';
+import {
+  formatCombinedLocation,
+  formatCoordinatePairPlain,
+  hasValidCoordinates,
+  normalizeCoordinates,
+  normalizePlaceAndAddress,
+} from '../shared/locationUtils';
 import { detectBrowserTimeZone, getTimeZoneMeta, isValidTimeZone, resolveEventTimeZone } from '../shared/timeZoneUtils';
 
 export type ShareCardTheme = 'obsidian' | 'editorial';
@@ -18,6 +24,8 @@ export interface SharedEventPassData {
   projectName?: string;
   location?: string;
   locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
   content?: string;
   checklist?: ChecklistItem[];
 }
@@ -55,6 +63,8 @@ interface CompactWireEvent {
   pn?: string; // projectName
   l?: string; // location
   la?: string; // locationAddress
+  lt?: number; // locationLat
+  lg?: number; // locationLng
   m?: string; // content (memo)
   cl?: Array<[string, 0 | 1]>; // checklist [text, done]
 }
@@ -116,6 +126,10 @@ function toWireEvent(ev: SharedEventPassData): CompactWireEvent {
   if (ev.projectName) wire.pn = ev.projectName;
   if (ev.location) wire.l = ev.location;
   if (ev.locationAddress) wire.la = ev.locationAddress;
+  if (hasValidCoordinates(ev.locationLat, ev.locationLng)) {
+    wire.lt = ev.locationLat;
+    wire.lg = ev.locationLng;
+  }
   if (ev.content) wire.m = ev.content;
   if (ev.checklist && ev.checklist.length > 0) {
     wire.cl = ev.checklist.map((item) => [item.text, item.done ? 1 : 0]);
@@ -126,6 +140,7 @@ function toWireEvent(ev: SharedEventPassData): CompactWireEvent {
 function fromWireEvent(wire: CompactWireEvent, index: number): SharedEventPassData {
   const safeZone = isValidTimeZone(wire.z) ? wire.z : detectBrowserTimeZone();
   const normalizedLoc = normalizePlaceAndAddress(wire.l, wire.la);
+  const normalizedCoords = normalizeCoordinates(wire.lt, wire.lg);
   return {
     id: `shared-ev-${index}-${wire.d}`,
     title: String(wire.t || '일정').slice(0, 160),
@@ -139,6 +154,8 @@ function fromWireEvent(wire: CompactWireEvent, index: number): SharedEventPassDa
     projectName: wire.pn ? String(wire.pn) : undefined,
     location: normalizedLoc.location,
     locationAddress: normalizedLoc.locationAddress,
+    locationLat: normalizedCoords.locationLat,
+    locationLng: normalizedCoords.locationLng,
     content: wire.m ? String(wire.m) : undefined,
     checklist: Array.isArray(wire.cl)
       ? wire.cl.map(([text, done], idx) => ({
@@ -358,6 +375,8 @@ export function buildSingleEventSharePayload(params: {
       projectName: projectName || undefined,
       location: normalizedLoc.location,
       locationAddress: normalizedLoc.locationAddress,
+      locationLat: event.locationLat,
+      locationLng: event.locationLng,
       content: includeMemo && event.content?.trim() ? event.content.trim() : undefined,
       checklist:
         includeChecklist && event.checklist && event.checklist.length > 0
@@ -416,6 +435,8 @@ export function buildProjectSharePayload(params: {
         projectName: project.name,
         location: normalizedLoc.location,
         locationAddress: normalizedLoc.locationAddress,
+        locationLat: ev.locationLat,
+        locationLng: ev.locationLng,
         content: includeMemo && ev.content?.trim() ? ev.content.trim() : undefined,
       };
     });
@@ -457,6 +478,8 @@ export function sharedEventToCalendarItem(ev: SharedEventPassData): CalendarEven
     category: ev.category,
     location: ev.location,
     locationAddress: ev.locationAddress,
+    locationLat: ev.locationLat,
+    locationLng: ev.locationLng,
     content: ev.content,
     checklist: ev.checklist,
   };
@@ -489,6 +512,9 @@ export function formatPassPlainText(payload: SharedPassPayload, shareUrl?: strin
     }
     if (ev.locationAddress) {
       lines.push(`주소: ${ev.locationAddress}`);
+    }
+    if (hasValidCoordinates(ev.locationLat, ev.locationLng)) {
+      lines.push(`위경도: ${formatCoordinatePairPlain(ev.locationLat!, ev.locationLng!)}`);
     }
     if (payload.senderNote) {
       lines.push(`안내: ${payload.senderNote}`);

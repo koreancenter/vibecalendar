@@ -29,7 +29,9 @@ interface DayAgendaViewProps {
   onUpdateLocation?: (
     eventId: string,
     location?: string,
-    locationAddress?: string
+    locationAddress?: string,
+    locationLat?: number,
+    locationLng?: number
   ) => void;
   onShareEvent?: (event: CalendarEventItem) => void;
   emptyGuideText?: string;

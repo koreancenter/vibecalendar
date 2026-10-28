@@ -15,11 +15,9 @@ import {
   ListTodo,
   FolderKanban,
   Share2,
-  Copy,
-  Check,
-  ExternalLink,
-  Pencil,
   Plus,
+  Loader2,
+  Search,
 } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import {
@@ -30,12 +28,14 @@ import {
   TimeZoneOption,
 } from '../shared/timeZoneUtils';
 import {
-  buildLocationSearchQuery,
-  formatCombinedLocation,
+  hasValidCoordinates,
+  normalizeCoordinates,
+  parseCoordinatePairFromString,
 } from '../shared/locationUtils';
 import { resolveEventLuxuryTheme } from '../utils/eventTheme';
-import { buildGoogleMapsSearchUrl } from '../utils/shareCodec';
 import { generateIcsContent, downloadIcsFile } from '../utils/icsExport';
+import { resolveLocationDetails } from '../services/agentApi';
+import { LocationPinPreviewCard } from './LocationPinPreviewCard';
 
 interface EventDetailContentProps {
   event: CalendarEventItem;
@@ -48,7 +48,9 @@ interface EventDetailContentProps {
   onUpdateLocation?: (
     eventId: string,
     location?: string,
-    locationAddress?: string
+    locationAddress?: string,
+    locationLat?: number,
+    locationLng?: number
   ) => void;
   onToggleComplete: (id: string) => void;
   onToggleChecklistItem: (eventId: string, itemId: string) => void;
@@ -79,14 +81,37 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [locDraft, setLocDraft] = useState(event.location || '');
   const [addrDraft, setAddrDraft] = useState(event.locationAddress || '');
-  const [copiedAddress, setCopiedAddress] = useState(false);
+  const [latDraft, setLatDraft] = useState(
+    hasValidCoordinates(event.locationLat, event.locationLng)
+      ? event.locationLat!.toFixed(6)
+      : ''
+  );
+  const [lngDraft, setLngDraft] = useState(
+    hasValidCoordinates(event.locationLat, event.locationLng)
+      ? event.locationLng!.toFixed(6)
+      : ''
+  );
+  const [coordError, setCoordError] = useState<string | null>(null);
+  const [isResolvingLocation, setIsResolvingLocation] = useState(false);
+  const [resolveNotice, setResolveNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setIsEditingLocation(false);
     setLocDraft(event.location || '');
     setAddrDraft(event.locationAddress || '');
-    setCopiedAddress(false);
-  }, [event.id, event.location, event.locationAddress]);
+    const valid = hasValidCoordinates(event.locationLat, event.locationLng);
+    setLatDraft(valid ? event.locationLat!.toFixed(6) : '');
+    setLngDraft(valid ? event.locationLng!.toFixed(6) : '');
+    setCoordError(null);
+    setIsResolvingLocation(false);
+    setResolveNotice(null);
+  }, [
+    event.id,
+    event.location,
+    event.locationAddress,
+    event.locationLat,
+    event.locationLng,
+  ]);
 
   const safeViewerZone = useMemo(
     () =>
@@ -120,30 +145,126 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
     downloadIcsFile(`${event.title}.ics`, ics);
   };
 
-  const handleCopyLocationText = async () => {
-    const textToCopy = formatCombinedLocation(
-      event.location,
-      event.locationAddress,
-      ' — '
-    );
-    if (!textToCopy) return;
+  const handleCoordinateInputChange = (field: 'lat' | 'lng', rawVal: string) => {
+    setCoordError(null);
+    // "37.566535, 126.977969" 형태 붙여넣기 시 위도·경도 자동 분리
+    const pair = parseCoordinatePairFromString(rawVal);
+    if (pair) {
+      setLatDraft(pair.lat.toFixed(6));
+      setLngDraft(pair.lng.toFixed(6));
+      return;
+    }
+    if (field === 'lat') {
+      setLatDraft(rawVal);
+    } else {
+      setLngDraft(rawVal);
+    }
+  };
+
+  const handleAutoResolveInView = async () => {
+    if (!onUpdateLocation || isResolvingLocation) return;
+    const queryLoc = event.location || event.title;
+    setIsResolvingLocation(true);
+    setResolveNotice(null);
     try {
-      await navigator.clipboard.writeText(textToCopy);
-      setCopiedAddress(true);
-      window.setTimeout(() => setCopiedAddress(false), 1600);
-    } catch {
-      // ignore clipboard errors
+      const res = await resolveLocationDetails({
+        location: queryLoc,
+        locationAddress: event.locationAddress,
+      });
+      if (res.found) {
+        onUpdateLocation(
+          event.id,
+          res.location || event.location,
+          res.locationAddress || event.locationAddress,
+          res.locationLat ?? event.locationLat,
+          res.locationLng ?? event.locationLng
+        );
+      } else {
+        setResolveNotice('검색으로 확인되는 외부 도로명 주소·좌표가 없어 직접 편집에서 입력할 수 있습니다.');
+      }
+    } catch (err: unknown) {
+      setResolveNotice(
+        err instanceof Error && err.message
+          ? err.message
+          : '위치 정보를 조회하지 못했습니다. 편집에서 직접 입력해 주세요.'
+      );
+    } finally {
+      setIsResolvingLocation(false);
+    }
+  };
+
+  const handleAutoResolveInEditor = async () => {
+    if (isResolvingLocation) return;
+    const queryLoc = locDraft.trim() || addrDraft.trim() || event.title;
+    if (!queryLoc) {
+      setCoordError('탐색할 장소명이나 주소를 먼저 입력해 주세요.');
+      return;
+    }
+    setIsResolvingLocation(true);
+    setCoordError(null);
+    try {
+      const res = await resolveLocationDetails({
+        location: locDraft.trim() || queryLoc,
+        locationAddress: addrDraft.trim() || undefined,
+      });
+      if (res.found) {
+        if (res.location && !locDraft.trim()) {
+          setLocDraft(res.location);
+        }
+        if (res.locationAddress) {
+          setAddrDraft(res.locationAddress);
+        }
+        if (res.locationLat !== undefined && res.locationLng !== undefined) {
+          setLatDraft(res.locationLat.toFixed(6));
+          setLngDraft(res.locationLng.toFixed(6));
+        }
+      } else {
+        setCoordError('외부 검색에서 정확한 주소·위경도를 찾지 못했습니다. 직접 입력해 주세요.');
+      }
+    } catch (err: unknown) {
+      setCoordError(
+        err instanceof Error && err.message
+          ? err.message
+          : '위치 탐색 중 오류가 발생했습니다.'
+      );
+    } finally {
+      setIsResolvingLocation(false);
     }
   };
 
   const handleSaveLocation = (e: React.FormEvent) => {
     e.preventDefault();
     if (!onUpdateLocation) return;
-    onUpdateLocation(event.id, locDraft, addrDraft);
+
+    const trimmedLat = latDraft.trim();
+    const trimmedLng = lngDraft.trim();
+
+    let nextLat: number | undefined;
+    let nextLng: number | undefined;
+
+    if (trimmedLat || trimmedLng) {
+      if (!trimmedLat || !trimmedLng) {
+        setCoordError('위도와 경도를 함께 입력하거나 모두 비워 주세요.');
+        return;
+      }
+      const norm = normalizeCoordinates(trimmedLat, trimmedLng);
+      if (norm.locationLat === undefined || norm.locationLng === undefined) {
+        setCoordError('유효한 WGS84 위도(-90 ~ 90) 및 경도(-180 ~ 180) 숫자를 입력해 주세요.');
+        return;
+      }
+      nextLat = norm.locationLat;
+      nextLng = norm.locationLng;
+    }
+
+    onUpdateLocation(event.id, locDraft, addrDraft, nextLat, nextLng);
     setIsEditingLocation(false);
   };
 
-  const mapsQuery = buildLocationSearchQuery(event.location, event.locationAddress);
+  const hasAnyLocationData = Boolean(
+    event.location ||
+      event.locationAddress ||
+      hasValidCoordinates(event.locationLat, event.locationLng)
+  );
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -347,20 +468,35 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
           )}
         </div>
 
-        {/* 공식 장소명 · 상세 주소 2단 섹션 및 인라인 편집 */}
+        {/* 핀 위치 미리보기 & 상세 주소 · 위경도 분리 섹션 및 인라인 편집 */}
         {isEditingLocation ? (
           <form
             onSubmit={handleSaveLocation}
             className="p-3.5 rounded-xl bg-[#161a24] border border-white/[0.12] space-y-3"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                <span>정확한 장소명 및 상세 주소 편집</span>
+                <span>장소명 · 상세 주소 · 위경도 편집</span>
               </span>
+
+              <button
+                type="button"
+                onClick={handleAutoResolveInEditor}
+                disabled={isResolvingLocation}
+                className="h-6 px-2.5 rounded-md bg-white/[0.05] hover:bg-white/[0.10] disabled:opacity-50 border border-white/[0.09] text-[10.5px] text-neutral-200 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                title="장소명 또는 주소로 도로명 주소와 WGS84 위경도를 자동 검색합니다"
+              >
+                {isResolvingLocation ? (
+                  <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                ) : (
+                  <Search className="w-3 h-3 shrink-0" />
+                )}
+                <span>{isResolvingLocation ? '탐색 중...' : '주소·위경도 자동 탐색'}</span>
+              </button>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <div>
                 <label className="block text-[11px] text-neutral-400 mb-1">
                   공식 장소명 · 건물 · 층 · 호실
@@ -387,103 +523,107 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                   className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-600 outline-hidden"
                 />
               </div>
-            </div>
 
-            <p className="text-[10.5px] text-neutral-500 leading-snug">
-              모호한 수식어(&apos;~인근&apos;, &apos;~근처&apos;)는 저장 시 자동으로 정제되며 공식 명칭과 주소만 유지됩니다.
-            </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1 font-mono">
+                    위도 (Latitude)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={latDraft}
+                    onChange={(e) => handleCoordinateInputChange('lat', e.target.value)}
+                    placeholder="예: 37.566535"
+                    className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-hidden"
+                  />
+                </div>
 
-            <div className="flex items-center justify-end gap-1.5 pt-0.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setLocDraft(event.location || '');
-                  setAddrDraft(event.locationAddress || '');
-                  setIsEditingLocation(false);
-                }}
-                className="h-8 px-3 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] text-xs text-neutral-300 transition-colors cursor-pointer whitespace-nowrap"
-              >
-                취소
-              </button>
-              <button
-                type="submit"
-                className="h-8 px-3.5 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
-              >
-                저장
-              </button>
-            </div>
-          </form>
-        ) : event.location || event.locationAddress ? (
-          <div className="p-3.5 rounded-xl bg-[#161a24] border border-white/[0.06] space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-medium text-neutral-400 flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                <span>장소 및 상세 주소</span>
-              </span>
-
-              <div className="flex items-center gap-1 shrink-0 select-none">
-                <button
-                  type="button"
-                  onClick={handleCopyLocationText}
-                  className="h-6 px-2 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] text-[10.5px] text-neutral-300 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
-                  title="장소명 및 상세 주소 복사"
-                >
-                  {copiedAddress ? (
-                    <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                  ) : (
-                    <Copy className="w-3 h-3 shrink-0" />
-                  )}
-                  <span>{copiedAddress ? '복사됨' : '주소 복사'}</span>
-                </button>
-
-                {mapsQuery && (
-                  <a
-                    href={buildGoogleMapsSearchUrl(mapsQuery)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="h-6 px-2 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] text-[10.5px] text-neutral-300 hover:text-white inline-flex items-center gap-1 transition-colors whitespace-nowrap"
-                    title="Google 지도에서 위치 확인"
-                  >
-                    <span>지도</span>
-                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                  </a>
-                )}
-
-                {onUpdateLocation && (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingLocation(true)}
-                    className="h-6 px-2 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] text-[10.5px] text-neutral-300 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
-                    title="장소 및 주소 편집"
-                  >
-                    <Pencil className="w-2.5 h-2.5 shrink-0" />
-                    <span>편집</span>
-                  </button>
-                )}
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1 font-mono">
+                    경도 (Longitude)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={lngDraft}
+                    onChange={(e) => handleCoordinateInputChange('lng', e.target.value)}
+                    placeholder="예: 126.977969"
+                    className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-hidden"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="space-y-0.5 pl-5">
-              {event.location && (
-                <p className="text-xs sm:text-sm font-medium text-neutral-100 break-words leading-snug">
-                  {event.location}
-                </p>
+            {coordError ? (
+              <p className="text-[11px] text-rose-300 leading-snug">{coordError}</p>
+            ) : (
+              <p className="text-[10.5px] text-neutral-500 leading-snug">
+                &apos;37.566535, 126.977969&apos; 형식을 붙여넣으면 위도·경도가 자동 분리되며, &apos;~인근&apos; 수식어는 저장 시 정제됩니다.
+              </p>
+            )}
+
+            <div className="flex items-center justify-between gap-2 pt-0.5">
+              {(latDraft || lngDraft) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLatDraft('');
+                    setLngDraft('');
+                    setCoordError(null);
+                  }}
+                  className="text-[11px] text-neutral-400 hover:text-neutral-200 underline underline-offset-2 cursor-pointer whitespace-nowrap"
+                >
+                  좌표 비우기
+                </button>
+              ) : (
+                <span />
               )}
-              {event.locationAddress && (
-                <p className="text-xs text-neutral-400 break-words leading-relaxed">
-                  {event.locationAddress}
-                </p>
-              )}
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocDraft(event.location || '');
+                    setAddrDraft(event.locationAddress || '');
+                    const valid = hasValidCoordinates(event.locationLat, event.locationLng);
+                    setLatDraft(valid ? event.locationLat!.toFixed(6) : '');
+                    setLngDraft(valid ? event.locationLng!.toFixed(6) : '');
+                    setCoordError(null);
+                    setIsEditingLocation(false);
+                  }}
+                  className="h-8 px-3 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] text-xs text-neutral-300 transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="h-8 px-3.5 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  저장
+                </button>
+              </div>
             </div>
-          </div>
+          </form>
+        ) : hasAnyLocationData ? (
+          <LocationPinPreviewCard
+            event={event}
+            accentHex={currentProject?.color || '#60a5fa'}
+            accentDotClass={theme.dotClass}
+            compact={isPanel}
+            isAutoResolving={isResolvingLocation}
+            autoResolveNotice={resolveNotice}
+            onEdit={onUpdateLocation ? () => setIsEditingLocation(true) : undefined}
+            onAutoResolve={onUpdateLocation ? handleAutoResolveInView : undefined}
+          />
         ) : onUpdateLocation ? (
           <button
             type="button"
             onClick={() => setIsEditingLocation(true)}
-            className="w-full p-3 rounded-xl border border-dashed border-white/[0.09] hover:border-white/[0.18] bg-white/[0.015] hover:bg-white/[0.03] text-xs text-neutral-400 hover:text-neutral-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer select-none"
+            className="w-full p-3.5 rounded-xl border border-dashed border-white/[0.09] hover:border-white/[0.18] bg-white/[0.015] hover:bg-white/[0.03] text-xs text-neutral-400 hover:text-neutral-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer select-none"
           >
             <Plus className="w-3.5 h-3.5 shrink-0" />
-            <span>정확한 장소명 · 상세 도로명 주소 입력</span>
+            <span>정확한 장소명 · 상세 주소 · 위경도 핀 위치 등록</span>
           </button>
         ) : null}
 

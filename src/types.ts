@@ -41,6 +41,8 @@ export interface CalendarEventItem {
   projectId?: string;
   location?: string;
   locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
   content?: string;
   isCompleted?: boolean;
   checklist?: ChecklistItem[];
@@ -52,6 +54,8 @@ export interface RecommendedVenue {
   name: string;
   category: string;
   address: string;
+  lat?: number;
+  lng?: number;
   capacityInfo: string;
   priceRange?: string;
   features?: string[];
@@ -95,6 +99,8 @@ export interface GroundedDateSuggestion {
   description: string;
   location?: string;
   locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
 }
 
 export interface GroundingWebSource {

@@ -6,7 +6,7 @@ import {
   ProjectItem,
 } from '../types';
 import { getTodayDateString } from '../shared/dateUtils';
-import { normalizePlaceAndAddress } from '../shared/locationUtils';
+import { normalizeCoordinates, normalizePlaceAndAddress } from '../shared/locationUtils';
 import { isValidTimeZone } from '../shared/timeZoneUtils';
 
 const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -197,6 +197,7 @@ function sanitizeEventSummary(raw: unknown): CalendarEventItem | null {
     cleanText(e.location, 160),
     cleanText(e.locationAddress, 200)
   );
+  const { locationLat, locationLng } = normalizeCoordinates(e.locationLat, e.locationLng);
 
   return {
     id,
@@ -210,6 +211,8 @@ function sanitizeEventSummary(raw: unknown): CalendarEventItem | null {
     projectId: cleanText(e.projectId, 80) || undefined,
     location,
     locationAddress,
+    locationLat,
+    locationLng,
     content: cleanText(e.content, 500) || undefined,
     isCompleted: Boolean(e.isCompleted),
   };
@@ -484,6 +487,46 @@ export function validateAndSanitizeGroundingRequest(
       activeProjectName: cleanText(raw.activeProjectName, 100) || undefined,
       activeProjectClient: cleanText(raw.activeProjectClient, 100) || undefined,
       existingEvents,
+    },
+  };
+}
+
+export interface ValidatedLocationResolveRequest {
+  location: string;
+  locationAddress?: string;
+  modelId: string;
+}
+
+export function validateAndSanitizeLocationResolveRequest(
+  body: unknown
+):
+  | { ok: true; value: ValidatedLocationResolveRequest }
+  | { ok: false; status: number; error: string } {
+  if (!body || typeof body !== 'object') {
+    return { ok: false, status: 400, error: '유효하지 않은 요청 형식입니다.' };
+  }
+
+  const raw = body as Record<string, unknown>;
+  const location = cleanText(raw.location, 180);
+  const locationAddress = cleanText(raw.locationAddress, 220) || undefined;
+
+  if (!location && !locationAddress) {
+    return {
+      ok: false,
+      status: 400,
+      error: '탐색할 장소명 또는 주소를 입력해 주세요.',
+    };
+  }
+
+  const rawModelId = cleanText(raw.modelId, 60);
+  const modelId = ALLOWED_CLOUD_MODELS.has(rawModelId) ? rawModelId : 'gemini-3.8-flash';
+
+  return {
+    ok: true,
+    value: {
+      location: location || locationAddress || '',
+      locationAddress,
+      modelId,
     },
   };
 }

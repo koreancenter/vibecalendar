@@ -11,7 +11,7 @@ import {
   GroundedDateSuggestion,
 } from '../types';
 import { addDays, getTodayDateString, parseLocalDate } from '../shared/dateUtils';
-import { normalizePlaceAndAddress } from '../shared/locationUtils';
+import { normalizeCoordinates, normalizePlaceAndAddress } from '../shared/locationUtils';
 import {
   convertLocalSlotToEventZone,
   detectBrowserTimeZone,
@@ -58,10 +58,13 @@ function normalizeStoredEventList(raw: unknown): CalendarEventItem[] | null {
         ev.location,
         ev.locationAddress
       );
+      const { locationLat, locationLng } = normalizeCoordinates(ev.locationLat, ev.locationLng);
       return {
         ...ev,
         location,
         locationAddress,
+        locationLat,
+        locationLng,
       };
     });
 }
@@ -344,10 +347,16 @@ export function useCalendarEvents({
             ev.location,
             ev.locationAddress
           );
+          const { locationLat, locationLng } = normalizeCoordinates(
+            ev.locationLat,
+            ev.locationLng
+          );
           return {
             ...ev,
             location,
             locationAddress,
+            locationLat,
+            locationLng,
             projectId: ev.projectId || primaryProjectId,
           };
         });
@@ -375,6 +384,14 @@ export function useCalendarEvents({
           );
           normalizedUpdates.location = location;
           normalizedUpdates.locationAddress = locationAddress;
+        }
+        if ('locationLat' in normalizedUpdates || 'locationLng' in normalizedUpdates) {
+          const { locationLat, locationLng } = normalizeCoordinates(
+            normalizedUpdates.locationLat,
+            normalizedUpdates.locationLng
+          );
+          normalizedUpdates.locationLat = locationLat;
+          normalizedUpdates.locationLng = locationLng;
         }
         setEvents((prev) =>
           prev.map((e) => (e.id === u.id ? { ...e, ...normalizedUpdates } : e))
@@ -424,6 +441,7 @@ export function useCalendarEvents({
         projectId: primaryProjectId,
         location: exactVenueName,
         locationAddress: cleanAddr,
+        ...normalizeCoordinates(venue.lat, venue.lng),
         content: `${venue.reason}\n\n- 수용인원: ${venue.capacityInfo}\n- 가격대: ${venue.priceRange || '정보 없음'}\n- 대표메뉴: ${venue.recommendedDishes || '없음'}\n- 연락처: ${venue.contact || '없음'}`,
         isCompleted: false,
         checklist: [
@@ -474,6 +492,7 @@ export function useCalendarEvents({
         projectId: !isHoliday ? primaryProjectId : undefined,
         location: cleanLoc,
         locationAddress: cleanAddr,
+        ...normalizeCoordinates(suggestion.locationLat, suggestion.locationLng),
         content: suggestion.description,
         isCompleted: false,
         checklist:
@@ -581,19 +600,33 @@ export function useCalendarEvents({
   );
 
   const handleUpdateEventLocation = useCallback(
-    (eventId: string, rawLocation?: string, rawAddress?: string) => {
+    (
+      eventId: string,
+      rawLocation?: string,
+      rawAddress?: string,
+      rawLat?: number,
+      rawLng?: number
+    ) => {
       const { location, locationAddress } = normalizePlaceAndAddress(rawLocation, rawAddress);
+      const { locationLat, locationLng } =
+        location || locationAddress || (rawLat !== undefined && rawLng !== undefined)
+          ? normalizeCoordinates(rawLat, rawLng)
+          : {};
       setEvents((prev) =>
         prev.map((e) =>
-          e.id === eventId ? { ...e, location, locationAddress } : e
+          e.id === eventId
+            ? { ...e, location, locationAddress, locationLat, locationLng }
+            : e
         )
       );
       setSelectedEvent((prev) =>
-        prev && prev.id === eventId ? { ...prev, location, locationAddress } : prev
+        prev && prev.id === eventId
+          ? { ...prev, location, locationAddress, locationLat, locationLng }
+          : prev
       );
       showToast(
-        location || locationAddress
-          ? '일정 장소 및 상세 주소가 업데이트되었습니다.'
+        location || locationAddress || (locationLat !== undefined && locationLng !== undefined)
+          ? '일정 장소 · 상세 주소 · 위경도 정보가 업데이트되었습니다.'
           : '일정 장소 정보가 비워졌습니다.'
       );
     },

@@ -17,7 +17,9 @@ interface EventDetailModalProps {
   onUpdateLocation?: (
     eventId: string,
     location?: string,
-    locationAddress?: string
+    locationAddress?: string,
+    locationLat?: number,
+    locationLng?: number
   ) => void;
   onShare?: (event: CalendarEventItem) => void;
 }
@@ -56,7 +58,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg bg-[#12151e] border border-white/[0.10] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+        className="w-full max-w-xl bg-[#12151e] border border-white/[0.10] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
       >
         <EventDetailContent
           event={event}

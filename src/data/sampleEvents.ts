@@ -110,6 +110,8 @@ export function createSampleWorkspaceDataset(anchorDateStr?: string): {
       projectId: 'sample-proj-lumiere',
       location: '루미에르 사이언스 캠퍼스 아트리움관 3층 302호',
       locationAddress: '서울특별시 성동구 에테르대로 142 (가상 예시 주소)',
+      locationLat: 37.544612,
+      locationLng: 127.055724,
       content:
         '공동 연구 범위 확정 및 아트리움 랩 투어 (가상 샘플 일정)\n- 현장 안내: 연구기획팀 한서준 수석\n- 주차 안내: 지하 2층 방문객 전용 구역 사전 등록 완료',
       isCompleted: false,
@@ -131,6 +133,8 @@ export function createSampleWorkspaceDataset(anchorDateStr?: string): {
       projectId: 'sample-proj-salon',
       location: '메종 드 솔레이유 별관 2층 프라이빗 다이닝룸 B',
       locationAddress: '서울특별시 용산구 메르디앙길 28 (가상 예시 주소)',
+      locationLat: 37.534185,
+      locationLng: 126.994812,
       content:
         '글로벌 협력사 초청 단독 룸 오찬 (가상 샘플 일정)\n- 식단 구성: 비건·알레르기 사전 확인 반영 코스\n- 영접 안내: 11:45 별관 1층 전용 로비 리셉션 데스크',
       isCompleted: false,
@@ -152,6 +156,8 @@ export function createSampleWorkspaceDataset(anchorDateStr?: string): {
       projectId: 'sample-proj-velvet',
       location: '그랑 오르비에 컨벤션홀 서관 1층 그랜드볼룸',
       locationAddress: '경기도 성남시 분당구 아스트라파크로 210 (가상 예시 주소)',
+      locationLat: 37.394782,
+      locationLng: 127.111194,
       content:
         '메인 스크린 해상도 캘리브레이션 및 발표자 음향 리허설 (가상 샘플 일정)',
       isCompleted: false,
@@ -174,6 +180,8 @@ export function createSampleWorkspaceDataset(anchorDateStr?: string): {
       projectId: 'sample-proj-salon',
       location: '아스트라 타워 18층 보드룸 A',
       locationAddress: '서울특별시 중구 노바센트럴로 88 (가상 예시 주소)',
+      locationLat: 37.566295,
+      locationLng: 126.977945,
       content:
         '자카르타 시간(WIB) 오후 2시 기준 다중 시간대 자동 변환 테스트용 가상 샘플 일정입니다.',
       isCompleted: false,
@@ -191,6 +199,8 @@ export function createSampleWorkspaceDataset(anchorDateStr?: string): {
       projectId: 'sample-proj-velvet',
       location: '아스트라 스튜디오 본관 7층 전략회의실 1',
       locationAddress: '서울특별시 중구 노바센트럴로 88 (가상 예시 주소)',
+      locationLat: 37.566418,
+      locationLng: 126.97812,
       content: '핵심 공정 체크리스트 완료 처리 예시를 보여주는 가상 샘플 일정입니다.',
       isCompleted: true,
       isSample: true,
