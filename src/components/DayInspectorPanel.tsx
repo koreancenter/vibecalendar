@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { CheckCircle, Circle } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { formatKoreanDateWithDay } from '../shared/dateUtils';
 import { hasEventConflict, calculateCompletionStats } from '../shared/scheduleUtils';
@@ -7,6 +6,7 @@ import {
   areShallowArraysEqual,
   useCalendarEventViewModels,
 } from '../hooks/useCalendarEventViewModels';
+import { LuxuryEventBlock } from './common/LuxuryEventBlock';
 import { EventDetailContent } from './EventDetailContent';
 
 interface DayInspectorPanelProps {
@@ -20,6 +20,7 @@ interface DayInspectorPanelProps {
   onToggleChecklistItem: (eventId: string, itemId: string) => void;
   onQuickAiPromptForDate: (date: string) => void;
   projects?: ProjectItem[];
+  comparedProjectIds?: string[];
   onUpdateProject?: (eventId: string, projectId: string | undefined) => void;
   onUpdateTimeZone?: (eventId: string, timeZone: string | undefined) => void;
   onUpdateLocation?: (
@@ -44,12 +45,14 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
   onToggleChecklistItem,
   onQuickAiPromptForDate,
   projects = [],
+  comparedProjectIds = [],
   onUpdateProject,
   onUpdateTimeZone,
   onUpdateLocation,
   onShareEvent,
   emptyGuideText,
 }) => {
+  const isComparing = comparedProjectIds.length >= 2;
   const dateTitle = useMemo(() => formatKoreanDateWithDay(selectedDate, false), [selectedDate]);
 
   const { byEventId, projectedEvents, viewModels, getViewModel } = useCalendarEventViewModels({
@@ -58,15 +61,23 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
     viewerTimeZone,
   });
 
-  const selectedEventViewModel = useMemo(
-    () => (selectedEvent ? byEventId.get(selectedEvent.id) ?? getViewModel(selectedEvent) : null),
-    [selectedEvent, byEventId, getViewModel]
-  );
+  const conflictingEventIds = useMemo(() => {
+    const set = new Set<string>();
+    if (projectedEvents.length < 2) return set;
+    for (const vm of viewModels) {
+      if (!vm.event.isAllDay && hasEventConflict(vm.projectedEvent, projectedEvents)) {
+        set.add(vm.event.id);
+      }
+    }
+    return set;
+  }, [viewModels, projectedEvents]);
 
   const hasConflict = useMemo(() => {
-    if (!selectedEventViewModel) return false;
-    return hasEventConflict(selectedEventViewModel.projectedEvent, projectedEvents);
-  }, [selectedEventViewModel, projectedEvents]);
+    if (!selectedEvent) return false;
+    if (conflictingEventIds.has(selectedEvent.id)) return true;
+    const selectedVm = byEventId.get(selectedEvent.id) ?? getViewModel(selectedEvent);
+    return !selectedEvent.isAllDay && hasEventConflict(selectedVm.projectedEvent, projectedEvents);
+  }, [selectedEvent, conflictingEventIds, byEventId, getViewModel, projectedEvents]);
 
   const { total, completed, rate } = useMemo(
     () => calculateCompletionStats(events),
@@ -147,96 +158,19 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
                   등록된 일정 ({total}건)
                 </span>
 
-                {sortedViewModels.map(({ event: ev, timing, theme }) => {
-                  const primaryTime = ev.isAllDay
-                    ? '종일'
-                    : `${timing.localStartTime} – ${timing.localEndTime}`;
-                  const secondaryZone =
-                    !ev.isAllDay && !timing.isSameZone
-                      ? timing.hasOffsetDiff
-                        ? `${timing.sourceMeta.cityKo} ${ev.startTime}`
-                        : timing.sourceMeta.cityKo
-                      : null;
-                  const checklistTotal = ev.checklist?.length || 0;
-                  const checklistDone = ev.checklist?.filter((c) => c.done).length || 0;
-
-                  return (
-                    <div
-                      key={ev.id}
-                      onClick={() => onSelectEvent(ev)}
-                      className={`relative overflow-hidden pl-[24px] pr-4 py-3.5 rounded-[10px] border luxury-event-card hover:z-20 cursor-pointer group flex items-start justify-between gap-3.5 ${
-                        theme.blockSurfaceClass
-                      } ${ev.isCompleted ? 'opacity-60' : ''}`}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={`pointer-events-none absolute z-10 left-[11px] top-3.5 bottom-3.5 w-[2px] rounded-full ${theme.inlayClass}`}
-                      />
-
-                      <div className="relative z-10 flex-1 min-w-0">
-                        <div className="flex items-center gap-2 text-[11px] tabular-nums tracking-[0.035em] leading-[1.4] truncate">
-                          <span className="font-[370] text-white/52 shrink-0">{primaryTime}</span>
-                          {secondaryZone && (
-                            <>
-                              <span aria-hidden="true" className="text-white/20 shrink-0">
-                                ·
-                              </span>
-                              <span className="font-[350] tracking-[0.025em] text-white/32 truncate">
-                                {secondaryZone}
-                              </span>
-                            </>
-                          )}
-                          {checklistTotal > 0 && (
-                            <span className="ml-auto text-[10.5px] font-[360] tracking-[0.04em] text-white/34 tabular-nums shrink-0 pl-2">
-                              {checklistDone}/{checklistTotal}
-                            </span>
-                          )}
-                        </div>
-
-                        <h5
-                          className={`text-[13px] font-[450] tracking-[0.015em] leading-[1.52] mt-2 truncate ${
-                            ev.isCompleted
-                              ? 'line-through text-white/34'
-                              : 'text-[#f2f4f8]'
-                          }`}
-                        >
-                          {ev.title}
-                        </h5>
-
-                        {(ev.location || ev.locationAddress) && (
-                          <div className="mt-2 space-y-1 min-w-0">
-                            {ev.location && (
-                              <p className="text-[11px] font-[380] leading-[1.5] text-white/58 truncate tracking-[0.016em]">
-                                {ev.location}
-                              </p>
-                            )}
-                            {ev.locationAddress && (
-                              <p className="text-[10.5px] font-[350] leading-[1.48] text-white/34 truncate tracking-[0.02em]">
-                                {ev.locationAddress}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleComplete(ev.id);
-                        }}
-                        className="relative z-10 mt-0.5 text-white/28 hover:text-emerald-300 transition-colors cursor-pointer shrink-0"
-                        title={ev.isCompleted ? '완료 해제' : '완료 표시'}
-                      >
-                        {ev.isCompleted ? (
-                          <CheckCircle className="w-4 h-4 text-emerald-300/90" />
-                        ) : (
-                          <Circle className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  );
-                })}
+                {sortedViewModels.map(({ event: ev, timing, theme }) => (
+                  <LuxuryEventBlock
+                    key={ev.id}
+                    variant="inspector"
+                    event={ev}
+                    theme={theme}
+                    timing={timing}
+                    hasConflict={conflictingEventIds.has(ev.id)}
+                    showProjectBadge={isComparing}
+                    onClick={() => onSelectEvent(ev)}
+                    onToggleComplete={onToggleComplete}
+                  />
+                ))}
               </div>
             </>
           )}
@@ -265,7 +199,8 @@ function areDayInspectorPanelPropsEqual(
     prev.onUpdateLocation === next.onUpdateLocation &&
     prev.onShareEvent === next.onShareEvent &&
     areShallowArraysEqual(prev.events, next.events) &&
-    areShallowArraysEqual(prev.projects, next.projects)
+    areShallowArraysEqual(prev.projects, next.projects) &&
+    areShallowArraysEqual(prev.comparedProjectIds, next.comparedProjectIds)
   );
 }
 

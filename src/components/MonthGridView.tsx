@@ -1,11 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { getCalendarGrid } from '../shared/dateUtils';
+import { hasEventConflict } from '../shared/scheduleUtils';
 import {
   areShallowArraysEqual,
   useCalendarEventViewModels,
 } from '../hooks/useCalendarEventViewModels';
+import { useCalendarDragAndDrop } from '../hooks/useCalendarDragAndDrop';
+import { getEventChecklistStats, LuxuryEventChip } from './common/LuxuryEventChip';
 
 interface MonthGridViewProps {
   currentYear: number;
@@ -77,13 +80,29 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
   const rowCount = Math.ceil(grid.length / 7) || 5;
   const isComparing = comparedProjectIds.length >= 2;
 
-  const [draggedEventId, setDraggedEventId] = useState<string | null>(null);
-  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
   const [hoveredTarget, setHoveredTarget] = useState<{
     event: CalendarEventItem;
     cellDate: string;
     eventIdx: number;
   } | null>(null);
+
+  const handleCellDragStartCallback = useCallback(() => {
+    setHoveredTarget(null);
+  }, []);
+
+  const {
+    draggedEventId,
+    dragOverDate,
+    isCellDragging,
+    handleCellDragStart,
+    handleCellDragEnd,
+    handleCellDragOver,
+    handleCellDragLeave,
+    handleCellDrop,
+  } = useCalendarDragAndDrop({
+    onMoveEventDate,
+    onCellDragStart: handleCellDragStartCallback,
+  });
 
   const { byEventId, projectThemesById, getViewModel } = useCalendarEventViewModels({
     events,
@@ -115,49 +134,28 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
     return map;
   }, [events, byEventId, getViewModel]);
 
+  const conflictingEventIds = useMemo(() => {
+    const set = new Set<string>();
+    eventsByDate.forEach((dayList) => {
+      if (dayList.length < 2) return;
+      const projectedDay = dayList.map(
+        (ev) => (byEventId.get(ev.id) ?? getViewModel(ev)).projectedEvent
+      );
+      for (const projEv of projectedDay) {
+        if (!projEv.isAllDay && hasEventConflict(projEv, projectedDay)) {
+          set.add(projEv.id);
+        }
+      }
+    });
+    return set;
+  }, [eventsByDate, byEventId, getViewModel]);
+
   const visibleEventCount = useMemo(
     () =>
       grid.reduce((sum, cell) => sum + (eventsByDate.get(cell.date)?.length || 0), 0),
     [grid, eventsByDate]
   );
   const isMonthEmpty = visibleEventCount === 0;
-
-  const handleDragStart = (e: React.DragEvent, eventId: string) => {
-    setHoveredTarget(null);
-    e.dataTransfer.setData('text/plain', eventId);
-    e.dataTransfer.effectAllowed = 'move';
-    setDraggedEventId(eventId);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedEventId(null);
-    setDragOverDate(null);
-  };
-
-  const handleDragOver = (e: React.DragEvent, date: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (dragOverDate !== date) {
-      setDragOverDate(date);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent, date: string) => {
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    if (dragOverDate === date) {
-      setDragOverDate(null);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent, targetDate: string) => {
-    e.preventDefault();
-    const eventId = e.dataTransfer.getData('text/plain') || draggedEventId;
-    if (eventId) {
-      onMoveEventDate(eventId, targetDate);
-    }
-    setDraggedEventId(null);
-    setDragOverDate(null);
-  };
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#111318] select-none min-h-0">
@@ -235,19 +233,19 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
             const tooltipTiming = activeTooltipVm?.timing;
             const tooltipTheme = activeTooltipVm?.theme;
             const tooltipProject = tooltipTheme?.project;
-            const checklistItems = activeTooltipEvent?.checklist || [];
-            const totalChecks = checklistItems.length;
-            const doneChecks = checklistItems.filter((c) => c.done).length;
-            const checkRate =
-              totalChecks > 0 ? Math.round((doneChecks / totalChecks) * 100) : 0;
+            const {
+              total: totalChecks,
+              done: doneChecks,
+              rate: checkRate,
+            } = getEventChecklistStats(activeTooltipEvent);
 
             return (
               <div
                 key={cell.date}
                 onClick={() => onSelectDate(cell.date)}
-                onDragOver={(e) => handleDragOver(e, cell.date)}
-                onDragLeave={(e) => handleDragLeave(e, cell.date)}
-                onDrop={(e) => handleDrop(e, cell.date)}
+                onDragOver={(e) => handleCellDragOver(e, cell.date)}
+                onDragLeave={(e) => handleCellDragLeave(e, cell.date)}
+                onDrop={(e) => handleCellDrop(e, cell.date)}
                 className={`min-w-0 min-h-0 px-2.5 py-2 flex flex-col transition-colors duration-150 cursor-pointer relative group h-full ${
                   cell.isCurrentMonth ? 'bg-[#12141b]' : 'bg-[#0e1015] text-white/22'
                 } ${
@@ -332,8 +330,6 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                   )}
                   {dayEvents.slice(0, 3).map((ev, eventIdx) => {
                     const vm = byEventId.get(ev.id) ?? getViewModel(ev);
-                    const theme = vm.theme;
-                    const proj = theme.project;
                     const isBeingDragged = draggedEventId === ev.id;
                     const isEvSelected = selectedEvent?.id === ev.id;
                     const chipTimeLabel = ev.isAllDay
@@ -341,15 +337,22 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                       : vm.timing.localStartTime || ev.startTime;
 
                     return (
-                      <div
+                      <LuxuryEventChip
                         key={ev.id}
+                        event={ev}
+                        theme={vm.theme}
+                        size="sm"
+                        timeLabel={chipTimeLabel}
+                        showProjectBadge={isComparing}
+                        hasConflict={conflictingEventIds.has(ev.id)}
+                        isSelected={isEvSelected}
+                        isDragging={isBeingDragged}
+                        isAnyDragging={isCellDragging}
                         draggable
-                        data-dragging={isBeingDragged ? 'true' : undefined}
-                        data-selected={isEvSelected && !isBeingDragged ? 'true' : undefined}
-                        onDragStart={(e) => handleDragStart(e, ev.id)}
-                        onDragEnd={handleDragEnd}
+                        onDragStart={(e) => handleCellDragStart(e, ev.id)}
+                        onDragEnd={handleCellDragEnd}
                         onMouseEnter={() => {
-                          if (!draggedEventId) {
+                          if (!isCellDragging) {
                             setHoveredTarget({
                               event: ev,
                               cellDate: cell.date,
@@ -370,40 +373,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                           onSelectDate(cell.date);
                           onSelectEvent(ev);
                         }}
-                        className={`relative overflow-hidden h-[25px] w-full text-left px-2.5 rounded-[6px] flex items-center gap-2.5 border luxury-event-chip hover:z-20 cursor-grab active:cursor-grabbing shrink-0 ${
-                          theme.chipSurfaceClass
-                        } ${
-                          isEvSelected && !isBeingDragged ? theme.selectedSurfaceClass : ''
-                        } ${
-                          isBeingDragged
-                            ? 'opacity-30 scale-95 border-dashed border-white/35'
-                            : ''
-                        } ${ev.isCompleted && !isBeingDragged ? 'opacity-55' : ''}`}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={`relative z-10 w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
-                        />
-                        <span className="relative z-10 text-[10.5px] font-[370] text-white/46 shrink-0 tabular-nums tracking-[0.032em]">
-                          {chipTimeLabel}
-                        </span>
-                        {isComparing && proj && (
-                          <span
-                            className={`relative z-10 text-[10px] font-[440] shrink-0 tracking-[0.03em] ${theme.accentTextClass}`}
-                          >
-                            {proj.code || proj.name.slice(0, 3)}
-                          </span>
-                        )}
-                        <span
-                          className={`relative z-10 text-[11.5px] truncate font-[450] tracking-[0.014em] leading-[1.4] ${
-                            ev.isCompleted
-                              ? 'line-through text-white/32'
-                              : 'text-[#f2f4f8]'
-                          }`}
-                        >
-                          {ev.title}
-                        </span>
-                      </div>
+                      />
                     );
                   })}
 

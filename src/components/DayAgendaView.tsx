@@ -1,11 +1,11 @@
 import React, { useCallback, useMemo } from 'react';
-import { CheckCircle } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { formatKoreanDateWithDay, getTodayDateString } from '../shared/dateUtils';
 import {
   areShallowArraysEqual,
   useCalendarEventViewModels,
 } from '../hooks/useCalendarEventViewModels';
+import { LuxuryEventChip } from './common/LuxuryEventChip';
 import { DayInspectorPanel } from './DayInspectorPanel';
 import { TimeGridCanvas, TimeGridColumn } from './TimeGridCanvas';
 
@@ -135,40 +135,20 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
             <span className="text-[11px] font-[370] text-white/42 shrink-0 tracking-[0.025em]">종일</span>
             {allDayEvents.map((ev) => {
               const vm = byEventId.get(ev.id) ?? getViewModel(ev);
-              const theme = vm.theme;
-              const proj = theme.project;
               const isSelected = selectedEvent?.id === ev.id;
               return (
-                <div
+                <LuxuryEventChip
                   key={ev.id}
-                  data-selected={isSelected ? 'true' : undefined}
+                  event={ev}
+                  theme={vm.theme}
+                  size="md"
+                  showProjectBadge={isComparing}
+                  projectCodeMaxLength={4}
+                  showCompletionIcon
+                  showChecklistBadge
+                  isSelected={isSelected}
                   onClick={() => onSelectEvent(ev)}
-                  className={`relative overflow-hidden h-[27px] px-3 rounded-[7px] text-xs font-[450] tracking-[0.014em] leading-[1.4] flex items-center gap-2.5 cursor-pointer luxury-event-chip hover:z-20 border ${
-                    theme.chipSurfaceClass
-                  } ${isSelected ? theme.selectedSurfaceClass : ''} ${
-                    ev.isCompleted ? 'opacity-55' : ''
-                  }`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`relative z-10 w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
-                  />
-                  {isComparing && proj && (
-                    <span className={`relative z-10 text-[10.5px] font-[440] tracking-[0.03em] ${theme.accentTextClass}`}>
-                      {proj.code || proj.name.slice(0, 4)}
-                    </span>
-                  )}
-                  {ev.isCompleted && (
-                    <CheckCircle className="relative z-10 w-3 h-3 text-emerald-300/90 shrink-0" />
-                  )}
-                  <span
-                    className={`relative z-10 ${
-                      ev.isCompleted ? 'line-through text-white/34' : 'text-[#f2f4f8]'
-                    }`}
-                  >
-                    {ev.title}
-                  </span>
-                </div>
+                />
               );
             })}
           </div>
@@ -207,6 +187,7 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
         onToggleChecklistItem={onToggleChecklistItem}
         onQuickAiPromptForDate={onQuickAiPromptForDate}
         projects={projects}
+        comparedProjectIds={comparedProjectIds}
         onUpdateProject={onUpdateProject}
         onUpdateTimeZone={onUpdateTimeZone}
         onUpdateLocation={onUpdateLocation}

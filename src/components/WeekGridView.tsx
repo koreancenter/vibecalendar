@@ -5,6 +5,8 @@ import {
   areShallowArraysEqual,
   useCalendarEventViewModels,
 } from '../hooks/useCalendarEventViewModels';
+import { useCalendarDragAndDrop } from '../hooks/useCalendarDragAndDrop';
+import { LuxuryEventChip } from './common/LuxuryEventChip';
 import { TimeGridCanvas, TimeGridColumn } from './TimeGridCanvas';
 
 interface WeekGridViewProps {
@@ -47,8 +49,20 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
   const isComparing = comparedProjectIds.length >= 2;
 
   const [timelineHoverDate, setTimelineHoverDate] = useState<string | null>(null);
-  const [draggedAllDayId, setDraggedAllDayId] = useState<string | null>(null);
-  const [allDayDropDate, setAllDayDropDate] = useState<string | null>(null);
+
+  const {
+    draggedEventId: draggedAllDayId,
+    dragOverDate: allDayDropDate,
+    isCellDragging,
+    handleCellDragStart,
+    handleCellDragEnd,
+    handleCellDragOver,
+    handleCellDragLeave,
+    handleCellDrop,
+  } = useCalendarDragAndDrop({
+    onMoveEventDate,
+    requireActiveCellDrag: true,
+  });
 
   const { byEventId, getViewModel } = useCalendarEventViewModels({
     events,
@@ -106,44 +120,6 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
     [hasAnyAllDay, columns]
   );
 
-  const handleAllDayDragStart = (e: React.DragEvent, eventId: string) => {
-    e.dataTransfer.setData('text/plain', eventId);
-    e.dataTransfer.effectAllowed = 'move';
-    setDraggedAllDayId(eventId);
-  };
-
-  const handleAllDayDragEnd = () => {
-    setDraggedAllDayId(null);
-    setAllDayDropDate(null);
-  };
-
-  const handleAllDayDragOver = (e: React.DragEvent, date: string) => {
-    if (!draggedAllDayId) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (allDayDropDate !== date) {
-      setAllDayDropDate(date);
-    }
-  };
-
-  const handleAllDayDragLeave = (e: React.DragEvent, date: string) => {
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    if (allDayDropDate === date) {
-      setAllDayDropDate(null);
-    }
-  };
-
-  const handleAllDayDrop = (e: React.DragEvent, targetDate: string) => {
-    if (!draggedAllDayId) return;
-    e.preventDefault();
-    const eventId = e.dataTransfer.getData('text/plain') || draggedAllDayId;
-    if (eventId) {
-      onMoveEventDate(eventId, targetDate);
-    }
-    setDraggedAllDayId(null);
-    setAllDayDropDate(null);
-  };
-
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden select-none bg-[#0c0e14]">
       {/* 1. 주간 요일 헤더 */}
@@ -165,9 +141,9 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
               <div
                 key={day.date}
                 onClick={() => onSelectDate(day.date)}
-                onDragOver={(e) => handleAllDayDragOver(e, day.date)}
-                onDragLeave={(e) => handleAllDayDragLeave(e, day.date)}
-                onDrop={(e) => handleAllDayDrop(e, day.date)}
+                onDragOver={(e) => handleCellDragOver(e, day.date)}
+                onDragLeave={(e) => handleCellDragLeave(e, day.date)}
+                onDrop={(e) => handleCellDrop(e, day.date)}
                 className={`flex items-center justify-center px-1 text-center transition-colors duration-150 cursor-pointer ${
                   isDropTarget
                     ? 'bg-white/[0.07] ring-1 ring-inset ring-white/25'
@@ -222,9 +198,9 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
               return (
                 <div
                   key={day.date}
-                  onDragOver={(e) => handleAllDayDragOver(e, day.date)}
-                  onDragLeave={(e) => handleAllDayDragLeave(e, day.date)}
-                  onDrop={(e) => handleAllDayDrop(e, day.date)}
+                  onDragOver={(e) => handleCellDragOver(e, day.date)}
+                  onDragLeave={(e) => handleCellDragLeave(e, day.date)}
+                  onDrop={(e) => handleCellDrop(e, day.date)}
                   className={`px-1.5 py-1.5 space-y-1.5 min-h-[34px] transition-colors ${
                     isCellDropOver
                       ? 'bg-white/[0.07] ring-1 ring-inset ring-white/25'
@@ -233,53 +209,29 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
                 >
                   {allDayList.map((ev) => {
                     const vm = byEventId.get(ev.id) ?? getViewModel(ev);
-                    const theme = vm.theme;
-                    const proj = theme.project;
                     const isEvSelected = selectedEvent?.id === ev.id;
                     const isBeingDragged = draggedAllDayId === ev.id;
 
                     return (
-                      <div
+                      <LuxuryEventChip
                         key={ev.id}
+                        event={ev}
+                        theme={vm.theme}
+                        size="sm"
+                        showProjectBadge={isComparing}
+                        showCompletionIcon
+                        isSelected={isEvSelected}
+                        isDragging={isBeingDragged}
+                        isAnyDragging={isCellDragging}
                         draggable
-                        data-dragging={isBeingDragged ? 'true' : undefined}
-                        data-selected={isEvSelected && !isBeingDragged ? 'true' : undefined}
-                        onDragStart={(e) => handleAllDayDragStart(e, ev.id)}
-                        onDragEnd={handleAllDayDragEnd}
+                        titleAttr={`${ev.title} (드래그하여 다른 날짜로 이동)`}
+                        onDragStart={(e) => handleCellDragStart(e, ev.id)}
+                        onDragEnd={handleCellDragEnd}
                         onClick={() => {
                           onSelectDate(day.date);
                           onSelectEvent(ev);
                         }}
-                        className={`relative overflow-hidden h-[25px] px-2.5 rounded-[6px] text-[11.5px] font-[450] tracking-[0.014em] leading-[1.4] cursor-grab active:cursor-grabbing luxury-event-chip hover:z-20 border flex items-center gap-2.5 ${
-                          theme.chipSurfaceClass
-                        } ${isEvSelected ? theme.selectedSurfaceClass : ''} ${
-                          isBeingDragged
-                            ? 'opacity-30 scale-95 border-dashed border-white/35'
-                            : ''
-                        } ${ev.isCompleted && !isBeingDragged ? 'opacity-55' : ''}`}
-                        title={`${ev.title} (드래그하여 다른 날짜로 이동)`}
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={`relative z-10 w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
-                        />
-                        {isComparing && proj && (
-                          <span
-                            className={`relative z-10 text-[10px] font-[440] tracking-[0.03em] shrink-0 ${theme.accentTextClass}`}
-                          >
-                            {proj.code || proj.name.slice(0, 3)}
-                          </span>
-                        )}
-                        <span
-                          className={`relative z-10 truncate ${
-                            ev.isCompleted
-                              ? 'line-through text-white/32'
-                              : 'text-[#f2f4f8]'
-                          }`}
-                        >
-                          {ev.title}
-                        </span>
-                      </div>
+                      />
                     );
                   })}
                 </div>
