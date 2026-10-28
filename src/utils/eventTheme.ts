@@ -24,13 +24,13 @@ export interface EventLuxuryTheme {
 }
 
 const COOL_OBSIDIAN_CHIP_SURFACE =
-  'bg-white/[0.026] hover:bg-[#191d28]/95 border-white/[0.04] hover:border-white/[0.10] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] hover:shadow-[0_6px_16px_-6px_rgba(0,0,0,0.55),inset_0_1px_0_0_rgba(255,255,255,0.07)]';
+  'bg-[#171b26]/55 hover:bg-[#1e2331]/74 border-white/[0.045] hover:border-white/[0.13]';
 
 const COOL_OBSIDIAN_BLOCK_SURFACE =
-  'bg-gradient-to-b from-[#171b24]/96 to-[#12151d]/98 hover:from-[#1c202c]/98 hover:to-[#151923]/99 border-white/[0.075] hover:border-white/[0.14] shadow-[0_2px_10px_-3px_rgba(0,0,0,0.48),inset_0_1px_0_0_rgba(255,255,255,0.065)] hover:shadow-[0_12px_28px_-10px_rgba(0,0,0,0.68),inset_0_1px_0_0_rgba(255,255,255,0.095)]';
+  'bg-gradient-to-b from-[#181c27]/76 to-[#12151e]/82 hover:from-[#1f2433]/72 hover:to-[#151924]/78 border-white/[0.075] hover:border-white/[0.15]';
 
 const COOL_OBSIDIAN_SELECTED_SURFACE =
-  '!from-[#1f2432]/99 !to-[#171b26]/99 !bg-[#1b202c]/98 !border-white/[0.22] shadow-[0_14px_30px_-10px_rgba(0,0,0,0.76),inset_0_1px_0_0_rgba(255,255,255,0.12)]';
+  '!from-[#202636]/82 !to-[#171b27]/86 !bg-[#1c2130]/84 !border-white/[0.23]';
 
 function createLuxuryPalette(
   inlayClass: string,

@@ -4,11 +4,9 @@ import { CalendarEventItem, ProjectItem } from '../types';
 import { formatKoreanDateWithDay } from '../shared/dateUtils';
 import { hasEventConflict, calculateCompletionStats } from '../shared/scheduleUtils';
 import {
-  mapEventsToViewerZone,
-  projectEventToViewerTimeZone,
-  toViewerProjectedEvent,
-} from '../shared/timeZoneUtils';
-import { resolveEventLuxuryTheme } from '../utils/eventTheme';
+  areShallowArraysEqual,
+  useCalendarEventViewModels,
+} from '../hooks/useCalendarEventViewModels';
 import { EventDetailContent } from './EventDetailContent';
 
 interface DayInspectorPanelProps {
@@ -35,7 +33,7 @@ interface DayInspectorPanelProps {
   emptyGuideText?: string;
 }
 
-export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
+const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
   selectedDate,
   events,
   selectedEvent,
@@ -53,29 +51,36 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
   emptyGuideText,
 }) => {
   const dateTitle = useMemo(() => formatKoreanDateWithDay(selectedDate, false), [selectedDate]);
+
+  const { byEventId, projectedEvents, viewModels, getViewModel } = useCalendarEventViewModels({
+    events,
+    projects,
+    viewerTimeZone,
+  });
+
+  const selectedEventViewModel = useMemo(
+    () => (selectedEvent ? byEventId.get(selectedEvent.id) ?? getViewModel(selectedEvent) : null),
+    [selectedEvent, byEventId, getViewModel]
+  );
+
   const hasConflict = useMemo(() => {
-    if (!selectedEvent) return false;
-    return hasEventConflict(
-      toViewerProjectedEvent(selectedEvent, viewerTimeZone),
-      mapEventsToViewerZone(events, viewerTimeZone)
-    );
-  }, [selectedEvent, events, viewerTimeZone]);
+    if (!selectedEventViewModel) return false;
+    return hasEventConflict(selectedEventViewModel.projectedEvent, projectedEvents);
+  }, [selectedEventViewModel, projectedEvents]);
 
   const { total, completed, rate } = useMemo(
     () => calculateCompletionStats(events),
     [events]
   );
 
-  const sortedEvents = useMemo(
+  const sortedViewModels = useMemo(
     () =>
-      [...events].sort((a, b) => {
-        if (a.isAllDay && !b.isAllDay) return -1;
-        if (!a.isAllDay && b.isAllDay) return 1;
-        const aLocal = projectEventToViewerTimeZone(a, viewerTimeZone).localStartTime;
-        const bLocal = projectEventToViewerTimeZone(b, viewerTimeZone).localStartTime;
-        return aLocal.localeCompare(bLocal);
+      [...viewModels].sort((a, b) => {
+        if (a.event.isAllDay && !b.event.isAllDay) return -1;
+        if (!a.event.isAllDay && b.event.isAllDay) return 1;
+        return a.timing.localStartTime.localeCompare(b.timing.localStartTime);
       }),
-    [events, viewerTimeZone]
+    [viewModels]
   );
 
   return (
@@ -112,7 +117,7 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
             </button>
           </div>
 
-          {sortedEvents.length === 0 ? (
+          {sortedViewModels.length === 0 ? (
             <div className="flex-1 flex items-center justify-center px-6">
               <p className="text-xs font-light text-neutral-500 tracking-wide text-center select-none">
                 {emptyGuideText || '현재 선택한 날짜의 일정이 없습니다'}
@@ -142,9 +147,7 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
                   등록된 일정 ({total}건)
                 </span>
 
-                {sortedEvents.map((ev) => {
-                  const theme = resolveEventLuxuryTheme(ev, projects);
-                  const timing = projectEventToViewerTimeZone(ev, viewerTimeZone);
+                {sortedViewModels.map(({ event: ev, timing, theme }) => {
                   const primaryTime = ev.isAllDay
                     ? '종일'
                     : `${timing.localStartTime} – ${timing.localEndTime}`;
@@ -161,16 +164,16 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
                     <div
                       key={ev.id}
                       onClick={() => onSelectEvent(ev)}
-                      className={`relative pl-[24px] pr-4 py-3.5 rounded-[10px] border luxury-event-card cursor-pointer group flex items-start justify-between gap-3.5 ${
+                      className={`relative overflow-hidden pl-[24px] pr-4 py-3.5 rounded-[10px] border luxury-event-card hover:z-20 cursor-pointer group flex items-start justify-between gap-3.5 ${
                         theme.blockSurfaceClass
                       } ${ev.isCompleted ? 'opacity-60' : ''}`}
                     >
                       <span
                         aria-hidden="true"
-                        className={`pointer-events-none absolute left-[11px] top-3.5 bottom-3.5 w-[2px] rounded-full ${theme.inlayClass}`}
+                        className={`pointer-events-none absolute z-10 left-[11px] top-3.5 bottom-3.5 w-[2px] rounded-full ${theme.inlayClass}`}
                       />
 
-                      <div className="flex-1 min-w-0">
+                      <div className="relative z-10 flex-1 min-w-0">
                         <div className="flex items-center gap-2 text-[11px] tabular-nums tracking-[0.035em] leading-[1.4] truncate">
                           <span className="font-[370] text-white/52 shrink-0">{primaryTime}</span>
                           {secondaryZone && (
@@ -222,7 +225,7 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
                           e.stopPropagation();
                           onToggleComplete(ev.id);
                         }}
-                        className="mt-0.5 text-white/28 hover:text-emerald-300 transition-colors cursor-pointer shrink-0"
+                        className="relative z-10 mt-0.5 text-white/28 hover:text-emerald-300 transition-colors cursor-pointer shrink-0"
                         title={ev.isCompleted ? '완료 해제' : '완료 표시'}
                       >
                         {ev.isCompleted ? (
@@ -242,3 +245,31 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
     </aside>
   );
 };
+
+function areDayInspectorPanelPropsEqual(
+  prev: DayInspectorPanelProps,
+  next: DayInspectorPanelProps
+): boolean {
+  return (
+    prev.selectedDate === next.selectedDate &&
+    prev.selectedEvent === next.selectedEvent &&
+    prev.viewerTimeZone === next.viewerTimeZone &&
+    prev.emptyGuideText === next.emptyGuideText &&
+    prev.onSelectEvent === next.onSelectEvent &&
+    prev.onDeleteEvent === next.onDeleteEvent &&
+    prev.onToggleComplete === next.onToggleComplete &&
+    prev.onToggleChecklistItem === next.onToggleChecklistItem &&
+    prev.onQuickAiPromptForDate === next.onQuickAiPromptForDate &&
+    prev.onUpdateProject === next.onUpdateProject &&
+    prev.onUpdateTimeZone === next.onUpdateTimeZone &&
+    prev.onUpdateLocation === next.onUpdateLocation &&
+    prev.onShareEvent === next.onShareEvent &&
+    areShallowArraysEqual(prev.events, next.events) &&
+    areShallowArraysEqual(prev.projects, next.projects)
+  );
+}
+
+export const DayInspectorPanel = React.memo(
+  DayInspectorPanelComponent,
+  areDayInspectorPanelPropsEqual
+);

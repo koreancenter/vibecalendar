@@ -3,10 +3,9 @@ import { Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { getCalendarGrid } from '../shared/dateUtils';
 import {
-  projectEventToViewerTimeZone,
-  ResolvedEventTiming,
-} from '../shared/timeZoneUtils';
-import { resolveEventLuxuryTheme } from '../utils/eventTheme';
+  areShallowArraysEqual,
+  useCalendarEventViewModels,
+} from '../hooks/useCalendarEventViewModels';
 
 interface MonthGridViewProps {
   currentYear: number;
@@ -55,7 +54,7 @@ function getTooltipPositionClasses(
   return `${horizontalClass} ${downwardTopClass}`;
 }
 
-export const MonthGridView: React.FC<MonthGridViewProps> = ({
+const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
   currentYear,
   currentMonth,
   selectedDate,
@@ -71,7 +70,10 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
   isWorkspaceEmpty = false,
   onLoadSampleData,
 }) => {
-  const grid = getCalendarGrid(currentYear, currentMonth);
+  const grid = useMemo(
+    () => getCalendarGrid(currentYear, currentMonth),
+    [currentYear, currentMonth]
+  );
   const rowCount = Math.ceil(grid.length / 7) || 5;
   const isComparing = comparedProjectIds.length >= 2;
 
@@ -83,34 +85,35 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
     eventIdx: number;
   } | null>(null);
 
-  const timingById = useMemo(() => {
-    const map = new Map<string, ResolvedEventTiming>();
-    for (const ev of events) {
-      map.set(ev.id, projectEventToViewerTimeZone(ev, viewerTimeZone));
-    }
-    return map;
-  }, [events, viewerTimeZone]);
+  const { byEventId, projectThemesById, getViewModel } = useCalendarEventViewModels({
+    events,
+    projects,
+    viewerTimeZone,
+  });
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEventItem[]>();
-    events.forEach((ev) => {
-      const timing = timingById.get(ev.id);
-      const cellDate = timing ? timing.localDate : ev.date;
-      const list = map.get(cellDate) || [];
-      list.push(ev);
-      map.set(cellDate, list);
-    });
+    for (const ev of events) {
+      const timing = (byEventId.get(ev.id) ?? getViewModel(ev)).timing;
+      const cellDate = timing.localDate;
+      const list = map.get(cellDate);
+      if (list) {
+        list.push(ev);
+      } else {
+        map.set(cellDate, [ev]);
+      }
+    }
     map.forEach((list) => {
       list.sort((a, b) => {
         if (a.isAllDay && !b.isAllDay) return -1;
         if (!a.isAllDay && b.isAllDay) return 1;
-        const aStart = timingById.get(a.id)?.localStartTime || a.startTime;
-        const bStart = timingById.get(b.id)?.localStartTime || b.startTime;
+        const aStart = (byEventId.get(a.id) ?? getViewModel(a)).timing.localStartTime;
+        const bStart = (byEventId.get(b.id) ?? getViewModel(b)).timing.localStartTime;
         return aStart.localeCompare(bStart);
       });
     });
     return map;
-  }, [events, timingById]);
+  }, [events, byEventId, getViewModel]);
 
   const visibleEventCount = useMemo(
     () =>
@@ -226,12 +229,11 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
             const colIdx = cellIdx % 7;
 
             const activeTooltipEvent = isHoveredCell ? hoveredTarget.event : null;
-            const tooltipTiming = activeTooltipEvent
-              ? timingById.get(activeTooltipEvent.id)
+            const activeTooltipVm = activeTooltipEvent
+              ? byEventId.get(activeTooltipEvent.id) ?? getViewModel(activeTooltipEvent)
               : undefined;
-            const tooltipTheme = activeTooltipEvent
-              ? resolveEventLuxuryTheme(activeTooltipEvent, projects)
-              : undefined;
+            const tooltipTiming = activeTooltipVm?.timing;
+            const tooltipTheme = activeTooltipVm?.theme;
             const tooltipProject = tooltipTheme?.project;
             const checklistItems = activeTooltipEvent?.checklist || [];
             const totalChecks = checklistItems.length;
@@ -299,10 +301,9 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                               title="비교 중인 프로젝트 간 일정 중첩일"
                             >
                               {distinctProjIds.slice(0, 4).map((pid) => {
-                                const dotClass = resolveEventLuxuryTheme(
-                                  { projectId: pid, category: '기타' },
-                                  projects
-                                ).dotClass;
+                                const dotClass =
+                                  (pid ? projectThemesById.get(pid)?.dotClass : undefined) ||
+                                  'bg-[#94a3b8]';
                                 return (
                                   <span
                                     key={pid}
@@ -320,8 +321,8 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                   )}
                 </div>
 
-                {/* 일정 목록 (최대 3개 표시: 25px 여유 높이 + 미세 웨이트 450/370 + 양(+)의 자간 호흡) */}
-                <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
+                {/* 일정 목록 (최대 3개 표시: 25px 여유 높이 + 미세 웨이트 450/370 + 복합 부양 레이어) */}
+                <div className="flex-1 min-h-0 flex flex-col gap-1.5 pt-0.5 overflow-visible">
                   {!isMonthEmpty && isSelected && dayEvents.length === 0 && !isDragOver && (
                     <div className="flex-1 flex items-center justify-center pointer-events-none">
                       <span className="text-[11px] font-[350] text-white/24 tracking-[0.025em] select-none">
@@ -330,19 +331,21 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                     </div>
                   )}
                   {dayEvents.slice(0, 3).map((ev, eventIdx) => {
-                    const theme = resolveEventLuxuryTheme(ev, projects);
+                    const vm = byEventId.get(ev.id) ?? getViewModel(ev);
+                    const theme = vm.theme;
                     const proj = theme.project;
                     const isBeingDragged = draggedEventId === ev.id;
                     const isEvSelected = selectedEvent?.id === ev.id;
-                    const timing = timingById.get(ev.id);
                     const chipTimeLabel = ev.isAllDay
                       ? '종일'
-                      : timing?.localStartTime || ev.startTime;
+                      : vm.timing.localStartTime || ev.startTime;
 
                     return (
                       <div
                         key={ev.id}
                         draggable
+                        data-dragging={isBeingDragged ? 'true' : undefined}
+                        data-selected={isEvSelected && !isBeingDragged ? 'true' : undefined}
                         onDragStart={(e) => handleDragStart(e, ev.id)}
                         onDragEnd={handleDragEnd}
                         onMouseEnter={() => {
@@ -367,7 +370,7 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                           onSelectDate(cell.date);
                           onSelectEvent(ev);
                         }}
-                        className={`h-[25px] w-full text-left px-2.5 rounded-[6px] truncate flex items-center gap-2.5 border luxury-event-card cursor-grab active:cursor-grabbing shrink-0 ${
+                        className={`relative overflow-hidden h-[25px] w-full text-left px-2.5 rounded-[6px] flex items-center gap-2.5 border luxury-event-chip hover:z-20 cursor-grab active:cursor-grabbing shrink-0 ${
                           theme.chipSurfaceClass
                         } ${
                           isEvSelected && !isBeingDragged ? theme.selectedSurfaceClass : ''
@@ -379,20 +382,20 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                       >
                         <span
                           aria-hidden="true"
-                          className={`w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
+                          className={`relative z-10 w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
                         />
-                        <span className="text-[10.5px] font-[370] text-white/46 shrink-0 tabular-nums tracking-[0.032em]">
+                        <span className="relative z-10 text-[10.5px] font-[370] text-white/46 shrink-0 tabular-nums tracking-[0.032em]">
                           {chipTimeLabel}
                         </span>
                         {isComparing && proj && (
                           <span
-                            className={`text-[10px] font-[440] shrink-0 tracking-[0.03em] ${theme.accentTextClass}`}
+                            className={`relative z-10 text-[10px] font-[440] shrink-0 tracking-[0.03em] ${theme.accentTextClass}`}
                           >
                             {proj.code || proj.name.slice(0, 3)}
                           </span>
                         )}
                         <span
-                          className={`text-[11.5px] truncate font-[450] tracking-[0.014em] leading-[1.4] ${
+                          className={`relative z-10 text-[11.5px] truncate font-[450] tracking-[0.014em] leading-[1.4] ${
                             ev.isCompleted
                               ? 'line-through text-white/32'
                               : 'text-[#f2f4f8]'
@@ -542,3 +545,27 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
     </div>
   );
 };
+
+function areMonthGridViewPropsEqual(
+  prev: MonthGridViewProps,
+  next: MonthGridViewProps
+): boolean {
+  return (
+    prev.currentYear === next.currentYear &&
+    prev.currentMonth === next.currentMonth &&
+    prev.selectedDate === next.selectedDate &&
+    prev.selectedEvent === next.selectedEvent &&
+    prev.viewerTimeZone === next.viewerTimeZone &&
+    prev.emptyGuideText === next.emptyGuideText &&
+    prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
+    prev.onSelectDate === next.onSelectDate &&
+    prev.onSelectEvent === next.onSelectEvent &&
+    prev.onMoveEventDate === next.onMoveEventDate &&
+    prev.onLoadSampleData === next.onLoadSampleData &&
+    areShallowArraysEqual(prev.events, next.events) &&
+    areShallowArraysEqual(prev.projects, next.projects) &&
+    areShallowArraysEqual(prev.comparedProjectIds, next.comparedProjectIds)
+  );
+}
+
+export const MonthGridView = React.memo(MonthGridViewComponent, areMonthGridViewPropsEqual);

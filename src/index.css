@@ -115,11 +115,129 @@
   animation: vault-horizontal-shake 180ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
-/* 초 럭셔리 미니멀리즘 일정 카드 미세 광학 전이 (레이아웃 변형 제로) */
-.luxury-event-card {
-  transition-property: background-color, border-color, box-shadow, opacity;
-  transition-duration: 180ms;
+/* 초 럭셔리 미니멀리즘 복합 레이어 변위 (Z-Displacement + Multi-Plane Drop Shadow + Dynamic Backdrop Blur) */
+.luxury-event-card,
+.luxury-event-chip {
+  isolation: isolate;
+  will-change: transform, box-shadow, backdrop-filter;
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  backdrop-filter: blur(6px) saturate(120%);
+  transition-property:
+    transform,
+    background-color,
+    border-color,
+    box-shadow,
+    backdrop-filter,
+    -webkit-backdrop-filter,
+    opacity;
+  transition-duration: 200ms;
   transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 부양 시 상단 광원 굴절 및 하단 유리 두께감을 형성하는 미세 베벨 레이어 */
+.luxury-event-card::before,
+.luxury-event-chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    168deg,
+    rgba(255, 255, 255, 0.075) 0%,
+    rgba(255, 255, 255, 0.018) 38%,
+    rgba(255, 255, 255, 0) 62%,
+    rgba(0, 0, 0, 0.18) 100%
+  );
+  opacity: 0.42;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 타임그리드 · 인스펙터 블록: 정지 상태 접지 그림자 */
+.luxury-event-card {
+  transform: translate3d(0, 0, 0);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.32),
+    0 4px 10px -3px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.065),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.28);
+}
+
+/* 선택 상태(Selected): 포커스 깊이 유지 */
+.luxury-event-card[data-selected="true"] {
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
+  box-shadow:
+    0 2px 6px -1px rgba(0, 0, 0, 0.44),
+    0 10px 22px -6px rgba(2, 4, 10, 0.62),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.36);
+}
+
+/* 호버 부양: 카드는 -2px 상승하고, 하단 3중 그림자 플레인은 역방향 하강 변위 + 심층 백드롭 굴절 */
+.luxury-event-card:hover:not([data-dragging="true"]) {
+  transform: translate3d(0, -2px, 0);
+  -webkit-backdrop-filter: blur(18px) saturate(165%);
+  backdrop-filter: blur(18px) saturate(165%);
+  box-shadow:
+    0 3px 6px -2px rgba(0, 0, 0, 0.52),
+    0 12px 24px -6px rgba(3, 5, 12, 0.66),
+    0 24px 44px -12px rgba(0, 0, 0, 0.74),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.42);
+}
+
+.luxury-event-card:hover:not([data-dragging="true"])::before {
+  opacity: 1;
+}
+
+.luxury-event-card:active:not([data-dragging="true"]) {
+  transform: translate3d(0, -0.5px, 0);
+  transition-duration: 110ms;
+  box-shadow:
+    0 2px 5px -1px rgba(0, 0, 0, 0.48),
+    0 8px 16px -5px rgba(2, 4, 10, 0.58),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.34);
+}
+
+/* 월간 · 종일 칩: 소형 스케일에 맞춘 -1.5px 미세 부양 + 다중 변위 그림자 + 백드롭 블러 */
+.luxury-event-chip {
+  transform: translate3d(0, 0, 0);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+.luxury-event-chip[data-selected="true"] {
+  -webkit-backdrop-filter: blur(12px) saturate(145%);
+  backdrop-filter: blur(12px) saturate(145%);
+  box-shadow:
+    0 2px 5px -1px rgba(0, 0, 0, 0.42),
+    0 8px 18px -6px rgba(2, 4, 10, 0.58),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.11);
+}
+
+.luxury-event-chip:hover:not([data-dragging="true"]) {
+  transform: translate3d(0, -1.5px, 0);
+  -webkit-backdrop-filter: blur(14px) saturate(155%);
+  backdrop-filter: blur(14px) saturate(155%);
+  box-shadow:
+    0 2px 5px -1px rgba(0, 0, 0, 0.48),
+    0 9px 18px -5px rgba(3, 5, 12, 0.64),
+    0 16px 30px -8px rgba(0, 0, 0, 0.68),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.36);
+}
+
+.luxury-event-chip:hover:not([data-dragging="true"])::before {
+  opacity: 0.95;
+}
+
+.luxury-event-chip:active:not([data-dragging="true"]) {
+  transform: translate3d(0, -0.5px, 0);
+  transition-duration: 110ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -127,8 +245,18 @@
     animation: none;
   }
 
-  .luxury-event-card {
+  .luxury-event-card,
+  .luxury-event-chip,
+  .luxury-event-card::before,
+  .luxury-event-chip::before {
     transition: none;
+  }
+
+  .luxury-event-card:hover:not([data-dragging="true"]),
+  .luxury-event-card:active:not([data-dragging="true"]),
+  .luxury-event-chip:hover:not([data-dragging="true"]),
+  .luxury-event-chip:active:not([data-dragging="true"]) {
+    transform: none;
   }
 }
 

@@ -22,15 +22,14 @@ import {
 import { useToast } from './hooks/useToast';
 import { useCalendarEvents, VaultEventsSyncConfig } from './hooks/useCalendarEvents';
 import { useProjects, VaultProjectsSyncConfig } from './hooks/useProjects';
+import {
+  CalendarEventViewModelsProvider,
+  useCalendarEventViewModels,
+} from './hooks/useCalendarEventViewModels';
 import { useTimeZonePreferences } from './hooks/useTimeZonePreferences';
 import { CalendarEventItem, ProjectItem } from './types';
 import { addDays } from './shared/dateUtils';
 import { hasEventConflict } from './shared/scheduleUtils';
-import {
-  mapEventsToViewerZone,
-  projectEventToViewerTimeZone,
-  toViewerProjectedEvent,
-} from './shared/timeZoneUtils';
 import {
   decodeSharePayload,
   extractShareTokenFromLocation,
@@ -44,6 +43,7 @@ import {
 } from './data/sampleEvents';
 import {
   AutoLockMinutesOption,
+  computeBundleDigest,
   createEncryptedVault,
   disableEncryptedVault,
   disableVaultBiometrics,
@@ -63,6 +63,7 @@ import {
   unlockEncryptedVault,
   unlockEncryptedVaultWithBiometrics,
   VaultPlaintextBundle,
+  zeroOutBytes,
 } from './utils/vaultCrypto';
 import { isPlatformBiometricHardwareAvailable } from './utils/webauthnBiometrics';
 
@@ -76,17 +77,14 @@ type AppGateState =
   | { mode: 'onboarding' }
   | { mode: 'locked'; pinLength: PinLengthOption }
   | { mode: 'unlocked_browse'; sessionId: number }
-  | {
-      mode: 'unlocked_vault';
-      initialBundle: VaultPlaintextBundle;
-      sessionId: number;
-    };
+  | { mode: 'unlocked_vault'; sessionId: number };
 
 interface WorkspaceContentProps {
   isVaultEncrypted: boolean;
   isBiometricEnabled: boolean;
   isBiometricHardwareAvailable: boolean;
-  initialVaultBundle?: VaultPlaintextBundle;
+  getInitialVaultBundle?: () => VaultPlaintextBundle | null;
+  onConsumeInitialVaultBundle?: () => void;
   initialToastNotice?: string | null;
   onConsumeToastNotice?: () => void;
   autoLockMinutes: AutoLockMinutesOption;
@@ -108,7 +106,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   isVaultEncrypted,
   isBiometricEnabled,
   isBiometricHardwareAvailable,
-  initialVaultBundle,
+  getInitialVaultBundle,
+  onConsumeInitialVaultBundle,
   initialToastNotice,
   onConsumeToastNotice,
   autoLockMinutes,
@@ -130,53 +129,66 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     }
   }, [initialToastNotice, onConsumeToastNotice, showToast]);
 
-  const latestBundleRef = useRef<VaultPlaintextBundle>({
-    events: initialVaultBundle?.events ?? [],
-    projects: initialVaultBundle?.projects ?? [],
-    selectedProjectIds: initialVaultBundle?.selectedProjectIds ?? [],
-  });
+  const [bootstrapReleased, setBootstrapReleased] = useState(false);
+  const bootstrapBundle =
+    !bootstrapReleased && isVaultEncrypted ? (getInitialVaultBundle?.() ?? null) : null;
+
+  const latestBundleRef = useRef<VaultPlaintextBundle | null>(
+    isVaultEncrypted
+      ? {
+          events: bootstrapBundle?.events ?? [],
+          projects: bootstrapBundle?.projects ?? [],
+          selectedProjectIds: bootstrapBundle?.selectedProjectIds ?? [],
+        }
+      : null
+  );
 
   const handleEncryptedProjectsChange = useCallback(
     (nextProjects: ProjectItem[], nextSelectedIds: string[]) => {
-      latestBundleRef.current = {
-        ...latestBundleRef.current,
+      const nextBundle: VaultPlaintextBundle = {
+        events: latestBundleRef.current?.events ?? [],
         projects: nextProjects,
         selectedProjectIds: nextSelectedIds,
       };
-      onPersistEncryptedBundle(latestBundleRef.current);
+      latestBundleRef.current = nextBundle;
+      onPersistEncryptedBundle(nextBundle);
     },
     [onPersistEncryptedBundle]
   );
 
   const handleEncryptedEventsChange = useCallback(
     (nextEvents: CalendarEventItem[]) => {
-      latestBundleRef.current = {
-        ...latestBundleRef.current,
+      const nextBundle: VaultPlaintextBundle = {
         events: nextEvents,
+        projects: latestBundleRef.current?.projects ?? [],
+        selectedProjectIds: latestBundleRef.current?.selectedProjectIds ?? [],
       };
-      onPersistEncryptedBundle(latestBundleRef.current);
+      latestBundleRef.current = nextBundle;
+      onPersistEncryptedBundle(nextBundle);
     },
     [onPersistEncryptedBundle]
   );
 
   const vaultProjectsConfig = useMemo<VaultProjectsSyncConfig | undefined>(() => {
-    if (!isVaultEncrypted || !initialVaultBundle) return undefined;
+    if (!isVaultEncrypted) return undefined;
+    const initialBundle = bootstrapReleased ? null : (getInitialVaultBundle?.() ?? null);
     return {
       isEncrypted: true,
-      initialProjects: initialVaultBundle.projects,
-      initialSelectedProjectIds: initialVaultBundle.selectedProjectIds,
+      initialProjects: initialBundle?.projects ?? [],
+      initialSelectedProjectIds: initialBundle?.selectedProjectIds ?? [],
       onEncryptedProjectsChange: handleEncryptedProjectsChange,
     };
-  }, [handleEncryptedProjectsChange, initialVaultBundle, isVaultEncrypted]);
+  }, [bootstrapReleased, getInitialVaultBundle, handleEncryptedProjectsChange, isVaultEncrypted]);
 
   const vaultEventsConfig = useMemo<VaultEventsSyncConfig | undefined>(() => {
-    if (!isVaultEncrypted || !initialVaultBundle) return undefined;
+    if (!isVaultEncrypted) return undefined;
+    const initialBundle = bootstrapReleased ? null : (getInitialVaultBundle?.() ?? null);
     return {
       isEncrypted: true,
-      initialEvents: initialVaultBundle.events,
+      initialEvents: initialBundle?.events ?? [],
       onEncryptedEventsChange: handleEncryptedEventsChange,
     };
-  }, [handleEncryptedEventsChange, initialVaultBundle, isVaultEncrypted]);
+  }, [bootstrapReleased, getInitialVaultBundle, handleEncryptedEventsChange, isVaultEncrypted]);
 
   const {
     projects,
@@ -233,17 +245,35 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     vaultEventsConfig,
   });
 
+  const workspaceViewModels = useCalendarEventViewModels({
+    events,
+    projects,
+    viewerTimeZone: tzPrefs.viewerTimeZone,
+  });
+  const workspaceViewModelsRef = useRef(workspaceViewModels);
+  workspaceViewModelsRef.current = workspaceViewModels;
+
   const isWorkspaceEmpty = events.length === 0 && projects.length === 0;
   const hasSampleData = useMemo(
     () => projects.some(isSampleProjectItem) || events.some(isSampleEventItem),
     [projects, events]
   );
 
+  const sampleSnapshotRef = useRef<{
+    projects: ProjectItem[];
+    events: CalendarEventItem[];
+    selectedProjectIds: string[];
+    selectedDate: string;
+  } | null>(null);
+  sampleSnapshotRef.current = { projects, events, selectedProjectIds, selectedDate };
+
   const handleLoadSampleData = useCallback(() => {
-    const prevProjects = projects;
-    const prevEvents = events;
-    const prevSelectedIds = selectedProjectIds;
-    const dataset = createSampleWorkspaceDataset(selectedDate);
+    const snap = sampleSnapshotRef.current;
+    if (!snap) return;
+    const prevProjects = snap.projects;
+    const prevEvents = snap.events;
+    const prevSelectedIds = snap.selectedProjectIds;
+    const dataset = createSampleWorkspaceDataset(snap.selectedDate);
 
     setProjects((curr) => {
       const userOnly = curr.filter((p) => !isSampleProjectItem(p));
@@ -263,10 +293,6 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
       setSelectedProjectIds(prevSelectedIds);
     });
   }, [
-    projects,
-    events,
-    selectedProjectIds,
-    selectedDate,
     setProjects,
     setEvents,
     setSelectedProjectId,
@@ -335,26 +361,58 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [isVaultEncrypted, onLockNow, onReturnToIntroGate]);
 
-  // 자리 비움 자동 잠금 타이머 (AES-256-GCM 활성 시)
+  // 초기 마운트 완료 후 부트스트랩 평문 번들 참조 즉시 해제 및 언마운트(잠금/종료) 시 latestBundleRef 명시적 해제
+  useEffect(() => {
+    if (isVaultEncrypted && !latestBundleRef.current) {
+      latestBundleRef.current = {
+        events,
+        projects,
+        selectedProjectIds,
+      };
+    }
+
+    const releaseTimerId = window.setTimeout(() => {
+      setBootstrapReleased(true);
+      onConsumeInitialVaultBundle?.();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(releaseTimerId);
+      latestBundleRef.current = null;
+      sampleSnapshotRef.current = null;
+    };
+  }, [isVaultEncrypted, onConsumeInitialVaultBundle]);
+
+  // 자리 비움 자동 잠금 타이머 (AES-256-GCM 활성 시 + 백그라운드 복귀 경과 시간 검증)
   useEffect(() => {
     if (!isVaultEncrypted || autoLockMinutes <= 0) return;
 
     const timeoutMs = autoLockMinutes * 60 * 1000;
+    let lastActivityAt = Date.now();
+    let lastReset = lastActivityAt;
     let timerId: ReturnType<typeof setTimeout> = setTimeout(onLockNow, timeoutMs);
-    let lastReset = Date.now();
 
     const resetTimer = () => {
       const now = Date.now();
+      lastActivityAt = now;
       if (now - lastReset < 2000) return;
       lastReset = now;
       clearTimeout(timerId);
       timerId = setTimeout(onLockNow, timeoutMs);
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastActivityAt >= timeoutMs) {
+        clearTimeout(timerId);
+        onLockNow();
+      }
+    };
+
     window.addEventListener('pointerdown', resetTimer, { passive: true });
     window.addEventListener('keydown', resetTimer, { passive: true });
     window.addEventListener('mousemove', resetTimer, { passive: true });
     window.addEventListener('touchstart', resetTimer, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       clearTimeout(timerId);
@@ -362,16 +420,32 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
       window.removeEventListener('keydown', resetTimer);
       window.removeEventListener('mousemove', resetTimer);
       window.removeEventListener('touchstart', resetTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [autoLockMinutes, isVaultEncrypted, onLockNow]);
 
   const selectedEventHasConflict = useMemo(() => {
     if (!selectedEvent) return false;
-    return hasEventConflict(
-      toViewerProjectedEvent(selectedEvent, tzPrefs.viewerTimeZone),
-      mapEventsToViewerZone(events, tzPrefs.viewerTimeZone)
-    );
-  }, [selectedEvent, events, tzPrefs.viewerTimeZone]);
+    const selectedVm =
+      workspaceViewModels.byEventId.get(selectedEvent.id) ??
+      workspaceViewModels.getViewModel(selectedEvent);
+    return hasEventConflict(selectedVm.projectedEvent, workspaceViewModels.projectedEvents);
+  }, [selectedEvent, workspaceViewModels]);
+
+  const handleSelectCalendarEvent = useCallback(
+    (ev: CalendarEventItem) => {
+      setSelectedEvent(ev);
+      const vm =
+        workspaceViewModelsRef.current.byEventId.get(ev.id) ??
+        workspaceViewModelsRef.current.getViewModel(ev);
+      setSelectedDate(vm.timing.localDate);
+    },
+    [setSelectedEvent, setSelectedDate]
+  );
+
+  const handleShareEvent = useCallback((ev: CalendarEventItem) => {
+    setShareTarget({ kind: 'event', event: ev });
+  }, []);
 
   const emptyGuideText = useMemo(
     () =>
@@ -485,7 +559,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   );
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0a0c10] text-neutral-200 font-sans antialiased">
+    <CalendarEventViewModelsProvider value={workspaceViewModels}>
+      <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0a0c10] text-neutral-200 font-sans antialiased">
       {/* 1. 최상단 네비게이션 헤더 */}
       <TitleBar
         currentYear={currentYear}
@@ -636,12 +711,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 isWorkspaceEmpty={isWorkspaceEmpty}
                 onLoadSampleData={handleLoadSampleData}
                 onSelectDate={setSelectedDate}
-                onSelectEvent={(ev) => {
-                  setSelectedEvent(ev);
-                  setSelectedDate(
-                    projectEventToViewerTimeZone(ev, tzPrefs.viewerTimeZone).localDate
-                  );
-                }}
+                onSelectEvent={handleSelectCalendarEvent}
                 onMoveEventDate={handleMoveEventDate}
               />
             </div>
@@ -661,12 +731,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 isWorkspaceEmpty={isWorkspaceEmpty}
                 onLoadSampleData={handleLoadSampleData}
                 onSelectDate={setSelectedDate}
-                onSelectEvent={(ev) => {
-                  setSelectedEvent(ev);
-                  setSelectedDate(
-                    projectEventToViewerTimeZone(ev, tzPrefs.viewerTimeZone).localDate
-                  );
-                }}
+                onSelectEvent={handleSelectCalendarEvent}
                 onMoveEventDate={handleMoveEventDate}
               />
             </div>
@@ -690,7 +755,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 onToggleChecklistItem={handleToggleChecklistItem}
                 onMoveEventDate={handleMoveEventDate}
                 onQuickAiPromptForDate={handleQuickAiPromptForDate}
-                onShareEvent={(ev) => setShareTarget({ kind: 'event', event: ev })}
+                onShareEvent={handleShareEvent}
                 emptyGuideText={emptyGuideText}
                 isWorkspaceEmpty={isWorkspaceEmpty}
                 onLoadSampleData={handleLoadSampleData}
@@ -821,7 +886,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           )}
         </div>
       )}
-    </div>
+      </div>
+    </CalendarEventViewModelsProvider>
   );
 };
 
@@ -832,8 +898,11 @@ export default function App() {
   );
 
   const activeVaultSessionRef = useRef<ActiveVaultCryptoSession | null>(null);
+  const unlockedBootstrapBundleRef = useRef<VaultPlaintextBundle | null>(null);
+  const pendingPersistBundleRef = useRef<VaultPlaintextBundle | null>(null);
   const lastEncryptedSignatureRef = useRef<string>('');
   const encryptionQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const activeSessionGenerationRef = useRef<number>(0);
 
   const [autoLockMinutes, setAutoLockMinutes] = useState<AutoLockMinutesOption>(() =>
     readAutoLockMinutes()
@@ -856,6 +925,9 @@ export default function App() {
     return { mode: 'onboarding' };
   });
 
+  const gateStateRef = useRef<AppGateState>(gateState);
+  gateStateRef.current = gateState;
+
   useEffect(() => {
     let mounted = true;
     void isPlatformBiometricHardwareAvailable().then((available) => {
@@ -868,13 +940,55 @@ export default function App() {
     };
   }, []);
 
+  /**
+   * 볼트 잠금, 자동 잠금 타임아웃, 앱 언마운트, 세션 초기화 시
+   * 원시 DEK 바이트(Uint8Array)를 즉시 0으로 덮어쓰고 모든 세션·평문 번들 참조를 명시적으로 해제
+   */
   const clearActiveSessionMemory = useCallback(() => {
-    if (activeVaultSessionRef.current?.rawDekBytes) {
-      activeVaultSessionRef.current.rawDekBytes.fill(0);
+    activeSessionGenerationRef.current += 1;
+    const existingSession = activeVaultSessionRef.current;
+    if (existingSession) {
+      zeroOutBytes(existingSession.rawDekBytes);
+      (existingSession as Partial<ActiveVaultCryptoSession>).dekKey = undefined;
+      (existingSession as Partial<ActiveVaultCryptoSession>).rawDekBytes = undefined;
     }
     activeVaultSessionRef.current = null;
+    unlockedBootstrapBundleRef.current = null;
+    pendingPersistBundleRef.current = null;
     lastEncryptedSignatureRef.current = '';
+    encryptionQueueRef.current = Promise.resolve();
   }, []);
+
+  const installActiveVaultSession = useCallback(
+    (nextSession: ActiveVaultCryptoSession, bootstrapBundle: VaultPlaintextBundle) => {
+      clearActiveSessionMemory();
+      activeSessionGenerationRef.current += 1;
+      activeVaultSessionRef.current = nextSession;
+      unlockedBootstrapBundleRef.current = bootstrapBundle;
+      lastEncryptedSignatureRef.current = computeBundleDigest(bootstrapBundle);
+    },
+    [clearActiveSessionMemory]
+  );
+
+  const getInitialVaultBundle = useCallback(() => unlockedBootstrapBundleRef.current, []);
+
+  const handleConsumeInitialVaultBundle = useCallback(() => {
+    unlockedBootstrapBundleRef.current = null;
+  }, []);
+
+  // 앱 언마운트 및 문서 완전 종료(pagehide non-persisted) 시 즉시 DEK 제로화 및 메모리 참조 해제
+  useEffect(() => {
+    const handlePageHide = (e: PageTransitionEvent) => {
+      if (!e.persisted) {
+        clearActiveSessionMemory();
+      }
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      clearActiveSessionMemory();
+    };
+  }, [clearActiveSessionMemory]);
 
   // 외부 브리핑 패스 공유 링크(?pass= / #pass=) 우선 감지 (수신자 무잠금 열람 보장)
   useEffect(() => {
@@ -916,21 +1030,31 @@ export default function App() {
   }, []);
 
   const handlePersistEncryptedBundle = useCallback((bundle: VaultPlaintextBundle) => {
-    const session = activeVaultSessionRef.current;
-    if (!session) return;
+    if (!activeVaultSessionRef.current) return;
 
-    const serialized = JSON.stringify(bundle);
-    if (serialized === lastEncryptedSignatureRef.current) return;
-    lastEncryptedSignatureRef.current = serialized;
+    const digest = computeBundleDigest(bundle);
+    if (digest === lastEncryptedSignatureRef.current) return;
+    lastEncryptedSignatureRef.current = digest;
+
+    const scheduledGeneration = activeSessionGenerationRef.current;
+    pendingPersistBundleRef.current = bundle;
+    let queuedBundle: VaultPlaintextBundle | null = bundle;
 
     encryptionQueueRef.current = encryptionQueueRef.current
       .then(async () => {
+        if (activeSessionGenerationRef.current !== scheduledGeneration) return;
         const currentSession = activeVaultSessionRef.current;
-        if (!currentSession) return;
-        await persistVaultDataWithActiveDek(currentSession.dekKey, bundle);
+        if (!currentSession || !queuedBundle) return;
+        await persistVaultDataWithActiveDek(currentSession.dekKey, queuedBundle);
       })
       .catch((err) => {
         console.warn('AES-GCM 볼트 저장 실패:', err);
+      })
+      .finally(() => {
+        if (pendingPersistBundleRef.current === queuedBundle) {
+          pendingPersistBundleRef.current = null;
+        }
+        queuedBundle = null;
       });
   }, []);
 
@@ -944,61 +1068,91 @@ export default function App() {
         initialBundle
       );
 
-      activeVaultSessionRef.current = {
-        dekKey,
-        rawDekBytes: new Uint8Array(rawDekBytes),
-        pinLength: envelope.pinLength,
-      };
-      lastEncryptedSignatureRef.current = JSON.stringify(initialBundle);
-      setIsBiometricEnabled(false);
+      let ownershipTransferred = false;
+      try {
+        installActiveVaultSession(
+          {
+            dekKey,
+            rawDekBytes,
+            pinLength: envelope.pinLength,
+          },
+          initialBundle
+        );
+        ownershipTransferred = true;
+        setIsBiometricEnabled(false);
 
-      setGateState({
-        mode: 'unlocked_vault',
-        initialBundle,
-        sessionId: Date.now(),
-      });
+        setGateState({
+          mode: 'unlocked_vault',
+          sessionId: Date.now(),
+        });
+      } finally {
+        if (!ownershipTransferred) {
+          zeroOutBytes(rawDekBytes);
+        }
+      }
     },
-    []
+    [installActiveVaultSession]
   );
 
-  const handleUnlockVaultFromGate = useCallback(async (pin: string) => {
-    saveLegalConsent();
-    const { dekKey, rawDekBytes, envelope, payload } = await unlockEncryptedVault(pin);
+  const handleUnlockVaultFromGate = useCallback(
+    async (pin: string) => {
+      saveLegalConsent();
+      const { dekKey, rawDekBytes, envelope, payload } = await unlockEncryptedVault(pin);
 
-    activeVaultSessionRef.current = {
-      dekKey,
-      rawDekBytes: new Uint8Array(rawDekBytes),
-      pinLength: envelope.pinLength,
-    };
-    lastEncryptedSignatureRef.current = JSON.stringify(payload);
-    setIsBiometricEnabled(isBiometricUnlockEnabled());
+      let ownershipTransferred = false;
+      try {
+        installActiveVaultSession(
+          {
+            dekKey,
+            rawDekBytes,
+            pinLength: envelope.pinLength,
+          },
+          payload
+        );
+        ownershipTransferred = true;
+        setIsBiometricEnabled(isBiometricUnlockEnabled());
 
-    setGateState({
-      mode: 'unlocked_vault',
-      initialBundle: payload,
-      sessionId: Date.now(),
-    });
-  }, []);
+        setGateState({
+          mode: 'unlocked_vault',
+          sessionId: Date.now(),
+        });
+      } finally {
+        if (!ownershipTransferred) {
+          zeroOutBytes(rawDekBytes);
+        }
+      }
+    },
+    [installActiveVaultSession]
+  );
 
   const handleUnlockVaultWithBiometricsFromGate = useCallback(async () => {
     saveLegalConsent();
     const { dekKey, rawDekBytes, envelope, payload } =
       await unlockEncryptedVaultWithBiometrics();
 
-    activeVaultSessionRef.current = {
-      dekKey,
-      rawDekBytes: new Uint8Array(rawDekBytes),
-      pinLength: envelope.pinLength,
-    };
-    lastEncryptedSignatureRef.current = JSON.stringify(payload);
-    setIsBiometricEnabled(isBiometricUnlockEnabled());
+    let ownershipTransferred = false;
+    try {
+      installActiveVaultSession(
+        {
+          dekKey,
+          rawDekBytes,
+          pinLength: envelope.pinLength,
+        },
+        payload
+      );
+      ownershipTransferred = true;
+      setIsBiometricEnabled(isBiometricUnlockEnabled());
 
-    setGateState({
-      mode: 'unlocked_vault',
-      initialBundle: payload,
-      sessionId: Date.now(),
-    });
-  }, []);
+      setGateState({
+        mode: 'unlocked_vault',
+        sessionId: Date.now(),
+      });
+    } finally {
+      if (!ownershipTransferred) {
+        zeroOutBytes(rawDekBytes);
+      }
+    }
+  }, [installActiveVaultSession]);
 
   const handleToggleBiometrics = useCallback(async (enable: boolean) => {
     if (!enable) {
@@ -1012,8 +1166,13 @@ export default function App() {
       throw new Error('볼트 암호화 세션이 활성화되어 있지 않습니다.');
     }
 
-    await enableVaultBiometrics(new Uint8Array(session.rawDekBytes));
-    setIsBiometricEnabled(true);
+    const transientDek = new Uint8Array(session.rawDekBytes);
+    try {
+      await enableVaultBiometrics(transientDek);
+      setIsBiometricEnabled(true);
+    } finally {
+      zeroOutBytes(transientDek);
+    }
   }, []);
 
   const handleEnterBrowseWithoutLock = useCallback(() => {
@@ -1063,50 +1222,62 @@ export default function App() {
         ? new Uint8Array(activeVaultSessionRef.current.rawDekBytes)
         : undefined;
 
-      const { dekKey, rawDekBytes, envelope } = await createEncryptedVault(
-        newPin,
-        pinLength,
-        currentBundle,
-        existingRawDek
-      );
+      let nextRawDek: Uint8Array | null = null;
+      let ownershipTransferred = false;
 
-      activeVaultSessionRef.current = {
-        dekKey,
-        rawDekBytes: new Uint8Array(rawDekBytes),
-        pinLength: envelope.pinLength,
-      };
-      lastEncryptedSignatureRef.current = JSON.stringify(currentBundle);
-
-      let bioRegistered = false;
-      if (enableBiometricsAfterSetup && !existingRawDek) {
-        try {
-          await enableVaultBiometrics(new Uint8Array(rawDekBytes));
-          setIsBiometricEnabled(true);
-          bioRegistered = true;
-        } catch {
-          setIsBiometricEnabled(false);
-        }
-      } else {
-        setIsBiometricEnabled(isBiometricUnlockEnabled());
-      }
-
-      setGateState((prev) => {
-        if (prev.mode === 'unlocked_vault') {
-          return prev;
-        }
-        setTransitionNotice(
-          bioRegistered
-            ? 'AES-256-GCM 볼트 및 생체 인증 잠금 해제가 활성화되었습니다.'
-            : 'AES-256-GCM 볼트 암호화가 활성화되었습니다.'
+      try {
+        const { dekKey, rawDekBytes, envelope } = await createEncryptedVault(
+          newPin,
+          pinLength,
+          currentBundle,
+          existingRawDek
         );
-        return {
-          mode: 'unlocked_vault',
-          initialBundle: currentBundle,
-          sessionId: Date.now(),
+        nextRawDek = rawDekBytes;
+
+        let bioRegistered = false;
+        if (enableBiometricsAfterSetup && !existingRawDek) {
+          try {
+            await enableVaultBiometrics(rawDekBytes);
+            setIsBiometricEnabled(true);
+            bioRegistered = true;
+          } catch {
+            setIsBiometricEnabled(false);
+          }
+        } else {
+          setIsBiometricEnabled(isBiometricUnlockEnabled());
+        }
+
+        const wasAlreadyVaultMode = gateStateRef.current.mode === 'unlocked_vault';
+        clearActiveSessionMemory();
+        activeSessionGenerationRef.current += 1;
+        activeVaultSessionRef.current = {
+          dekKey,
+          rawDekBytes,
+          pinLength: envelope.pinLength,
         };
-      });
+        ownershipTransferred = true;
+        lastEncryptedSignatureRef.current = computeBundleDigest(currentBundle);
+
+        if (!wasAlreadyVaultMode) {
+          unlockedBootstrapBundleRef.current = currentBundle;
+          setTransitionNotice(
+            bioRegistered
+              ? 'AES-256-GCM 볼트 및 생체 인증 잠금 해제가 활성화되었습니다.'
+              : 'AES-256-GCM 볼트 암호화가 활성화되었습니다.'
+          );
+          setGateState({
+            mode: 'unlocked_vault',
+            sessionId: Date.now(),
+          });
+        }
+      } finally {
+        zeroOutBytes(existingRawDek);
+        if (!ownershipTransferred) {
+          zeroOutBytes(nextRawDek);
+        }
+      }
     },
-    []
+    [clearActiveSessionMemory]
   );
 
   const handleDisableVaultEncryptionInWorkspace = useCallback(
@@ -1172,9 +1343,10 @@ export default function App() {
       isVaultEncrypted={gateState.mode === 'unlocked_vault'}
       isBiometricEnabled={isBiometricEnabled}
       isBiometricHardwareAvailable={isBiometricHardwareAvailable}
-      initialVaultBundle={
-        gateState.mode === 'unlocked_vault' ? gateState.initialBundle : undefined
+      getInitialVaultBundle={
+        gateState.mode === 'unlocked_vault' ? getInitialVaultBundle : undefined
       }
+      onConsumeInitialVaultBundle={handleConsumeInitialVaultBundle}
       initialToastNotice={transitionNotice}
       onConsumeToastNotice={() => setTransitionNotice(null)}
       autoLockMinutes={autoLockMinutes}

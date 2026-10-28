@@ -1,8 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { CheckCircle } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { formatKoreanDateWithDay, getTodayDateString } from '../shared/dateUtils';
-import { resolveEventLuxuryTheme } from '../utils/eventTheme';
+import {
+  areShallowArraysEqual,
+  useCalendarEventViewModels,
+} from '../hooks/useCalendarEventViewModels';
 import { DayInspectorPanel } from './DayInspectorPanel';
 import { TimeGridCanvas, TimeGridColumn } from './TimeGridCanvas';
 
@@ -39,7 +42,7 @@ interface DayAgendaViewProps {
   onLoadSampleData?: () => void;
 }
 
-export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
+const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
   selectedDate,
   events,
   selectedEvent,
@@ -67,8 +70,21 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
   );
   const isToday = selectedDate === getTodayDateString();
 
+  const { byEventId, getViewModel } = useCalendarEventViewModels({
+    events,
+    projects,
+    viewerTimeZone,
+  });
+
   const allDayEvents = useMemo(() => events.filter((e) => e.isAllDay), [events]);
   const timedEvents = useMemo(() => events.filter((e) => !e.isAllDay), [events]);
+
+  const handleSelectCanvasEvent = useCallback(
+    (ev: CalendarEventItem) => {
+      onSelectEvent(ev);
+    },
+    [onSelectEvent]
+  );
 
   const columns: TimeGridColumn[] = useMemo(
     () => [
@@ -118,14 +134,16 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
           <div className="bg-[#11141d] border-b border-white/[0.07] px-4 py-2.5 flex items-center gap-3 shrink-0 flex-wrap">
             <span className="text-[11px] font-[370] text-white/42 shrink-0 tracking-[0.025em]">종일</span>
             {allDayEvents.map((ev) => {
-              const theme = resolveEventLuxuryTheme(ev, projects);
+              const vm = byEventId.get(ev.id) ?? getViewModel(ev);
+              const theme = vm.theme;
               const proj = theme.project;
               const isSelected = selectedEvent?.id === ev.id;
               return (
                 <div
                   key={ev.id}
+                  data-selected={isSelected ? 'true' : undefined}
                   onClick={() => onSelectEvent(ev)}
-                  className={`h-[27px] px-3 rounded-[7px] text-xs font-[450] tracking-[0.014em] leading-[1.4] flex items-center gap-2.5 cursor-pointer luxury-event-card border ${
+                  className={`relative overflow-hidden h-[27px] px-3 rounded-[7px] text-xs font-[450] tracking-[0.014em] leading-[1.4] flex items-center gap-2.5 cursor-pointer luxury-event-chip hover:z-20 border ${
                     theme.chipSurfaceClass
                   } ${isSelected ? theme.selectedSurfaceClass : ''} ${
                     ev.isCompleted ? 'opacity-55' : ''
@@ -133,20 +151,20 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
                 >
                   <span
                     aria-hidden="true"
-                    className={`w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
+                    className={`relative z-10 w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
                   />
                   {isComparing && proj && (
-                    <span className={`text-[10.5px] font-[440] tracking-[0.03em] ${theme.accentTextClass}`}>
+                    <span className={`relative z-10 text-[10.5px] font-[440] tracking-[0.03em] ${theme.accentTextClass}`}>
                       {proj.code || proj.name.slice(0, 4)}
                     </span>
                   )}
                   {ev.isCompleted && (
-                    <CheckCircle className="w-3 h-3 text-emerald-300/90 shrink-0" />
+                    <CheckCircle className="relative z-10 w-3 h-3 text-emerald-300/90 shrink-0" />
                   )}
                   <span
-                    className={
+                    className={`relative z-10 ${
                       ev.isCompleted ? 'line-through text-white/34' : 'text-[#f2f4f8]'
-                    }
+                    }`}
                   >
                     {ev.title}
                   </span>
@@ -168,7 +186,7 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
           projects={projects}
           comparedProjectIds={comparedProjectIds}
           scrollResetKey={selectedDate}
-          onSelectEvent={(ev) => onSelectEvent(ev)}
+          onSelectEvent={handleSelectCanvasEvent}
           onMoveEventDate={onMoveEventDate}
           showEmptyGuide={events.length === 0}
           emptyGuideText={emptyGuideText}
@@ -198,3 +216,32 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
     </div>
   );
 };
+
+function areDayAgendaViewPropsEqual(
+  prev: DayAgendaViewProps,
+  next: DayAgendaViewProps
+): boolean {
+  return (
+    prev.selectedDate === next.selectedDate &&
+    prev.selectedEvent === next.selectedEvent &&
+    prev.viewerTimeZone === next.viewerTimeZone &&
+    prev.emptyGuideText === next.emptyGuideText &&
+    prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
+    prev.onSelectEvent === next.onSelectEvent &&
+    prev.onDeleteEvent === next.onDeleteEvent &&
+    prev.onToggleComplete === next.onToggleComplete &&
+    prev.onToggleChecklistItem === next.onToggleChecklistItem &&
+    prev.onMoveEventDate === next.onMoveEventDate &&
+    prev.onQuickAiPromptForDate === next.onQuickAiPromptForDate &&
+    prev.onUpdateProject === next.onUpdateProject &&
+    prev.onUpdateTimeZone === next.onUpdateTimeZone &&
+    prev.onUpdateLocation === next.onUpdateLocation &&
+    prev.onShareEvent === next.onShareEvent &&
+    prev.onLoadSampleData === next.onLoadSampleData &&
+    areShallowArraysEqual(prev.events, next.events) &&
+    areShallowArraysEqual(prev.projects, next.projects) &&
+    areShallowArraysEqual(prev.comparedProjectIds, next.comparedProjectIds)
+  );
+}
+
+export const DayAgendaView = React.memo(DayAgendaViewComponent, areDayAgendaViewPropsEqual);

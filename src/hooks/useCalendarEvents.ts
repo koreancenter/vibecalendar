@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   INITIAL_CALENDAR_EVENTS,
   LEGACY_REAL_NAME_EVENT_IDS,
@@ -21,6 +21,7 @@ import {
   projectEventToViewerTimeZone,
   resolveEventTimeZone,
 } from '../shared/timeZoneUtils';
+import { areShallowArraysEqual } from './useCalendarEventViewModels';
 
 export interface VaultEventsSyncConfig {
   isEncrypted: boolean;
@@ -138,29 +139,54 @@ export function useCalendarEvents({
 
   const primaryProjectId = activeSelectedIds.length >= 1 ? activeSelectedIds[0] : undefined;
 
+  const prevFilteredEventsRef = useRef<CalendarEventItem[]>([]);
   const filteredEvents = useMemo(() => {
+    if (selectedCategory === '전체' && activeSelectedIds.length === 0) {
+      prevFilteredEventsRef.current = events;
+      return events;
+    }
     const selectedSet = new Set(activeSelectedIds);
-    return events.filter((e) => {
+    const next = events.filter((e) => {
       const matchCat = selectedCategory === '전체' || e.category === selectedCategory;
       const matchProj =
         selectedSet.size === 0 || (Boolean(e.projectId) && selectedSet.has(e.projectId!));
       return matchCat && matchProj;
     });
+    if (areShallowArraysEqual(prevFilteredEventsRef.current, next)) {
+      return prevFilteredEventsRef.current;
+    }
+    prevFilteredEventsRef.current = next;
+    return next;
   }, [events, selectedCategory, activeSelectedIds]);
 
+  const prevSelectedDateEventsRef = useRef<CalendarEventItem[]>([]);
   const selectedDateEvents = useMemo(() => {
-    return filteredEvents
-      .filter(
-        (e) => projectEventToViewerTimeZone(e, effectiveViewerZone).localDate === selectedDate
-      )
-      .sort((a, b) => {
-        if (a.isAllDay && !b.isAllDay) return -1;
-        if (!a.isAllDay && b.isAllDay) return 1;
-        const aLocal = projectEventToViewerTimeZone(a, effectiveViewerZone).localStartTime;
-        const bLocal = projectEventToViewerTimeZone(b, effectiveViewerZone).localStartTime;
-        return aLocal.localeCompare(bLocal);
-      });
+    const matched: Array<{ event: CalendarEventItem; localStartTime: string }> = [];
+    for (const e of filteredEvents) {
+      const timing = projectEventToViewerTimeZone(e, effectiveViewerZone);
+      if (timing.localDate === selectedDate) {
+        matched.push({ event: e, localStartTime: timing.localStartTime });
+      }
+    }
+    matched.sort((a, b) => {
+      if (a.event.isAllDay && !b.event.isAllDay) return -1;
+      if (!a.event.isAllDay && b.event.isAllDay) return 1;
+      return a.localStartTime.localeCompare(b.localStartTime);
+    });
+    const next = matched.map((item) => item.event);
+    if (areShallowArraysEqual(prevSelectedDateEventsRef.current, next)) {
+      return prevSelectedDateEventsRef.current;
+    }
+    prevSelectedDateEventsRef.current = next;
+    return next;
   }, [filteredEvents, selectedDate, effectiveViewerZone]);
+
+  useEffect(() => {
+    return () => {
+      prevFilteredEventsRef.current = [];
+      prevSelectedDateEventsRef.current = [];
+    };
+  }, []);
 
   const handlePrevMonth = useCallback(() => {
     setCurrentMonth((prevMonth) => {
@@ -297,15 +323,13 @@ export function useCalendarEvents({
       if (!target) return;
 
       setEvents((prev) => prev.filter((e) => e.id !== eventId));
-      if (selectedEvent?.id === eventId) {
-        setSelectedEvent(null);
-      }
+      setSelectedEvent((prev) => (prev?.id === eventId ? null : prev));
 
       showToast(`'${target.title}' 일정이 삭제되었습니다.`, () => {
         setEvents((current) => [...current, target]);
       });
     },
-    [events, selectedEvent, showToast]
+    [events, showToast]
   );
 
   const handleToggleComplete = useCallback((eventId: string) => {
@@ -403,9 +427,7 @@ export function useCalendarEvents({
 
       if (res.deletedEventId) {
         setEvents((prev) => prev.filter((e) => e.id !== res.deletedEventId));
-        if (selectedEvent?.id === res.deletedEventId) {
-          setSelectedEvent(null);
-        }
+        setSelectedEvent((prev) => (prev?.id === res.deletedEventId ? null : prev));
       }
 
       if (!newlyCreated.length && res.targetDate) {
@@ -415,7 +437,7 @@ export function useCalendarEvents({
       showToast(res.replyText || 'AI 요청이 반영되었습니다.');
       return newlyCreated;
     },
-    [effectiveViewerZone, jumpToDate, primaryProjectId, selectedDate, selectedEvent, showToast]
+    [effectiveViewerZone, jumpToDate, primaryProjectId, selectedDate, showToast]
   );
 
   const handleCreateEventFromVenue = useCallback(

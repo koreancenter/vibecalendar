@@ -3,14 +3,12 @@ import { Calendar, CheckCircle, AlertTriangle, Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { layoutTimeEvents, PositionedEvent } from '../utils/timeGridLayout';
 import { minutesToTime } from '../shared/scheduleUtils';
-import {
-  formatClockInTimeZone,
-  projectEventToViewerTimeZone,
-  ResolvedEventTiming,
-  toViewerProjectedEvent,
-} from '../shared/timeZoneUtils';
+import { formatClockInTimeZone } from '../shared/timeZoneUtils';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
-import { resolveEventLuxuryTheme } from '../utils/eventTheme';
+import {
+  areShallowArraysEqual,
+  useCalendarEventViewModels,
+} from '../hooks/useCalendarEventViewModels';
 
 export interface TimeGridColumn {
   date: string;
@@ -45,7 +43,7 @@ interface TimeGridCanvasProps {
   onLoadSampleData?: () => void;
 }
 
-export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
+const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
   columns,
   variant,
   viewerTimeZone,
@@ -72,24 +70,20 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
   const isComparing = comparedProjectIds.length >= 2;
 
   const columnDates = useMemo(() => columns.map((c) => c.date), [columns]);
+  const columnEvents = useMemo(() => columns.flatMap((col) => col.events), [columns]);
 
-  const { rawEventsById, timingById } = useMemo(() => {
-    const rawMap = new Map<string, CalendarEventItem>();
-    const timingMap = new Map<string, ResolvedEventTiming>();
-    for (const col of columns) {
-      for (const ev of col.events) {
-        rawMap.set(ev.id, ev);
-        timingMap.set(ev.id, projectEventToViewerTimeZone(ev, viewerTimeZone));
-      }
-    }
-    return { rawEventsById: rawMap, timingById: timingMap };
-  }, [columns, viewerTimeZone]);
+  const { byEventId, getViewModel } = useCalendarEventViewModels({
+    events: columnEvents,
+    projects,
+    viewerTimeZone,
+  });
 
   const handleSelectProjectedEvent = useCallback(
     (projectedEv: CalendarEventItem) => {
-      onSelectEvent(rawEventsById.get(projectedEv.id) || projectedEv);
+      const vm = byEventId.get(projectedEv.id);
+      onSelectEvent(vm ? vm.event : projectedEv);
     },
-    [onSelectEvent, rawEventsById]
+    [onSelectEvent, byEventId]
   );
 
   useEffect(() => {
@@ -122,16 +116,20 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
   const positionedByDate = useMemo(() => {
     const map = new Map<string, PositionedEvent[]>();
     for (const col of columns) {
-      const projectedList = col.events.map((ev) => toViewerProjectedEvent(ev, viewerTimeZone));
+      const projectedList = col.events.map(
+        (ev) => (byEventId.get(ev.id) ?? getViewModel(ev)).projectedEvent
+      );
       map.set(col.date, layoutTimeEvents(projectedList, startHour, pxPerHour));
     }
     return map;
-  }, [columns, viewerTimeZone, startHour, pxPerHour]);
+  }, [columns, byEventId, getViewModel, startHour, pxPerHour]);
 
-  const viewerNowClock = formatClockInTimeZone(new Date(), viewerTimeZone);
-  const nowMinutes = viewerNowClock.hour24 * 60 + viewerNowClock.minute;
-  const isNowInGrid = nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60;
-  const nowTopPx = ((nowMinutes - startHour * 60) * pxPerHour) / 60;
+  const hasTodayColumn = useMemo(() => columns.some((col) => col.isToday), [columns]);
+  const viewerNowClock = hasTodayColumn ? formatClockInTimeZone(new Date(), viewerTimeZone) : null;
+  const nowMinutes = viewerNowClock ? viewerNowClock.hour24 * 60 + viewerNowClock.minute : -1;
+  const isNowInGrid =
+    viewerNowClock !== null && nowMinutes >= startHour * 60 && nowMinutes <= endHour * 60;
+  const nowTopPx = viewerNowClock ? ((nowMinutes - startHour * 60) * pxPerHour) / 60 : 0;
 
   return (
     <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-[#0c0e14]">
@@ -341,15 +339,16 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                 {/* 배치된 시간제 이벤트 블록 (쿨 옵시디언 글래스 + 2px 주얼 인레이 + 단일 좌측 수직 정렬축) */}
                 {positioned.map((pos) => {
                   const ev = pos.event; // projected event in viewerTimeZone
-                  const rawEv = rawEventsById.get(ev.id) || ev;
-                  const timing = timingById.get(ev.id);
+                  const vm = byEventId.get(ev.id) ?? getViewModel(ev);
+                  const rawEv = vm.event;
+                  const timing = vm.timing;
                   const isEvSelected = selectedEvent?.id === ev.id;
                   const isInteracting = activeInteraction?.eventId === ev.id;
                   const isInteractingAndMoved = Boolean(
                     isInteracting && activeInteraction?.hasMoved
                   );
 
-                  const theme = resolveEventLuxuryTheme(rawEv, projects);
+                  const theme = vm.theme;
                   const proj = theme.project;
 
                   const leftInsetPx = isDayMode ? 12 : pos.totalColumns > 1 ? 3.5 : 4.5;
@@ -429,6 +428,8 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                   return (
                     <div
                       key={ev.id}
+                      data-dragging={isInteracting ? 'true' : undefined}
+                      data-selected={isEvSelected && !isMovedToOtherDate ? 'true' : undefined}
                       onMouseDown={(e) => {
                         onSelectDate?.(col.date);
                         startInteraction(e, ev, 'drag', col.date);
@@ -439,17 +440,17 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                         left: leftExpr,
                         width: widthExpr,
                       }}
-                      className={`group absolute ${paddingClasses} luxury-event-card cursor-grab active:cursor-grabbing z-10 flex flex-col justify-between overflow-hidden select-none border ${
+                      className={`group absolute ${paddingClasses} luxury-event-card cursor-grab active:cursor-grabbing z-10 hover:z-20 flex flex-col justify-between overflow-hidden select-none border ${
                         theme.blockSurfaceClass
                       } ${
                         isEvSelected && !isMovedToOtherDate
-                          ? `${theme.selectedSurfaceClass} z-30`
+                          ? `${theme.selectedSurfaceClass} !z-30`
                           : ''
                       } ${
                         isMovedToOtherDate
                           ? 'opacity-25 border-dashed pointer-events-none'
                           : isMovedInSameDate
-                          ? 'z-50 shadow-2xl ring-1 ring-white/30 opacity-95'
+                          ? '!z-50 shadow-2xl ring-1 ring-white/30 opacity-95'
                           : ''
                       } ${rawEv.isCompleted && !isMovedToOtherDate ? 'opacity-55' : ''}`}
                     >
@@ -466,7 +467,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                       </div>
 
                       {isCompactBlock ? (
-                        <div className="flex items-center gap-2.5 w-full overflow-hidden leading-[1.4] my-auto">
+                        <div className="relative z-10 flex items-center gap-2.5 w-full overflow-hidden leading-[1.4] my-auto">
                           <span
                             aria-hidden="true"
                             className={`w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
@@ -495,10 +496,10 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                           {/* 좌측 내경에 정밀 가공된 2px 수직 주얼 인레이 바 (모든 행의 단일 좌측 정렬축 기준선) */}
                           <span
                             aria-hidden="true"
-                            className={`pointer-events-none absolute w-[2px] rounded-full ${inlayGeometryClasses} ${theme.inlayClass}`}
+                            className={`pointer-events-none absolute z-10 w-[2px] rounded-full ${inlayGeometryClasses} ${theme.inlayClass}`}
                           />
 
-                          <div className="flex flex-col h-full overflow-hidden justify-start min-w-0">
+                          <div className="relative z-10 flex flex-col h-full overflow-hidden justify-start min-w-0">
                             {/* 1행: 미세 웨이트(370/350) + 여유로운 정폭 자간(+0.035em) 시간 킥커 */}
                             <div className="flex items-center gap-2 text-[10.5px] sm:text-[11px] tabular-nums leading-[1.4] min-w-0 tracking-[0.035em]">
                               {isComparing && proj && (
@@ -626,3 +627,55 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
     </div>
   );
 };
+
+function areTimeGridColumnsEqual(
+  prevCols: readonly TimeGridColumn[],
+  nextCols: readonly TimeGridColumn[]
+): boolean {
+  if (prevCols === nextCols) return true;
+  if (prevCols.length !== nextCols.length) return false;
+  for (let i = 0; i < prevCols.length; i++) {
+    const a = prevCols[i];
+    const b = nextCols[i];
+    if (
+      a.date !== b.date ||
+      Boolean(a.isSelected) !== Boolean(b.isSelected) ||
+      a.isToday !== b.isToday ||
+      !areShallowArraysEqual(a.events, b.events)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function areTimeGridCanvasPropsEqual(
+  prev: TimeGridCanvasProps,
+  next: TimeGridCanvasProps
+): boolean {
+  return (
+    prev.variant === next.variant &&
+    prev.viewerTimeZone === next.viewerTimeZone &&
+    prev.startHour === next.startHour &&
+    prev.endHour === next.endHour &&
+    prev.pxPerHour === next.pxPerHour &&
+    prev.selectedEvent === next.selectedEvent &&
+    prev.scrollResetKey === next.scrollResetKey &&
+    prev.showEmptyGuide === next.showEmptyGuide &&
+    prev.emptyGuideText === next.emptyGuideText &&
+    prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
+    prev.onSelectDate === next.onSelectDate &&
+    prev.onSelectEvent === next.onSelectEvent &&
+    prev.onMoveEventDate === next.onMoveEventDate &&
+    prev.onDragHoverDateChange === next.onDragHoverDateChange &&
+    prev.onLoadSampleData === next.onLoadSampleData &&
+    areTimeGridColumnsEqual(prev.columns, next.columns) &&
+    areShallowArraysEqual(prev.projects, next.projects) &&
+    areShallowArraysEqual(prev.comparedProjectIds, next.comparedProjectIds)
+  );
+}
+
+export const TimeGridCanvas = React.memo(
+  TimeGridCanvasComponent,
+  areTimeGridCanvasPropsEqual
+);

@@ -381,6 +381,40 @@ export function restorePlaintextWorkspaceStorage(bundle: VaultPlaintextBundle): 
   }
 }
 
+/**
+ * 민감 바이트 버퍼 즉시 제로화(Zero-fill) 유틸리티
+ */
+export function zeroOutBytes(...buffers: Array<Uint8Array | null | undefined>): void {
+  for (const buf of buffers) {
+    if (buf && buf.byteLength > 0) {
+      buf.fill(0);
+    }
+  }
+}
+
+export function zeroOutArrayBuffer(buffer: ArrayBuffer | null | undefined): void {
+  if (buffer && buffer.byteLength > 0) {
+    new Uint8Array(buffer).fill(0);
+  }
+}
+
+/**
+ * 평문 JSON 전문을 메모리에 상주시키지 않고 변경 여부만 판별하기 위한 경량 비가역 다이제스트
+ */
+export function computeBundleDigest(bundle: VaultPlaintextBundle): string {
+  const serialized = JSON.stringify(bundle);
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < serialized.length; i++) {
+    const ch = serialized.charCodeAt(i);
+    h1 ^= ch;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= ch ^ (i & 0xff);
+    h2 = Math.imul(h2, 0x85ebca6b);
+  }
+  return `${serialized.length}:${(h1 >>> 0).toString(16)}:${(h2 >>> 0).toString(16)}`;
+}
+
 export async function derivePinKek(
   pin: string,
   salt: Uint8Array,
@@ -390,34 +424,39 @@ export async function derivePinKek(
     throw new Error('이 브라우저는 Web Crypto 보안 암호화를 지원하지 않습니다.');
   }
 
-  const encoder = new TextEncoder();
-  const baseKey = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(pin),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveKey']
-  );
+  let pinBytes: Uint8Array | null = null;
+  try {
+    pinBytes = new TextEncoder().encode(pin);
+    const baseKey = await crypto.subtle.importKey(
+      'raw',
+      pinBytes as BufferSource,
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey']
+    );
 
-  return crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: salt as BufferSource,
-      iterations,
-      hash: 'SHA-256',
-    },
-    baseKey,
-    {
-      name: 'AES-GCM',
-      length: 256,
-    },
-    false,
-    ['encrypt', 'decrypt']
-  );
+    return await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: salt as BufferSource,
+        iterations,
+        hash: 'SHA-256',
+      },
+      baseKey,
+      {
+        name: 'AES-GCM',
+        length: 256,
+      },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  } finally {
+    zeroOutBytes(pinBytes);
+  }
 }
 
 async function importRawDekAsCryptoKey(rawDekBytes: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
+  return await crypto.subtle.importKey(
     'raw',
     rawDekBytes as BufferSource,
     { name: 'AES-GCM', length: 256 },
@@ -435,53 +474,77 @@ async function wrapDekWithPin(
   pinWrapIvBase64: string;
   pinWrappedDekBase64: string;
 }> {
-  const pinSalt = crypto.getRandomValues(new Uint8Array(16));
-  const pinWrapIv = crypto.getRandomValues(new Uint8Array(12));
-  const pinKek = await derivePinKek(pin, pinSalt, iterations);
-  const aad = new TextEncoder().encode(VAULT_PIN_SLOT_AAD_V2);
+  let pinSalt: Uint8Array | null = null;
+  let pinWrapIv: Uint8Array | null = null;
+  let aad: Uint8Array | null = null;
+  let wrappedDekBuffer: ArrayBuffer | null = null;
+  let wrappedDekBytes: Uint8Array | null = null;
 
-  const wrappedDekBuffer = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv: pinWrapIv as BufferSource,
-      additionalData: aad as BufferSource,
-      tagLength: 128,
-    },
-    pinKek,
-    rawDekBytes as BufferSource
-  );
+  try {
+    pinSalt = crypto.getRandomValues(new Uint8Array(16));
+    pinWrapIv = crypto.getRandomValues(new Uint8Array(12));
+    aad = new TextEncoder().encode(VAULT_PIN_SLOT_AAD_V2);
 
-  return {
-    pinSaltBase64: bytesToBase64(pinSalt),
-    pinWrapIvBase64: bytesToBase64(pinWrapIv),
-    pinWrappedDekBase64: bytesToBase64(new Uint8Array(wrappedDekBuffer)),
-  };
+    const pinKek = await derivePinKek(pin, pinSalt, iterations);
+    wrappedDekBuffer = await crypto.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv: pinWrapIv as BufferSource,
+        additionalData: aad as BufferSource,
+        tagLength: 128,
+      },
+      pinKek,
+      rawDekBytes as BufferSource
+    );
+    wrappedDekBytes = new Uint8Array(wrappedDekBuffer);
+
+    return {
+      pinSaltBase64: bytesToBase64(pinSalt),
+      pinWrapIvBase64: bytesToBase64(pinWrapIv),
+      pinWrappedDekBase64: bytesToBase64(wrappedDekBytes),
+    };
+  } finally {
+    zeroOutBytes(pinSalt, pinWrapIv, aad, wrappedDekBytes);
+    zeroOutArrayBuffer(wrappedDekBuffer);
+  }
 }
 
 async function encryptPayloadWithDekKey(
   dekKey: CryptoKey,
   payload: VaultPlaintextBundle
 ): Promise<{ dataIvBase64: string; ciphertextBase64: string }> {
-  const encoder = new TextEncoder();
-  const dataIv = crypto.getRandomValues(new Uint8Array(12));
-  const aad = encoder.encode(VAULT_DATA_AAD_V2);
-  const plaintextBytes = encoder.encode(JSON.stringify(payload));
+  let dataIv: Uint8Array | null = null;
+  let aad: Uint8Array | null = null;
+  let plaintextBytes: Uint8Array | null = null;
+  let cipherBuffer: ArrayBuffer | null = null;
+  let cipherBytes: Uint8Array | null = null;
 
-  const cipherBuffer = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv: dataIv as BufferSource,
-      additionalData: aad as BufferSource,
-      tagLength: 128,
-    },
-    dekKey,
-    plaintextBytes as BufferSource
-  );
+  try {
+    const encoder = new TextEncoder();
+    dataIv = crypto.getRandomValues(new Uint8Array(12));
+    aad = encoder.encode(VAULT_DATA_AAD_V2);
+    plaintextBytes = encoder.encode(JSON.stringify(payload));
 
-  return {
-    dataIvBase64: bytesToBase64(dataIv),
-    ciphertextBase64: bytesToBase64(new Uint8Array(cipherBuffer)),
-  };
+    cipherBuffer = await crypto.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv: dataIv as BufferSource,
+        additionalData: aad as BufferSource,
+        tagLength: 128,
+      },
+      dekKey,
+      plaintextBytes as BufferSource
+    );
+    cipherBytes = new Uint8Array(cipherBuffer);
+
+    return {
+      dataIvBase64: bytesToBase64(dataIv),
+      ciphertextBase64: bytesToBase64(cipherBytes),
+    };
+  } finally {
+    zeroOutBytes(plaintextBytes, dataIv, aad, cipherBytes);
+    zeroOutArrayBuffer(cipherBuffer);
+  }
 }
 
 export async function persistVaultDataWithActiveDek(
@@ -518,56 +581,80 @@ export async function createEncryptedVault(
   envelope: EncryptedVaultEnvelopeV2;
 }> {
   const isRotatingExistingDek = Boolean(existingRawDekBytes);
-  const rawDekBytes = existingRawDekBytes ?? crypto.getRandomValues(new Uint8Array(32));
+  let rawDekBytes: Uint8Array | null = null;
+  let handoffSucceeded = false;
 
-  if (!isRotatingExistingDek) {
-    await clearBiometricSlot();
+  try {
+    rawDekBytes = existingRawDekBytes
+      ? new Uint8Array(existingRawDekBytes)
+      : crypto.getRandomValues(new Uint8Array(32));
+
+    if (!isRotatingExistingDek) {
+      await clearBiometricSlot();
+    }
+
+    const dekKey = await importRawDekAsCryptoKey(rawDekBytes);
+    const pinSlot = await wrapDekWithPin(rawDekBytes, pin, DEFAULT_PBKDF2_ITERATIONS);
+    const encryptedData = await encryptPayloadWithDekKey(dekKey, payload);
+
+    const envelope: EncryptedVaultEnvelopeV2 = {
+      version: 2,
+      cipher: 'AES-256-GCM',
+      kdf: 'PBKDF2-SHA256',
+      iterations: DEFAULT_PBKDF2_ITERATIONS,
+      pinLength,
+      ...pinSlot,
+      ...encryptedData,
+      updatedAt: new Date().toISOString(),
+    };
+
+    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(envelope));
+    purgePlaintextWorkspaceStorage();
+    setBrowseSessionActive(false);
+
+    handoffSucceeded = true;
+    return { dekKey, rawDekBytes, envelope };
+  } finally {
+    if (!handoffSucceeded) {
+      zeroOutBytes(rawDekBytes);
+    }
   }
-
-  const dekKey = await importRawDekAsCryptoKey(rawDekBytes);
-  const pinSlot = await wrapDekWithPin(rawDekBytes, pin, DEFAULT_PBKDF2_ITERATIONS);
-  const encryptedData = await encryptPayloadWithDekKey(dekKey, payload);
-
-  const envelope: EncryptedVaultEnvelopeV2 = {
-    version: 2,
-    cipher: 'AES-256-GCM',
-    kdf: 'PBKDF2-SHA256',
-    iterations: DEFAULT_PBKDF2_ITERATIONS,
-    pinLength,
-    ...pinSlot,
-    ...encryptedData,
-    updatedAt: new Date().toISOString(),
-  };
-
-  localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(envelope));
-  purgePlaintextWorkspaceStorage();
-  setBrowseSessionActive(false);
-
-  return { dekKey, rawDekBytes, envelope };
 }
 
 async function decryptPayloadWithDekKey(
   dekKey: CryptoKey,
   envelope: EncryptedVaultEnvelopeV2
 ): Promise<VaultPlaintextBundle> {
-  const dataIv = base64ToBytes(envelope.dataIvBase64);
-  const ciphertext = base64ToBytes(envelope.ciphertextBase64);
-  const aad = new TextEncoder().encode(VAULT_DATA_AAD_V2);
+  let dataIv: Uint8Array | null = null;
+  let ciphertext: Uint8Array | null = null;
+  let aad: Uint8Array | null = null;
+  let plainBuffer: ArrayBuffer | null = null;
+  let plainBytes: Uint8Array | null = null;
 
-  const plainBuffer = await crypto.subtle.decrypt(
-    {
-      name: 'AES-GCM',
-      iv: dataIv as BufferSource,
-      additionalData: aad as BufferSource,
-      tagLength: 128,
-    },
-    dekKey,
-    ciphertext as BufferSource
-  );
+  try {
+    dataIv = base64ToBytes(envelope.dataIvBase64);
+    ciphertext = base64ToBytes(envelope.ciphertextBase64);
+    aad = new TextEncoder().encode(VAULT_DATA_AAD_V2);
 
-  const decodedText = new TextDecoder().decode(plainBuffer);
-  const parsed = JSON.parse(decodedText) as Partial<VaultPlaintextBundle>;
-  return normalizeDecodedBundle(parsed);
+    plainBuffer = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: dataIv as BufferSource,
+        additionalData: aad as BufferSource,
+        tagLength: 128,
+      },
+      dekKey,
+      ciphertext as BufferSource
+    );
+    plainBytes = new Uint8Array(plainBuffer);
+
+    const decodedText = new TextDecoder().decode(plainBytes);
+    const parsed = JSON.parse(decodedText) as Partial<VaultPlaintextBundle>;
+    return normalizeDecodedBundle(parsed);
+  } finally {
+    zeroOutBytes(plainBytes, dataIv, ciphertext, aad);
+    zeroOutArrayBuffer(plainBuffer);
+  }
 }
 
 export async function unlockEncryptedVault(pin: string): Promise<{
@@ -583,31 +670,45 @@ export async function unlockEncryptedVault(pin: string): Promise<{
 
   // v1 볼트 하위 호환 자동 마이그레이션 -> v2 Envelope DEK 구조 승격
   if (stored.version === 1) {
-    const salt = base64ToBytes(stored.saltBase64);
-    const iv = base64ToBytes(stored.ivBase64);
-    const ciphertext = base64ToBytes(stored.ciphertextBase64);
-    const aad = new TextEncoder().encode(VAULT_AAD_LABEL_V1);
-    const legacyKey = await derivePinKek(pin, salt, stored.iterations);
+    let salt: Uint8Array | null = null;
+    let iv: Uint8Array | null = null;
+    let ciphertext: Uint8Array | null = null;
+    let aad: Uint8Array | null = null;
+    let plainBuffer: ArrayBuffer | null = null;
+    let plainBytes: Uint8Array | null = null;
+    let payload: VaultPlaintextBundle;
 
-    let plainBuffer: ArrayBuffer;
     try {
-      plainBuffer = await crypto.subtle.decrypt(
-        {
-          name: 'AES-GCM',
-          iv: iv as BufferSource,
-          additionalData: aad as BufferSource,
-          tagLength: 128,
-        },
-        legacyKey,
-        ciphertext as BufferSource
-      );
-    } catch {
-      throw new VaultInvalidPinError('PIN이 일치하지 않습니다.');
-    }
+      salt = base64ToBytes(stored.saltBase64);
+      iv = base64ToBytes(stored.ivBase64);
+      ciphertext = base64ToBytes(stored.ciphertextBase64);
+      aad = new TextEncoder().encode(VAULT_AAD_LABEL_V1);
 
-    const decodedText = new TextDecoder().decode(plainBuffer);
-    const parsed = JSON.parse(decodedText) as Partial<VaultPlaintextBundle>;
-    const payload = normalizeDecodedBundle(parsed);
+      const legacyKey = await derivePinKek(pin, salt, stored.iterations);
+
+      try {
+        plainBuffer = await crypto.subtle.decrypt(
+          {
+            name: 'AES-GCM',
+            iv: iv as BufferSource,
+            additionalData: aad as BufferSource,
+            tagLength: 128,
+          },
+          legacyKey,
+          ciphertext as BufferSource
+        );
+      } catch {
+        throw new VaultInvalidPinError('PIN이 일치하지 않습니다.');
+      }
+
+      plainBytes = new Uint8Array(plainBuffer);
+      const decodedText = new TextDecoder().decode(plainBytes);
+      const parsed = JSON.parse(decodedText) as Partial<VaultPlaintextBundle>;
+      payload = normalizeDecodedBundle(parsed);
+    } finally {
+      zeroOutBytes(plainBytes, salt, iv, ciphertext, aad);
+      zeroOutArrayBuffer(plainBuffer);
+    }
 
     const upgraded = await createEncryptedVault(pin, stored.pinLength, payload);
     return {
@@ -617,39 +718,60 @@ export async function unlockEncryptedVault(pin: string): Promise<{
   }
 
   // v2 Envelope DEK 복호화
-  const pinSalt = base64ToBytes(stored.pinSaltBase64);
-  const pinWrapIv = base64ToBytes(stored.pinWrapIvBase64);
-  const pinWrappedDek = base64ToBytes(stored.pinWrappedDekBase64);
-  const pinSlotAad = new TextEncoder().encode(VAULT_PIN_SLOT_AAD_V2);
+  let pinSalt: Uint8Array | null = null;
+  let pinWrapIv: Uint8Array | null = null;
+  let pinWrappedDek: Uint8Array | null = null;
+  let pinSlotAad: Uint8Array | null = null;
+  let rawDekBuffer: ArrayBuffer | null = null;
+  let unwrappedView: Uint8Array | null = null;
+  let rawDekBytes: Uint8Array | null = null;
+  let handoffSucceeded = false;
 
-  const pinKek = await derivePinKek(pin, pinSalt, stored.iterations);
-
-  let rawDekBuffer: ArrayBuffer;
   try {
-    rawDekBuffer = await crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv: pinWrapIv as BufferSource,
-        additionalData: pinSlotAad as BufferSource,
-        tagLength: 128,
-      },
-      pinKek,
-      pinWrappedDek as BufferSource
-    );
-  } catch {
-    throw new VaultInvalidPinError('PIN이 일치하지 않습니다.');
+    pinSalt = base64ToBytes(stored.pinSaltBase64);
+    pinWrapIv = base64ToBytes(stored.pinWrapIvBase64);
+    pinWrappedDek = base64ToBytes(stored.pinWrappedDekBase64);
+    pinSlotAad = new TextEncoder().encode(VAULT_PIN_SLOT_AAD_V2);
+
+    const pinKek = await derivePinKek(pin, pinSalt, stored.iterations);
+
+    try {
+      rawDekBuffer = await crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: pinWrapIv as BufferSource,
+          additionalData: pinSlotAad as BufferSource,
+          tagLength: 128,
+        },
+        pinKek,
+        pinWrappedDek as BufferSource
+      );
+    } catch {
+      throw new VaultInvalidPinError('PIN이 일치하지 않습니다.');
+    }
+
+    unwrappedView = new Uint8Array(rawDekBuffer);
+    rawDekBytes = new Uint8Array(unwrappedView.byteLength);
+    rawDekBytes.set(unwrappedView);
+    unwrappedView.fill(0);
+
+    const dekKey = await importRawDekAsCryptoKey(rawDekBytes);
+    const payload = await decryptPayloadWithDekKey(dekKey, stored);
+
+    handoffSucceeded = true;
+    return {
+      dekKey,
+      rawDekBytes,
+      envelope: stored,
+      payload,
+    };
+  } finally {
+    zeroOutBytes(pinSalt, pinWrapIv, pinWrappedDek, pinSlotAad, unwrappedView);
+    zeroOutArrayBuffer(rawDekBuffer);
+    if (!handoffSucceeded) {
+      zeroOutBytes(rawDekBytes);
+    }
   }
-
-  const rawDekBytes = new Uint8Array(rawDekBuffer);
-  const dekKey = await importRawDekAsCryptoKey(rawDekBytes);
-  const payload = await decryptPayloadWithDekKey(dekKey, stored);
-
-  return {
-    dekKey,
-    rawDekBytes,
-    envelope: stored,
-    payload,
-  };
 }
 
 export async function unlockEncryptedVaultWithBiometrics(): Promise<{
@@ -663,20 +785,35 @@ export async function unlockEncryptedVaultWithBiometrics(): Promise<{
     throw new Error('생체 인증을 지원하는 암호화 볼트가 설정되어 있지 않습니다.');
   }
 
-  const rawDekBytes = await unlockDekWithBiometrics();
-  const dekKey = await importRawDekAsCryptoKey(rawDekBytes);
-  const payload = await decryptPayloadWithDekKey(dekKey, stored);
+  let rawDekBytes: Uint8Array | null = null;
+  let handoffSucceeded = false;
 
-  return {
-    dekKey,
-    rawDekBytes,
-    envelope: stored,
-    payload,
-  };
+  try {
+    rawDekBytes = await unlockDekWithBiometrics();
+    const dekKey = await importRawDekAsCryptoKey(rawDekBytes);
+    const payload = await decryptPayloadWithDekKey(dekKey, stored);
+
+    handoffSucceeded = true;
+    return {
+      dekKey,
+      rawDekBytes,
+      envelope: stored,
+      payload,
+    };
+  } finally {
+    if (!handoffSucceeded) {
+      zeroOutBytes(rawDekBytes);
+    }
+  }
 }
 
 export async function enableVaultBiometrics(rawDekBytes: Uint8Array): Promise<void> {
-  await enrollBiometricForDek(rawDekBytes);
+  const transientDekBytes = new Uint8Array(rawDekBytes);
+  try {
+    await enrollBiometricForDek(transientDekBytes);
+  } finally {
+    zeroOutBytes(transientDekBytes);
+  }
 }
 
 export async function disableVaultBiometrics(): Promise<void> {

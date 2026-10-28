@@ -4,9 +4,18 @@ import dotenv from 'dotenv';
 import {
   securityHeaders,
   apiRateLimiter,
-  validateAndSanitizeAgentRequest,
-  validateAndSanitizeGroundingRequest,
-  validateAndSanitizeLocationResolveRequest,
+  inlineMediaJsonParser,
+  textCommandJsonParser,
+  enforceInlineMediaOrTextPayloadLimit,
+  validateAgentCommandRequest,
+  sanitizeAgentCommandPayload,
+  validateGroundingDatesRequest,
+  sanitizeGroundingDatesPayload,
+  validateResolveLocationRequest,
+  sanitizeResolveLocationPayload,
+  toSafeErrorResponse,
+  logSafeServerError,
+  apiErrorHandler,
 } from './src/server/security';
 import {
   executeGeminiAgentCommand,
@@ -24,88 +33,107 @@ app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(securityHeaders);
 
-// 멀티모달 첨부(PDF, 오디오, 다중 이미지 등) 라우트에 18MB 허용, 나머지 전역 라우트는 256KB 제한
-const agentJsonParser = express.json({ limit: '18mb' });
-const defaultJsonParser = express.json({ limit: '256kb' });
-
-app.get('/api/health', defaultJsonParser, (_req, res) => {
+app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
     geminiEnabled: isGeminiConfigured(),
   });
 });
 
-app.post('/api/agent/command', apiRateLimiter, agentJsonParser, async (req, res) => {
-  const validation = validateAndSanitizeAgentRequest(req.body);
-  if (!validation.ok) {
-    res.status(validation.status).json({ error: validation.error });
-    return;
-  }
+// 인라인 미디어/첨부 파일을 처리하는 엔드포인트: 인라인 첨부 포함 시에만 18MB 허용, 일반 텍스트 명령은 512KB 강제
+app.post(
+  '/api/agent/command',
+  apiRateLimiter,
+  inlineMediaJsonParser,
+  enforceInlineMediaOrTextPayloadLimit,
+  async (req, res) => {
+    try {
+      const validation = validateAgentCommandRequest(req.body);
+      if (!validation.ok) {
+        res.status(validation.status).json({ error: validation.error });
+        return;
+      }
 
-  try {
-    const result = await executeGeminiAgentCommand(validation.value);
-    res.json(result);
-  } catch (err: unknown) {
-    const statusCode =
-      err && typeof err === 'object' && 'statusCode' in err && typeof err.statusCode === 'number'
-        ? err.statusCode
-        : 502;
-    const message =
-      err instanceof Error && err.message
-        ? err.message
-        : 'AI 일정 분석 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
-    console.error('[Agent API Error]:', err);
-    res.status(statusCode).json({ error: message });
+      const sanitizedPayload = sanitizeAgentCommandPayload(validation.value);
+      if (
+        !sanitizedPayload.prompt &&
+        !sanitizedPayload.image &&
+        sanitizedPayload.attachments.length === 0
+      ) {
+        res.status(400).json({ error: '자연어 지시나 분석할 파일을 전달해 주세요.' });
+        return;
+      }
+
+      const result = await executeGeminiAgentCommand(sanitizedPayload);
+      res.json(result);
+    } catch (err: unknown) {
+      logSafeServerError('Agent Command API', err);
+      const safe = toSafeErrorResponse(err, 'command', true);
+      res.status(safe.status).json({ error: safe.error });
+    }
   }
+);
+
+// 일반 텍스트 명령 엔드포인트: 엄격한 512KB 페이로드 상한 적용
+app.post(
+  '/api/agent/grounding-dates',
+  apiRateLimiter,
+  textCommandJsonParser,
+  async (req, res) => {
+    try {
+      const validation = validateGroundingDatesRequest(req.body);
+      if (!validation.ok) {
+        res.status(validation.status).json({ error: validation.error });
+        return;
+      }
+
+      const sanitizedPayload = sanitizeGroundingDatesPayload(validation.value);
+      const result = await executeGroundedDateDiscoveryCommand(sanitizedPayload);
+      res.json(result);
+    } catch (err: unknown) {
+      logSafeServerError('Grounding Dates API', err);
+      const safe = toSafeErrorResponse(err, 'grounding', false);
+      res.status(safe.status).json({ error: safe.error });
+    }
+  }
+);
+
+// 일반 텍스트 명령 엔드포인트: 엄격한 512KB 페이로드 상한 적용
+app.post(
+  '/api/agent/resolve-location',
+  apiRateLimiter,
+  textCommandJsonParser,
+  async (req, res) => {
+    try {
+      const validation = validateResolveLocationRequest(req.body);
+      if (!validation.ok) {
+        res.status(validation.status).json({ error: validation.error });
+        return;
+      }
+
+      const sanitizedPayload = sanitizeResolveLocationPayload(validation.value);
+      if (!sanitizedPayload.location && !sanitizedPayload.locationAddress) {
+        res.status(400).json({ error: '탐색할 장소명 또는 주소를 입력해 주세요.' });
+        return;
+      }
+
+      const result = await executeResolveLocationCommand(sanitizedPayload);
+      res.json(result);
+    } catch (err: unknown) {
+      logSafeServerError('Resolve Location API', err);
+      const safe = toSafeErrorResponse(err, 'location', false);
+      res.status(safe.status).json({ error: safe.error });
+    }
+  }
+);
+
+// 정의되지 않은 /api 경로 요청 시 내부 스택 노출 없이 정갈한 JSON 404 반환
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: '요청한 API 경로를 찾을 수 없습니다.' });
 });
 
-app.post('/api/agent/grounding-dates', apiRateLimiter, defaultJsonParser, async (req, res) => {
-  const validation = validateAndSanitizeGroundingRequest(req.body);
-  if (!validation.ok) {
-    res.status(validation.status).json({ error: validation.error });
-    return;
-  }
-
-  try {
-    const result = await executeGroundedDateDiscoveryCommand(validation.value);
-    res.json(result);
-  } catch (err: unknown) {
-    const statusCode =
-      err && typeof err === 'object' && 'statusCode' in err && typeof err.statusCode === 'number'
-        ? err.statusCode
-        : 502;
-    const message =
-      err instanceof Error && err.message
-        ? err.message
-        : 'Google 검색 기반 일정 탐색 중 일시적인 오류가 발생했습니다.';
-    console.error('[Grounding API Error]:', err);
-    res.status(statusCode).json({ error: message });
-  }
-});
-
-app.post('/api/agent/resolve-location', apiRateLimiter, defaultJsonParser, async (req, res) => {
-  const validation = validateAndSanitizeLocationResolveRequest(req.body);
-  if (!validation.ok) {
-    res.status(validation.status).json({ error: validation.error });
-    return;
-  }
-
-  try {
-    const result = await executeResolveLocationCommand(validation.value);
-    res.json(result);
-  } catch (err: unknown) {
-    const statusCode =
-      err && typeof err === 'object' && 'statusCode' in err && typeof err.statusCode === 'number'
-        ? err.statusCode
-        : 502;
-    const message =
-      err instanceof Error && err.message
-        ? err.message
-        : '장소 주소 및 위경도 탐색 중 오류가 발생했습니다.';
-    console.error('[Resolve Location API Error]:', err);
-    res.status(statusCode).json({ error: message });
-  }
-});
+// JSON 파서 오류(400/413/415) 및 예기치 않은 미들웨어 오류 안전 처리
+app.use(apiErrorHandler);
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

@@ -1,15 +1,24 @@
+import http from 'http';
 import express from 'express';
-import {
-  CalendarCategory,
-  CalendarEventItem,
-  ChatSessionHistoryItem,
-  ProjectItem,
-} from '../types';
+import { z } from 'zod';
+import { CalendarCategory, CalendarEventItem, ChecklistItem } from '../types';
 import { getTodayDateString } from '../shared/dateUtils';
 import { normalizeCoordinates, normalizePlaceAndAddress } from '../shared/locationUtils';
 import { isValidTimeZone } from '../shared/timeZoneUtils';
 
-const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+export const INLINE_MEDIA_PAYLOAD_LIMIT = '18mb';
+export const TEXT_COMMAND_PAYLOAD_LIMIT = '512kb';
+
+export const INLINE_MEDIA_MAX_BYTES = 18 * 1024 * 1024; // 18MB (인라인 미디어·첨부 파일 전용 상한)
+export const TEXT_COMMAND_MAX_BYTES = 512 * 1024; // 512KB (일반 텍스트 명령 전용 엄격 상한)
+
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
+
 const ALLOWED_INLINE_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -26,20 +35,42 @@ const ALLOWED_INLINE_MIME_TYPES = new Set([
   'audio/x-m4a',
   'audio/aac',
 ]);
+
+const ALLOWED_TEXT_MIME_TYPES = new Set([
+  'text/plain',
+  'text/calendar',
+  'text/csv',
+  'text/tab-separated-values',
+  'text/markdown',
+  'text/html',
+  'text/xml',
+  'application/json',
+  'application/xml',
+]);
+
 const MAX_IMAGE_BASE64_LENGTH = 5_600_000; // 약 4MB 바이너리 상한
 const MAX_INLINE_BASE64_LENGTH = 11_200_000; // 약 8MB 바이너리 상한
 const MAX_TOTAL_INLINE_BASE64_LENGTH = 18_000_000; // 총합 약 13.5MB 상한
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_TEXT_LENGTH = 40_000;
 const MAX_PROMPT_LENGTH = 8_000;
+const MAX_GROUNDING_TOPIC_LENGTH = 300;
+const MAX_EXISTING_EVENTS_INPUT = 500;
+const MAX_EXISTING_EVENTS_SANITIZED = 40;
+const MAX_CHAT_HISTORY_INPUT = 50;
+const MAX_CHAT_HISTORY_SANITIZED = 10;
+const MAX_PROJECTS_INPUT = 200;
+const MAX_PROJECTS_SANITIZED = 20;
 
-export const ALLOWED_CLOUD_MODELS = new Set([
+export const CloudModelIdSchema = z.enum([
   'gemini-3.8-flash',
   'gemini-3.1-flash-lite',
   'gemini-flash-latest',
 ]);
 
-const VALID_CATEGORIES = new Set<CalendarCategory>([
+export const ALLOWED_CLOUD_MODELS = new Set<string>(CloudModelIdSchema.options);
+
+export const CalendarCategorySchema = z.enum([
   '업무',
   '방문·출장',
   '식사·모임',
@@ -47,6 +78,137 @@ const VALID_CATEGORIES = new Set<CalendarCategory>([
   '행사·세미나',
   '기타',
 ]);
+
+const AttachmentKindSchema = z.enum([
+  'image',
+  'pdf',
+  'audio',
+  'spreadsheet',
+  'calendar',
+  'document',
+  'clipboard',
+]);
+
+const ProjectStatusSchema = z.enum(['active', 'planning', 'on_hold', 'completed']);
+
+const AgentActionTypeSchema = z.enum([
+  'QUERY_EVENTS',
+  'CREATE_EVENT',
+  'RECOMMEND_VENUE',
+  'SUGGEST_DATES',
+  'UPDATE_EVENT',
+  'DELETE_EVENT',
+  'GENERAL_CHAT',
+]);
+
+const BASE64_PATTERN = /^[A-Za-z0-9+/=\r\n]+$/;
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const HH_MM_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+// C0/C1 제어 문자, DEL, 제로폭·양방향 오버라이드(Bidi) 유니코드 제어 문자 제거 패턴
+const UNSAFE_CONTROL_AND_BIDI_CHARS =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g;
+
+// 프롬프트 구획 구분자 위장(Indirect Prompt Injection) 무력화 패턴
+const SPOOFED_SECTION_HEADER_PATTERN =
+  /\[\s*(시스템\s*지침|보안\s*및\s*역할\s*경계|사용자\s*요청|세션\s*컨텍스트\s*JSON[^\]]*|첨부\s*미디어\s*파일[^\]]*|첨부\s*문서\/데이터\s*파일[^\]]*)\s*\]/gi;
+
+function stripUnsafeChars(val: string): string {
+  return val.replace(UNSAFE_CONTROL_AND_BIDI_CHARS, '');
+}
+
+export function sanitizeSingleLineText(val: string | null | undefined, maxLen: number): string {
+  if (!val) return '';
+  return stripUnsafeChars(val)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+}
+
+export function sanitizeMultilineText(
+  val: string | null | undefined,
+  maxLen: number,
+  neutralizePromptDelimiters = false
+): string {
+  if (!val) return '';
+  let cleaned = stripUnsafeChars(val)
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n{4,}/g, '\n\n\n');
+
+  if (neutralizePromptDelimiters) {
+    cleaned = cleaned.replace(SPOOFED_SECTION_HEADER_PATTERN, '($1)');
+  }
+
+  return cleaned.trim().slice(0, maxLen);
+}
+
+function sanitizeIdentifier(val: string | null | undefined, maxLen: number): string {
+  if (!val) return '';
+  return stripUnsafeChars(val)
+    .replace(/[\r\n\t[\]<>\\]+/g, '')
+    .trim()
+    .slice(0, maxLen);
+}
+
+function sanitizeFileName(val: string | null | undefined, maxLen = 160): string {
+  if (!val) return '첨부파일';
+  const baseName = stripUnsafeChars(val)
+    .split(/[/\\]/)
+    .pop() || '';
+  const cleaned = baseName
+    .replace(/\.\.+/g, '.')
+    .replace(/[\r\n\t[\]<>]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, maxLen);
+  return cleaned || '첨부파일';
+}
+
+function sanitizeBase64Data(val: string): string {
+  return val.replace(/\s+/g, '');
+}
+
+export function isValidIsoDateString(val: string): boolean {
+  const trimmed = val.trim();
+  if (!ISO_DATE_PATTERN.test(trimmed)) return false;
+  const [yStr, mStr, dStr] = trimmed.split('-');
+  const year = Number(yStr);
+  const month = Number(mStr);
+  const day = Number(dStr);
+  if (year < 1970 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return (
+    probe.getUTCFullYear() === year &&
+    probe.getUTCMonth() === month - 1 &&
+    probe.getUTCDate() === day
+  );
+}
+
+function normalizeTimeString(val: string | null | undefined, fallback: string): string {
+  const cleaned = sanitizeSingleLineText(val, 8);
+  return HH_MM_PATTERN.test(cleaned) ? cleaned : fallback;
+}
+
+function resolveAllowedCloudModel(rawModelId: string | null | undefined): string {
+  const cleaned = sanitizeSingleLineText(rawModelId, 60);
+  const parsed = CloudModelIdSchema.safeParse(cleaned);
+  return parsed.success ? parsed.data : 'gemini-3.8-flash';
+}
+
+function resolveAllowedCategory(rawCategory: string | null | undefined): CalendarCategory {
+  const cleaned = sanitizeSingleLineText(rawCategory, 30);
+  const parsed = CalendarCategorySchema.safeParse(cleaned);
+  return parsed.success ? parsed.data : '기타';
+}
+
+function resolveAttachmentKind(rawKind: string | null | undefined): string {
+  const cleaned = sanitizeSingleLineText(rawKind, 30).toLowerCase();
+  const parsed = AttachmentKindSchema.safeParse(cleaned);
+  return parsed.success ? parsed.data : 'document';
+}
 
 /**
  * 보안 헤더 미들웨어 (CSP 적용 및 프리뷰 iframe 호환성 보장)
@@ -77,7 +239,7 @@ export function securityHeaders(
 }
 
 /**
- * LRU/FIFO 상한 보호형 인메모리 Rate Limiter (전체 clear 우회 취약점 해결)
+ * LRU/FIFO 상한 보호형 인메모리 Rate Limiter
  */
 interface RateLimitRecord {
   count: number;
@@ -110,7 +272,6 @@ export function apiRateLimiter(
 
   if (!record || now > record.resetTime) {
     if (!record && ipRateLimitMap.size >= MAX_ENTRIES_BEFORE_EVICT) {
-      // 가장 오래된 단일 엔트리만 제거하여 기존 차단 대상 IP 기록 보존
       const oldestKey = ipRateLimitMap.keys().next().value;
       if (oldestKey !== undefined) {
         ipRateLimitMap.delete(oldestKey);
@@ -134,6 +295,345 @@ export function apiRateLimiter(
   next();
 }
 
+/**
+ * 엔드포인트별 페이로드 크기 보호 파서 및 인라인 미디어 조건부 검증 미들웨어
+ * - 일반 텍스트 명령 엔드포인트: 엄격한 512KB 제한
+ * - 인라인 미디어/첨부 엔드포인트(/api/agent/command): 인라인 미디어가 포함된 경우에만 최대 18MB 허용,
+ *   인라인 미디어가 없는 일반 텍스트 요청은 동일하게 512KB로 엄격 제한
+ */
+const rawRequestByteSizeMap = new WeakMap<http.IncomingMessage, number>();
+
+export const textCommandJsonParser = express.json({
+  limit: TEXT_COMMAND_PAYLOAD_LIMIT,
+  strict: true,
+});
+
+export const inlineMediaJsonParser = express.json({
+  limit: INLINE_MEDIA_PAYLOAD_LIMIT,
+  strict: true,
+  verify: (req, _res, buf) => {
+    rawRequestByteSizeMap.set(req, buf.byteLength);
+  },
+});
+
+const InlineMediaEnvelopeSchema = z.object({
+  image: z
+    .object({
+      data: z.string().min(1),
+      mimeType: z.string().min(1),
+    })
+    .nullish(),
+  attachments: z
+    .array(
+      z.object({
+        transferMode: z.string().optional(),
+        base64Data: z.string().optional(),
+      })
+    )
+    .nullish(),
+});
+
+export function enforceInlineMediaOrTextPayloadLimit(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): void {
+  const measuredBytes =
+    rawRequestByteSizeMap.get(req) ?? Number(req.headers['content-length'] || 0);
+
+  if (measuredBytes <= TEXT_COMMAND_MAX_BYTES) {
+    next();
+    return;
+  }
+
+  const envelope = InlineMediaEnvelopeSchema.safeParse(req.body);
+  if (!envelope.success) {
+    res.status(413).json({
+      error: '텍스트 명령 요청 크기가 허용 한도(512KB)를 초과했습니다.',
+    });
+    return;
+  }
+
+  let inlineBase64Bytes = 0;
+  if (envelope.data.image?.data) {
+    inlineBase64Bytes += Buffer.byteLength(envelope.data.image.data, 'utf8');
+  }
+  if (envelope.data.attachments) {
+    for (const att of envelope.data.attachments) {
+      if (att.transferMode === 'inline' && att.base64Data) {
+        inlineBase64Bytes += Buffer.byteLength(att.base64Data, 'utf8');
+      }
+    }
+  }
+
+  // 인라인 미디어/첨부 파일이 전혀 없는 일반 텍스트 명령은 512KB 초과 즉시 차단
+  if (inlineBase64Bytes === 0) {
+    res.status(413).json({
+      error: '텍스트 명령 요청 크기가 허용 한도(512KB)를 초과했습니다.',
+    });
+    return;
+  }
+
+  // 인라인 미디어를 제외한 일반 JSON/텍스트 본문 영역이 512KB를 초과하는 비정상 페이로드도 차단
+  const nonInlineBytes = Math.max(0, measuredBytes - inlineBase64Bytes);
+  if (nonInlineBytes > TEXT_COMMAND_MAX_BYTES) {
+    res.status(413).json({
+      error: '첨부 미디어를 제외한 텍스트 본문 크기가 허용 한도(512KB)를 초과했습니다.',
+    });
+    return;
+  }
+
+  next();
+}
+
+/**
+ * 명시적 Zod 요청 스키마 정의
+ */
+const ChecklistItemInputSchema = z.object({
+  id: z.string().max(120).optional(),
+  text: z.string().max(500),
+  done: z.boolean().optional().default(false),
+});
+
+export const CalendarEventInputSchema = z.object({
+  id: z.string().min(1).max(160),
+  title: z.string().min(1).max(400),
+  date: z.string().regex(ISO_DATE_PATTERN, { message: '일정 날짜 형식이 올바르지 않습니다.' }),
+  endDate: z.string().max(30).nullish(),
+  startTime: z.string().max(20).optional().default('10:00'),
+  endTime: z.string().max(20).optional().default('11:00'),
+  timeZone: z.string().max(100).nullish(),
+  isAllDay: z.boolean().optional().default(false),
+  category: z.string().max(60).optional().default('기타'),
+  projectId: z.string().max(160).nullish(),
+  location: z.string().max(500).nullish(),
+  locationAddress: z.string().max(600).nullish(),
+  locationLat: z.number().nullish(),
+  locationLng: z.number().nullish(),
+  content: z.string().max(8_000).nullish(),
+  isCompleted: z.boolean().nullish(),
+  checklist: z.array(ChecklistItemInputSchema).max(60).nullish(),
+  isSample: z.boolean().nullish(),
+});
+
+const ChatTargetEventInputSchema = z.object({
+  id: z.string().max(160),
+  title: z.string().max(400),
+});
+
+const ChatUpdatedEventInputSchema = z.object({
+  id: z.string().max(160),
+  targetTitle: z.string().max(400).optional(),
+  diffSummary: z.string().max(600).optional(),
+  updates: CalendarEventInputSchema.partial().optional(),
+});
+
+export const ChatHistoryItemInputSchema = z.object({
+  id: z.string().max(160).optional(),
+  role: z.enum(['user', 'assistant']),
+  content: z.string().max(16_000),
+  timestamp: z.string().max(80).optional(),
+  actionType: AgentActionTypeSchema.optional(),
+  targetDate: z.string().max(30).nullish(),
+  targetEvent: ChatTargetEventInputSchema.nullish(),
+  createdEvents: z.array(CalendarEventInputSchema).max(30).nullish(),
+  updatedEvent: ChatUpdatedEventInputSchema.nullish(),
+  deletedEventId: z.string().max(160).nullish(),
+});
+
+export const ProjectInputSchema = z.object({
+  id: z.string().min(1).max(160),
+  name: z.string().min(1).max(200),
+  code: z.string().max(40).nullish(),
+  description: z.string().max(1_500).nullish(),
+  color: z.string().max(40).optional(),
+  status: ProjectStatusSchema.optional(),
+  startDate: z.string().max(30).nullish(),
+  endDate: z.string().max(30).nullish(),
+  clientOrOrg: z.string().max(200).nullish(),
+  createdAt: z.string().max(80).optional(),
+  isSample: z.boolean().nullish(),
+});
+
+export const AgentImageSchema = z.object({
+  mimeType: z
+    .string()
+    .min(1)
+    .max(60)
+    .refine((m) => ALLOWED_IMAGE_MIME_TYPES.has(m.trim().toLowerCase()), {
+      message: '지원하지 않는 이미지 형식입니다. JPG, PNG, WEBP, GIF 파일만 허용됩니다.',
+    }),
+  data: z
+    .string()
+    .min(1, { message: '이미지 데이터가 비어 있습니다.' })
+    .refine((d) => BASE64_PATTERN.test(d.trim()), {
+      message: '손상된 Base64 이미지 데이터입니다.',
+    }),
+});
+
+const InlineAttachmentInputSchema = z.object({
+  name: z.string().min(1).max(260),
+  mimeType: z
+    .string()
+    .min(1)
+    .max(120)
+    .refine((m) => ALLOWED_INLINE_MIME_TYPES.has(m.trim().toLowerCase()), {
+      message: '지원되지 않는 첨부 미디어 형식입니다.',
+    }),
+  kind: z.string().min(1).max(40),
+  transferMode: z.literal('inline'),
+  base64Data: z
+    .string()
+    .min(1, { message: '첨부 파일의 바이너리 데이터가 비어 있습니다.' })
+    .refine((d) => BASE64_PATTERN.test(d.trim()), {
+      message: '첨부 파일의 Base64 데이터가 손상되었습니다.',
+    }),
+  textContent: z.string().max(MAX_ATTACHMENT_TEXT_LENGTH).optional(),
+});
+
+const TextAttachmentInputSchema = z.object({
+  name: z.string().min(1).max(260),
+  mimeType: z.string().min(1).max(120),
+  kind: z.string().min(1).max(40),
+  transferMode: z.literal('text'),
+  textContent: z
+    .string()
+    .max(MAX_ATTACHMENT_TEXT_LENGTH, {
+      message: `첨부 문서의 텍스트 길이가 허용 범위(최대 ${MAX_ATTACHMENT_TEXT_LENGTH.toLocaleString()}자)를 초과했습니다.`,
+    })
+    .refine((t) => sanitizeMultilineText(t, MAX_ATTACHMENT_TEXT_LENGTH).length > 0, {
+      message: '첨부 문서의 텍스트 내용이 비어 있습니다.',
+    }),
+  base64Data: z.string().optional(),
+});
+
+export const AgentAttachmentSchema = z.discriminatedUnion('transferMode', [
+  InlineAttachmentInputSchema,
+  TextAttachmentInputSchema,
+]);
+
+export const AgentContextSchema = z.object({
+  currentYear: z.number().int().min(2000).max(2100).optional(),
+  selectedDate: z
+    .string()
+    .refine(isValidIsoDateString, {
+      message: '선택된 기준 날짜 형식이 올바르지 않습니다 (YYYY-MM-DD).',
+    })
+    .optional(),
+  viewerTimeZone: z.string().max(80).nullish(),
+  existingEvents: z
+    .array(CalendarEventInputSchema)
+    .max(MAX_EXISTING_EVENTS_INPUT)
+    .optional()
+    .default([]),
+  selectedEvent: CalendarEventInputSchema.nullish(),
+  lastReferencedEvent: CalendarEventInputSchema.nullish(),
+  chatHistory: z
+    .array(ChatHistoryItemInputSchema)
+    .max(MAX_CHAT_HISTORY_INPUT)
+    .optional()
+    .default([]),
+  projects: z.array(ProjectInputSchema).max(MAX_PROJECTS_INPUT).optional().default([]),
+  selectedProjectId: z.string().max(120).optional().default('all'),
+  activeProjectName: z.string().max(200).nullish(),
+});
+
+export const AgentCommandRequestSchema = z
+  .object({
+    prompt: z.string().optional().default(''),
+    modelId: z.string().max(80).optional(),
+    image: AgentImageSchema.nullish(),
+    attachments: z
+      .array(AgentAttachmentSchema)
+      .max(MAX_ATTACHMENTS, {
+        message: `첨부 파일은 한 번에 최대 ${MAX_ATTACHMENTS}개까지 전송할 수 있습니다.`,
+      })
+      .nullish(),
+    context: AgentContextSchema.optional(),
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    const trimmedPrompt = stripUnsafeChars(data.prompt).trim();
+    if (trimmedPrompt.length > MAX_PROMPT_LENGTH) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['prompt'],
+        message: `프롬프트 길이가 허용 범위(최대 ${MAX_PROMPT_LENGTH.toLocaleString()}자)를 초과했습니다.`,
+      });
+    }
+
+    const hasPrompt = trimmedPrompt.length > 0;
+    const hasImage = Boolean(data.image);
+    const hasAttachments = Boolean(data.attachments && data.attachments.length > 0);
+
+    if (!hasPrompt && !hasImage && !hasAttachments) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['prompt'],
+        message: '자연어 지시나 분석할 파일을 전달해 주세요.',
+      });
+    }
+  });
+
+export const GroundingDatesRequestSchema = z
+  .object({
+    topic: z
+      .string()
+      .optional()
+      .default('')
+      .refine((s) => stripUnsafeChars(s).trim().length <= MAX_GROUNDING_TOPIC_LENGTH, {
+        message: `탐색 주제는 최대 ${MAX_GROUNDING_TOPIC_LENGTH}자까지 입력할 수 있습니다.`,
+      }),
+    rangeMonths: z
+      .number()
+      .min(1, { message: '탐색 기간은 최소 1개월 이상이어야 합니다.' })
+      .max(12, { message: '탐색 기간은 최대 12개월 이하만 허용됩니다.' })
+      .optional()
+      .default(3),
+    modelId: z.string().max(80).optional(),
+    currentYear: z.number().int().min(2000).max(2100).optional(),
+    selectedDate: z
+      .string()
+      .refine(isValidIsoDateString, {
+        message: '기준 날짜 형식이 올바르지 않습니다 (YYYY-MM-DD).',
+      })
+      .optional(),
+    activeProjectName: z.string().max(200).nullish(),
+    activeProjectClient: z.string().max(200).nullish(),
+    existingEvents: z
+      .array(CalendarEventInputSchema)
+      .max(MAX_EXISTING_EVENTS_INPUT)
+      .optional()
+      .default([]),
+  })
+  .strict();
+
+export const ResolveLocationRequestSchema = z
+  .object({
+    location: z.string().max(240).optional().default(''),
+    locationAddress: z.string().max(300).nullish(),
+    modelId: z.string().max(80).optional(),
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    const cleanLoc = sanitizeSingleLineText(data.location, 180);
+    const cleanAddr = sanitizeSingleLineText(data.locationAddress, 220);
+    if (!cleanLoc && !cleanAddr) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['location'],
+        message: '탐색할 장소명 또는 주소를 입력해 주세요.',
+      });
+    }
+  });
+
+export type AgentCommandRequestInput = z.infer<typeof AgentCommandRequestSchema>;
+export type GroundingDatesRequestInput = z.infer<typeof GroundingDatesRequestSchema>;
+export type ResolveLocationRequestInput = z.infer<typeof ResolveLocationRequestSchema>;
+
+/**
+ * 살균(Sanitized) 출력 인터페이스 (executeGeminiAgentCommand 및 하위 명령 계약)
+ */
 export interface SanitizedAgentImage {
   data: string;
   mimeType: string;
@@ -174,258 +674,6 @@ export interface ValidatedAgentRequest {
   context: SanitizedAgentContext;
 }
 
-function cleanText(val: unknown, maxLen: number): string {
-  if (typeof val !== 'string') return '';
-  return val.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim().slice(0, maxLen);
-}
-
-function sanitizeEventSummary(raw: unknown): CalendarEventItem | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const e = raw as Record<string, unknown>;
-  const id = cleanText(e.id, 80);
-  const title = cleanText(e.title, 150);
-  const date = cleanText(e.date, 10);
-  if (!id || !title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-
-  const rawCat = cleanText(e.category, 20) as CalendarCategory;
-  const category: CalendarCategory = VALID_CATEGORIES.has(rawCat) ? rawCat : '기타';
-
-  const rawTz = cleanText(e.timeZone, 60);
-  const timeZone = rawTz && isValidTimeZone(rawTz) ? rawTz : undefined;
-
-  const { location, locationAddress } = normalizePlaceAndAddress(
-    cleanText(e.location, 160),
-    cleanText(e.locationAddress, 200)
-  );
-  const { locationLat, locationLng } = normalizeCoordinates(e.locationLat, e.locationLng);
-
-  return {
-    id,
-    title,
-    date,
-    startTime: /^\d{2}:\d{2}$/.test(cleanText(e.startTime, 5)) ? cleanText(e.startTime, 5) : '10:00',
-    endTime: /^\d{2}:\d{2}$/.test(cleanText(e.endTime, 5)) ? cleanText(e.endTime, 5) : '11:00',
-    timeZone,
-    isAllDay: Boolean(e.isAllDay),
-    category,
-    projectId: cleanText(e.projectId, 80) || undefined,
-    location,
-    locationAddress,
-    locationLat,
-    locationLng,
-    content: cleanText(e.content, 500) || undefined,
-    isCompleted: Boolean(e.isCompleted),
-  };
-}
-
-/**
- * 에이전트 API 요청 본문 및 첨부 이미지 정밀 검증/살균
- */
-export function validateAndSanitizeAgentRequest(
-  body: unknown
-): { ok: true; value: ValidatedAgentRequest } | { ok: false; status: number; error: string } {
-  if (!body || typeof body !== 'object') {
-    return { ok: false, status: 400, error: '유효하지 않은 요청 형식입니다.' };
-  }
-
-  const rawBody = body as Record<string, unknown>;
-  const rawPrompt = typeof rawBody.prompt === 'string' ? rawBody.prompt.trim() : '';
-
-  if (rawPrompt.length > MAX_PROMPT_LENGTH) {
-    return {
-      ok: false,
-      status: 400,
-      error: `프롬프트 길이가 허용 범위(최대 ${MAX_PROMPT_LENGTH.toLocaleString()}자)를 초과했습니다.`,
-    };
-  }
-
-  let validatedImage: SanitizedAgentImage | undefined;
-  if (rawBody.image !== undefined && rawBody.image !== null) {
-    if (typeof rawBody.image !== 'object') {
-      return { ok: false, status: 400, error: '이미지 데이터 형식이 올바르지 않습니다.' };
-    }
-    const imgObj = rawBody.image as Record<string, unknown>;
-    const mimeType = cleanText(imgObj.mimeType, 40).toLowerCase();
-    const data = typeof imgObj.data === 'string' ? imgObj.data.trim() : '';
-
-    if (!ALLOWED_IMAGE_MIME_TYPES.has(mimeType)) {
-      return {
-        ok: false,
-        status: 400,
-        error: '지원하지 않는 이미지 형식입니다. JPG, PNG, WEBP 파일만 허용됩니다.',
-      };
-    }
-    if (!data || data.length > MAX_IMAGE_BASE64_LENGTH) {
-      return {
-        ok: false,
-        status: 413,
-        error: '첨부 이미지 용량이 너무 큽니다. 4MB 이하의 이미지를 사용해 주세요.',
-      };
-    }
-    if (!/^[A-Za-z0-9+/=\r\n]+$/.test(data)) {
-      return { ok: false, status: 400, error: '손상된 Base64 이미지 데이터입니다.' };
-    }
-    validatedImage = { data, mimeType };
-  }
-
-  const validatedAttachments: SanitizedAgentAttachment[] = [];
-  if (rawBody.attachments !== undefined && rawBody.attachments !== null) {
-    if (!Array.isArray(rawBody.attachments)) {
-      return { ok: false, status: 400, error: '첨부 파일 목록 형식이 올바르지 않습니다.' };
-    }
-    if (rawBody.attachments.length > MAX_ATTACHMENTS) {
-      return {
-        ok: false,
-        status: 400,
-        error: `첨부 파일은 한 번에 최대 ${MAX_ATTACHMENTS}개까지 전송할 수 있습니다.`,
-      };
-    }
-
-    let totalInlineLen = validatedImage ? validatedImage.data.length : 0;
-
-    for (const rawAtt of rawBody.attachments) {
-      if (!rawAtt || typeof rawAtt !== 'object') {
-        return { ok: false, status: 400, error: '유효하지 않은 첨부 항목이 포함되어 있습니다.' };
-      }
-      const att = rawAtt as Record<string, unknown>;
-      const name = cleanText(att.name, 160) || '첨부파일';
-      const kind = cleanText(att.kind, 30) || 'document';
-      const mimeType = cleanText(att.mimeType, 100).toLowerCase() || 'text/plain';
-      const transferMode = att.transferMode === 'inline' ? 'inline' : 'text';
-
-      if (transferMode === 'inline') {
-        if (!ALLOWED_INLINE_MIME_TYPES.has(mimeType)) {
-          return {
-            ok: false,
-            status: 400,
-            error: `'${name}' 파일은 지원되지 않는 미디어 형식(${mimeType})입니다.`,
-          };
-        }
-        const base64Data = typeof att.base64Data === 'string' ? att.base64Data.trim() : '';
-        if (!base64Data || base64Data.length > MAX_INLINE_BASE64_LENGTH) {
-          return {
-            ok: false,
-            status: 413,
-            error: `'${name}' 파일 용량이 허용 상한(8MB)을 초과했습니다.`,
-          };
-        }
-        if (!/^[A-Za-z0-9+/=\r\n]+$/.test(base64Data)) {
-          return { ok: false, status: 400, error: `'${name}' Base64 데이터가 손상되었습니다.` };
-        }
-        totalInlineLen += base64Data.length;
-        if (totalInlineLen > MAX_TOTAL_INLINE_BASE64_LENGTH) {
-          return {
-            ok: false,
-            status: 413,
-            error: '전체 첨부 파일 용량 합계가 너무 큽니다. 일부 파일을 나누어 전송해 주세요.',
-          };
-        }
-        validatedAttachments.push({
-          name,
-          mimeType,
-          kind,
-          transferMode: 'inline',
-          base64Data,
-        });
-      } else {
-        const textContent = cleanText(att.textContent, MAX_ATTACHMENT_TEXT_LENGTH);
-        if (!textContent) {
-          return { ok: false, status: 400, error: `'${name}' 문서의 텍스트 내용이 비어 있습니다.` };
-        }
-        validatedAttachments.push({
-          name,
-          mimeType: 'text/plain',
-          kind,
-          transferMode: 'text',
-          textContent,
-        });
-      }
-    }
-  }
-
-  const prompt = cleanText(rawPrompt, MAX_PROMPT_LENGTH);
-  if (!prompt && !validatedImage && validatedAttachments.length === 0) {
-    return { ok: false, status: 400, error: '자연어 지시나 분석할 파일을 전달해 주세요.' };
-  }
-
-  const rawCtx =
-    rawBody.context && typeof rawBody.context === 'object'
-      ? (rawBody.context as Record<string, unknown>)
-      : {};
-
-  const currentYear =
-    typeof rawCtx.currentYear === 'number' &&
-    Number.isInteger(rawCtx.currentYear) &&
-    rawCtx.currentYear >= 2000 &&
-    rawCtx.currentYear <= 2100
-      ? rawCtx.currentYear
-      : new Date().getFullYear();
-
-  const rawDate = cleanText(rawCtx.selectedDate, 10);
-  const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : getTodayDateString();
-
-  const existingEvents = Array.isArray(rawCtx.existingEvents)
-    ? rawCtx.existingEvents
-        .slice(0, 40)
-        .map(sanitizeEventSummary)
-        .filter((e): e is CalendarEventItem => e !== null)
-    : [];
-
-  const chatHistory = Array.isArray(rawCtx.chatHistory)
-    ? rawCtx.chatHistory
-        .slice(-10)
-        .filter((h): h is ChatSessionHistoryItem => Boolean(h && typeof h === 'object'))
-        .map((h) => ({
-          role: (h.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-          content: cleanText(h.content, 600),
-          targetEventTitle: h.targetEvent ? cleanText(h.targetEvent.title, 100) : undefined,
-          targetEventId: h.targetEvent ? cleanText(h.targetEvent.id, 80) : undefined,
-        }))
-    : [];
-
-  const projects = Array.isArray(rawCtx.projects)
-    ? rawCtx.projects
-        .slice(0, 20)
-        .filter((p): p is ProjectItem => Boolean(p && typeof p === 'object'))
-        .map((p) => ({
-          id: cleanText(p.id, 80),
-          name: cleanText(p.name, 100),
-          code: cleanText(p.code, 16) || undefined,
-          clientOrOrg: cleanText(p.clientOrOrg, 100) || undefined,
-        }))
-        .filter((p) => Boolean(p.id && p.name))
-    : [];
-
-  const rawModelId = cleanText(rawBody.modelId, 60);
-  const modelId = ALLOWED_CLOUD_MODELS.has(rawModelId) ? rawModelId : 'gemini-3.8-flash';
-
-  const rawViewerTz = cleanText(rawCtx.viewerTimeZone, 60);
-  const viewerTimeZone =
-    rawViewerTz && isValidTimeZone(rawViewerTz) ? rawViewerTz : 'Asia/Seoul';
-
-  return {
-    ok: true,
-    value: {
-      prompt,
-      modelId,
-      image: validatedImage,
-      attachments: validatedAttachments,
-      context: {
-        currentYear,
-        selectedDate,
-        viewerTimeZone,
-        selectedProjectId: cleanText(rawCtx.selectedProjectId, 80) || 'all',
-        activeProjectName: cleanText(rawCtx.activeProjectName, 100) || undefined,
-        existingEvents,
-        selectedEvent: sanitizeEventSummary(rawCtx.selectedEvent),
-        lastReferencedEvent: sanitizeEventSummary(rawCtx.lastReferencedEvent),
-        chatHistory,
-        projects,
-      },
-    },
-  };
-}
-
 export interface ValidatedGroundingDiscoveryRequest {
   topic: string;
   rangeMonths: number;
@@ -437,96 +685,552 @@ export interface ValidatedGroundingDiscoveryRequest {
   existingEvents: CalendarEventItem[];
 }
 
-export function validateAndSanitizeGroundingRequest(
-  body: unknown
-):
-  | { ok: true; value: ValidatedGroundingDiscoveryRequest }
-  | { ok: false; status: number; error: string } {
-  if (!body || typeof body !== 'object') {
-    return { ok: false, status: 400, error: '유효하지 않은 요청 형식입니다.' };
-  }
-
-  const raw = body as Record<string, unknown>;
-  const topic = cleanText(raw.topic, 300);
-
-  const rawRange =
-    typeof raw.rangeMonths === 'number' && Number.isFinite(raw.rangeMonths)
-      ? Math.round(raw.rangeMonths)
-      : 3;
-  const rangeMonths = Math.min(12, Math.max(1, rawRange));
-
-  const rawModelId = cleanText(raw.modelId, 60);
-  const modelId = ALLOWED_CLOUD_MODELS.has(rawModelId) ? rawModelId : 'gemini-3.8-flash';
-
-  const currentYear =
-    typeof raw.currentYear === 'number' &&
-    Number.isInteger(raw.currentYear) &&
-    raw.currentYear >= 2000 &&
-    raw.currentYear <= 2100
-      ? raw.currentYear
-      : new Date().getFullYear();
-
-  const rawDate = cleanText(raw.selectedDate, 10);
-  const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : getTodayDateString();
-
-  const existingEvents = Array.isArray(raw.existingEvents)
-    ? raw.existingEvents
-        .slice(0, 40)
-        .map(sanitizeEventSummary)
-        .filter((e): e is CalendarEventItem => e !== null)
-    : [];
-
-  return {
-    ok: true,
-    value: {
-      topic,
-      rangeMonths,
-      modelId,
-      currentYear,
-      selectedDate,
-      activeProjectName: cleanText(raw.activeProjectName, 100) || undefined,
-      activeProjectClient: cleanText(raw.activeProjectClient, 100) || undefined,
-      existingEvents,
-    },
-  };
-}
-
 export interface ValidatedLocationResolveRequest {
   location: string;
   locationAddress?: string;
   modelId: string;
 }
 
-export function validateAndSanitizeLocationResolveRequest(
+export type ValidationResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; status: number; error: string };
+
+const SAFE_KOREAN_ISSUE_PATTERN = /[가-힣]/;
+
+function formatSafeZodError(zodError: z.ZodError, fallbackMessage: string): string {
+  const firstIssue = zodError.issues[0];
+  if (!firstIssue) {
+    return fallbackMessage;
+  }
+
+  if (firstIssue.code === 'unrecognized_keys') {
+    return '허용되지 않은 요청 필드가 포함되어 있습니다.';
+  }
+
+  if (firstIssue.message && SAFE_KOREAN_ISSUE_PATTERN.test(firstIssue.message)) {
+    return firstIssue.message;
+  }
+
+  const rootField = firstIssue.path.length > 0 ? String(firstIssue.path[0]) : '';
+  switch (rootField) {
+    case 'prompt':
+      return '프롬프트 입력 형식이 올바르지 않습니다.';
+    case 'image':
+      return '첨부 이미지 데이터 형식이 올바르지 않습니다.';
+    case 'attachments':
+      return '첨부 파일 데이터 형식이 올바르지 않습니다.';
+    case 'context':
+      return '세션 컨텍스트 데이터 형식이 올바르지 않습니다.';
+    case 'topic':
+      return '일정 탐색 주제 형식이 올바르지 않습니다.';
+    case 'rangeMonths':
+      return '탐색 기간은 1~12개월 범위의 숫자여야 합니다.';
+    case 'selectedDate':
+      return '기준 날짜 형식이 올바르지 않습니다 (YYYY-MM-DD).';
+    case 'currentYear':
+      return '기준 연도 값이 올바르지 않습니다.';
+    case 'existingEvents':
+      return '기존 일정 목록 형식이 올바르지 않습니다.';
+    case 'location':
+    case 'locationAddress':
+      return '장소명 또는 주소 입력 형식이 올바르지 않습니다.';
+    case 'modelId':
+      return '선택한 AI 모델 식별자 형식이 올바르지 않습니다.';
+    default:
+      return fallbackMessage;
+  }
+}
+
+type ParsedCalendarEventInput = z.infer<typeof CalendarEventInputSchema>;
+
+function sanitizeEventSummary(raw: ParsedCalendarEventInput | null | undefined): CalendarEventItem | null {
+  if (!raw) return null;
+
+  const id = sanitizeIdentifier(raw.id, 80);
+  const title = sanitizeSingleLineText(raw.title, 150);
+  const date = sanitizeSingleLineText(raw.date, 10);
+  if (!id || !title || !isValidIsoDateString(date)) {
+    return null;
+  }
+
+  const rawEndDate = sanitizeSingleLineText(raw.endDate, 10);
+  const endDate = rawEndDate && isValidIsoDateString(rawEndDate) ? rawEndDate : undefined;
+
+  const category = resolveAllowedCategory(raw.category);
+  const rawTz = sanitizeSingleLineText(raw.timeZone, 60);
+  const timeZone = rawTz && isValidTimeZone(rawTz) ? rawTz : undefined;
+
+  const { location, locationAddress } = normalizePlaceAndAddress(
+    sanitizeSingleLineText(raw.location, 160),
+    sanitizeSingleLineText(raw.locationAddress, 200)
+  );
+  const { locationLat, locationLng } = normalizeCoordinates(raw.locationLat, raw.locationLng);
+
+  let checklist: ChecklistItem[] | undefined;
+  if (raw.checklist && raw.checklist.length > 0) {
+    const cleanedChecklist = raw.checklist
+      .slice(0, 8)
+      .map((item, idx) => {
+        const text = sanitizeSingleLineText(item.text, 200);
+        if (!text) return null;
+        return {
+          id: sanitizeIdentifier(item.id, 80) || `chk-${idx}`,
+          text,
+          done: Boolean(item.done),
+        };
+      })
+      .filter((item): item is ChecklistItem => item !== null);
+
+    if (cleanedChecklist.length > 0) {
+      checklist = cleanedChecklist;
+    }
+  }
+
+  return {
+    id,
+    title,
+    date,
+    endDate,
+    startTime: normalizeTimeString(raw.startTime, '10:00'),
+    endTime: normalizeTimeString(raw.endTime, '11:00'),
+    timeZone,
+    isAllDay: Boolean(raw.isAllDay),
+    category,
+    projectId: sanitizeIdentifier(raw.projectId, 80) || undefined,
+    location,
+    locationAddress,
+    locationLat,
+    locationLng,
+    content: sanitizeMultilineText(raw.content, 500, true) || undefined,
+    isCompleted: Boolean(raw.isCompleted),
+    checklist,
+  };
+}
+
+/**
+ * Zod 스키마 검증 완료 후 executeGeminiAgentCommand 전달 전 정밀 페이로드 살균
+ */
+export function sanitizeAgentCommandPayload(
+  input: AgentCommandRequestInput
+): ValidatedAgentRequest {
+  const prompt = sanitizeMultilineText(input.prompt, MAX_PROMPT_LENGTH, false);
+  const modelId = resolveAllowedCloudModel(input.modelId);
+
+  let sanitizedImage: SanitizedAgentImage | undefined;
+  if (input.image) {
+    const mimeType = sanitizeSingleLineText(input.image.mimeType, 40).toLowerCase();
+    const data = sanitizeBase64Data(input.image.data);
+    if (ALLOWED_IMAGE_MIME_TYPES.has(mimeType) && data.length > 0) {
+      sanitizedImage = {
+        data,
+        mimeType,
+      };
+    }
+  }
+
+  const sanitizedAttachments: SanitizedAgentAttachment[] = [];
+  if (input.attachments) {
+    for (const att of input.attachments.slice(0, MAX_ATTACHMENTS)) {
+      const name = sanitizeFileName(att.name, 160);
+      const kind = resolveAttachmentKind(att.kind);
+
+      if (att.transferMode === 'inline') {
+        const mimeType = sanitizeSingleLineText(att.mimeType, 100).toLowerCase();
+        const base64Data = sanitizeBase64Data(att.base64Data);
+        if (ALLOWED_INLINE_MIME_TYPES.has(mimeType) && base64Data.length > 0) {
+          sanitizedAttachments.push({
+            name,
+            mimeType,
+            kind,
+            transferMode: 'inline',
+            base64Data,
+          });
+        }
+      } else {
+        const rawTextMime = sanitizeSingleLineText(att.mimeType, 100).toLowerCase();
+        const mimeType = ALLOWED_TEXT_MIME_TYPES.has(rawTextMime) ? rawTextMime : 'text/plain';
+        const textContent = sanitizeMultilineText(
+          att.textContent,
+          MAX_ATTACHMENT_TEXT_LENGTH,
+          true
+        );
+        if (textContent.length > 0) {
+          sanitizedAttachments.push({
+            name,
+            mimeType,
+            kind,
+            transferMode: 'text',
+            textContent,
+          });
+        }
+      }
+    }
+  }
+
+  const rawCtx = input.context;
+  const currentYear = rawCtx?.currentYear ?? new Date().getFullYear();
+  const selectedDate =
+    rawCtx?.selectedDate && isValidIsoDateString(rawCtx.selectedDate)
+      ? rawCtx.selectedDate.trim()
+      : getTodayDateString();
+
+  const rawViewerTz = sanitizeSingleLineText(rawCtx?.viewerTimeZone, 60);
+  const viewerTimeZone =
+    rawViewerTz && isValidTimeZone(rawViewerTz) ? rawViewerTz : 'Asia/Seoul';
+
+  const existingEvents = (rawCtx?.existingEvents ?? [])
+    .slice(0, MAX_EXISTING_EVENTS_SANITIZED)
+    .map((ev) => sanitizeEventSummary(ev))
+    .filter((ev): ev is CalendarEventItem => ev !== null);
+
+  const chatHistory = (rawCtx?.chatHistory ?? [])
+    .slice(-MAX_CHAT_HISTORY_SANITIZED)
+    .map((item) => {
+      const content = sanitizeMultilineText(item.content, 600, true);
+      if (!content) return null;
+      const targetEventTitle = item.targetEvent
+        ? sanitizeSingleLineText(item.targetEvent.title, 100) || undefined
+        : undefined;
+      const targetEventId = item.targetEvent
+        ? sanitizeIdentifier(item.targetEvent.id, 80) || undefined
+        : undefined;
+      return {
+        role: item.role,
+        content,
+        targetEventTitle,
+        targetEventId,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+
+  const projects = (rawCtx?.projects ?? [])
+    .slice(0, MAX_PROJECTS_SANITIZED)
+    .map((proj) => {
+      const id = sanitizeIdentifier(proj.id, 80);
+      const name = sanitizeSingleLineText(proj.name, 100);
+      if (!id || !name) return null;
+      return {
+        id,
+        name,
+        code: sanitizeSingleLineText(proj.code, 16) || undefined,
+        clientOrOrg: sanitizeSingleLineText(proj.clientOrOrg, 100) || undefined,
+      };
+    })
+    .filter((proj): proj is NonNullable<typeof proj> => proj !== null);
+
+  const selectedProjectId = sanitizeIdentifier(rawCtx?.selectedProjectId, 80) || 'all';
+  const activeProjectName = sanitizeSingleLineText(rawCtx?.activeProjectName, 100) || undefined;
+
+  return {
+    prompt,
+    modelId,
+    image: sanitizedImage,
+    attachments: sanitizedAttachments,
+    context: {
+      currentYear,
+      selectedDate,
+      viewerTimeZone,
+      selectedProjectId,
+      activeProjectName,
+      existingEvents,
+      selectedEvent: sanitizeEventSummary(rawCtx?.selectedEvent),
+      lastReferencedEvent: sanitizeEventSummary(rawCtx?.lastReferencedEvent),
+      chatHistory,
+      projects,
+    },
+  };
+}
+
+export function sanitizeGroundingDatesPayload(
+  input: GroundingDatesRequestInput
+): ValidatedGroundingDiscoveryRequest {
+  const topic = sanitizeSingleLineText(input.topic, MAX_GROUNDING_TOPIC_LENGTH);
+  const rangeMonths = Math.min(12, Math.max(1, Math.round(input.rangeMonths)));
+  const modelId = resolveAllowedCloudModel(input.modelId);
+  const currentYear = input.currentYear ?? new Date().getFullYear();
+  const selectedDate =
+    input.selectedDate && isValidIsoDateString(input.selectedDate)
+      ? input.selectedDate.trim()
+      : getTodayDateString();
+
+  const existingEvents = input.existingEvents
+    .slice(0, MAX_EXISTING_EVENTS_SANITIZED)
+    .map((ev) => sanitizeEventSummary(ev))
+    .filter((ev): ev is CalendarEventItem => ev !== null);
+
+  return {
+    topic,
+    rangeMonths,
+    modelId,
+    currentYear,
+    selectedDate,
+    activeProjectName: sanitizeSingleLineText(input.activeProjectName, 100) || undefined,
+    activeProjectClient: sanitizeSingleLineText(input.activeProjectClient, 100) || undefined,
+    existingEvents,
+  };
+}
+
+export function sanitizeResolveLocationPayload(
+  input: ResolveLocationRequestInput
+): ValidatedLocationResolveRequest {
+  const rawLocation = sanitizeSingleLineText(input.location, 180);
+  const rawAddress = sanitizeSingleLineText(input.locationAddress, 220) || undefined;
+  const { location, locationAddress } = normalizePlaceAndAddress(rawLocation, rawAddress);
+  const effectiveLocation = location || rawLocation || locationAddress || rawAddress || '';
+
+  return {
+    location: effectiveLocation,
+    locationAddress: locationAddress || rawAddress,
+    modelId: resolveAllowedCloudModel(input.modelId),
+  };
+}
+
+/**
+ * 요청 검증 함수 (명시적 Zod 스키마 검증 + 용량 상한 검증)
+ */
+export function validateAgentCommandRequest(
   body: unknown
-):
-  | { ok: true; value: ValidatedLocationResolveRequest }
-  | { ok: false; status: number; error: string } {
-  if (!body || typeof body !== 'object') {
+): ValidationResult<AgentCommandRequestInput> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, status: 400, error: '유효하지 않은 요청 형식입니다.' };
   }
 
-  const raw = body as Record<string, unknown>;
-  const location = cleanText(raw.location, 180);
-  const locationAddress = cleanText(raw.locationAddress, 220) || undefined;
-
-  if (!location && !locationAddress) {
+  const parsed = AgentCommandRequestSchema.safeParse(body);
+  if (!parsed.success) {
     return {
       ok: false,
       status: 400,
-      error: '탐색할 장소명 또는 주소를 입력해 주세요.',
+      error: formatSafeZodError(parsed.error, '유효하지 않은 명령 요청 형식입니다.'),
     };
   }
 
-  const rawModelId = cleanText(raw.modelId, 60);
-  const modelId = ALLOWED_CLOUD_MODELS.has(rawModelId) ? rawModelId : 'gemini-3.8-flash';
+  const data = parsed.data;
+  let totalInlineBase64Len = 0;
+
+  if (data.image) {
+    const cleanImgData = sanitizeBase64Data(data.image.data);
+    if (cleanImgData.length > MAX_IMAGE_BASE64_LENGTH) {
+      return {
+        ok: false,
+        status: 413,
+        error: '첨부 이미지 용량이 너무 큽니다. 4MB 이하의 이미지를 사용해 주세요.',
+      };
+    }
+    totalInlineBase64Len += cleanImgData.length;
+  }
+
+  if (data.attachments) {
+    for (const att of data.attachments) {
+      if (att.transferMode === 'inline') {
+        const cleanAttData = sanitizeBase64Data(att.base64Data);
+        if (cleanAttData.length > MAX_INLINE_BASE64_LENGTH) {
+          return {
+            ok: false,
+            status: 413,
+            error: '첨부 파일 용량이 허용 상한(8MB)을 초과했습니다.',
+          };
+        }
+        totalInlineBase64Len += cleanAttData.length;
+        if (totalInlineBase64Len > MAX_TOTAL_INLINE_BASE64_LENGTH) {
+          return {
+            ok: false,
+            status: 413,
+            error: '전체 첨부 파일 용량 합계가 너무 큽니다. 일부 파일을 나누어 전송해 주세요.',
+          };
+        }
+      }
+    }
+  }
+
+  return { ok: true, value: data };
+}
+
+export function validateGroundingDatesRequest(
+  body: unknown
+): ValidationResult<GroundingDatesRequestInput> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, status: 400, error: '유효하지 않은 요청 형식입니다.' };
+  }
+
+  const parsed = GroundingDatesRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      error: formatSafeZodError(parsed.error, '유효하지 않은 일정 탐색 요청 형식입니다.'),
+    };
+  }
+
+  return { ok: true, value: parsed.data };
+}
+
+export function validateResolveLocationRequest(
+  body: unknown
+): ValidationResult<ResolveLocationRequestInput> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, status: 400, error: '유효하지 않은 요청 형식입니다.' };
+  }
+
+  const parsed = ResolveLocationRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      error: formatSafeZodError(parsed.error, '유효하지 않은 위치 탐색 요청 형식입니다.'),
+    };
+  }
+
+  return { ok: true, value: parsed.data };
+}
+
+/**
+ * 통합 검증 + 살균 헬퍼 (하위 호환 유지)
+ */
+export function validateAndSanitizeAgentRequest(
+  body: unknown
+): ValidationResult<ValidatedAgentRequest> {
+  const validated = validateAgentCommandRequest(body);
+  if (!validated.ok) return validated;
+  const sanitized = sanitizeAgentCommandPayload(validated.value);
+  if (!sanitized.prompt && !sanitized.image && sanitized.attachments.length === 0) {
+    return { ok: false, status: 400, error: '자연어 지시나 분석할 파일을 전달해 주세요.' };
+  }
+  return { ok: true, value: sanitized };
+}
+
+export function validateAndSanitizeGroundingRequest(
+  body: unknown
+): ValidationResult<ValidatedGroundingDiscoveryRequest> {
+  const validated = validateGroundingDatesRequest(body);
+  if (!validated.ok) return validated;
+  return { ok: true, value: sanitizeGroundingDatesPayload(validated.value) };
+}
+
+export function validateAndSanitizeLocationResolveRequest(
+  body: unknown
+): ValidationResult<ValidatedLocationResolveRequest> {
+  const validated = validateResolveLocationRequest(body);
+  if (!validated.ok) return validated;
+  const sanitized = sanitizeResolveLocationPayload(validated.value);
+  if (!sanitized.location && !sanitized.locationAddress) {
+    return { ok: false, status: 400, error: '탐색할 장소명 또는 주소를 입력해 주세요.' };
+  }
+  return { ok: true, value: sanitized };
+}
+
+/**
+ * 내부 스택 트레이스·API 키·SDK 상세 오류 노출을 원천 차단하는 안전 에러 응답 변환기
+ */
+export type ApiErrorContext = 'command' | 'grounding' | 'location' | 'general';
+
+const UpstreamErrorShapeSchema = z.object({
+  status: z.number().int().optional(),
+  statusCode: z.number().int().optional(),
+  type: z.string().optional(),
+  name: z.string().optional(),
+});
+
+const FALLBACK_MESSAGES: Record<ApiErrorContext, string> = {
+  command: 'AI 일정 분석 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+  grounding: '일정 탐색 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+  location: '장소 정보를 확인하는 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+  general: '요청을 처리하는 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+};
+
+export function toSafeErrorResponse(
+  err: unknown,
+  context: ApiErrorContext = 'general',
+  isInlineMediaEndpoint = false
+): { status: number; error: string } {
+  const parsedErr = UpstreamErrorShapeSchema.safeParse(err);
+  const rawStatus = parsedErr.success
+    ? parsedErr.data.statusCode ?? parsedErr.data.status
+    : undefined;
+  const errType = parsedErr.success ? parsedErr.data.type : undefined;
+
+  if (errType === 'entity.too.large' || rawStatus === 413) {
+    return {
+      status: 413,
+      error: isInlineMediaEndpoint
+        ? '첨부 파일 포함 전체 요청 용량이 허용 한도(18MB)를 초과했습니다.'
+        : '요청 데이터 크기가 허용 한도(512KB)를 초과했습니다.',
+    };
+  }
+
+  if (errType === 'entity.parse.failed' || (err instanceof SyntaxError && rawStatus === 400)) {
+    return {
+      status: 400,
+      error: '요청 본문이 올바른 JSON 형식이 아닙니다.',
+    };
+  }
+
+  if (
+    errType === 'charset.unsupported' ||
+    errType === 'encoding.unsupported' ||
+    rawStatus === 415
+  ) {
+    return {
+      status: 415,
+      error: '지원하지 않는 요청 인코딩 형식입니다.',
+    };
+  }
+
+  if (rawStatus === 429) {
+    return {
+      status: 429,
+      error: 'AI 서비스 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.',
+    };
+  }
+
+  if (rawStatus === 503) {
+    return {
+      status: 503,
+      error: '현재 AI 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+    };
+  }
+
+  if (rawStatus === 401 || rawStatus === 403) {
+    return {
+      status: 502,
+      error: 'AI 서비스 연결을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+    };
+  }
+
+  if (rawStatus === 400) {
+    return {
+      status: 400,
+      error: '전달된 요청 또는 첨부 파일을 처리할 수 없습니다. 입력 내용을 확인해 주세요.',
+    };
+  }
 
   return {
-    ok: true,
-    value: {
-      location: location || locationAddress || '',
-      locationAddress,
-      modelId,
-    },
+    status: 502,
+    error: FALLBACK_MESSAGES[context],
   };
+}
+
+export function logSafeServerError(scope: string, err: unknown): void {
+  const parsedErr = UpstreamErrorShapeSchema.safeParse(err);
+  const status = parsedErr.success
+    ? parsedErr.data.statusCode ?? parsedErr.data.status ?? 500
+    : 500;
+  const name = parsedErr.success && parsedErr.data.name ? parsedErr.data.name : 'Error';
+  console.error(`[${scope}] name=${name} status=${status}`);
+}
+
+export function apiErrorHandler(
+  err: unknown,
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): void {
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+
+  const isInlineMediaEndpoint = req.path === '/api/agent/command';
+  const safe = toSafeErrorResponse(err, 'general', isInlineMediaEndpoint);
+  logSafeServerError('API Middleware Error', err);
+  res.status(safe.status).json({ error: safe.error });
 }

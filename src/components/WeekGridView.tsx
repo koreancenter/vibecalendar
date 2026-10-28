@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { getWeekDays, WeekDayItem } from '../shared/dateUtils';
-import { projectEventToViewerTimeZone } from '../shared/timeZoneUtils';
-import { resolveEventLuxuryTheme } from '../utils/eventTheme';
+import {
+  areShallowArraysEqual,
+  useCalendarEventViewModels,
+} from '../hooks/useCalendarEventViewModels';
 import { TimeGridCanvas, TimeGridColumn } from './TimeGridCanvas';
 
 interface WeekGridViewProps {
@@ -26,7 +28,7 @@ interface WeekGridViewProps {
   onLoadSampleData?: () => void;
 }
 
-export const WeekGridView: React.FC<WeekGridViewProps> = ({
+const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
   selectedDate,
   events,
   selectedEvent,
@@ -48,20 +50,26 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
   const [draggedAllDayId, setDraggedAllDayId] = useState<string | null>(null);
   const [allDayDropDate, setAllDayDropDate] = useState<string | null>(null);
 
+  const { byEventId, getViewModel } = useCalendarEventViewModels({
+    events,
+    projects,
+    viewerTimeZone,
+  });
+
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEventItem[]>();
     for (const d of weekDays) {
       map.set(d.date, []);
     }
     for (const ev of events) {
-      const localDate = projectEventToViewerTimeZone(ev, viewerTimeZone).localDate;
+      const localDate = (byEventId.get(ev.id) ?? getViewModel(ev)).timing.localDate;
       const list = map.get(localDate);
       if (list) {
         list.push(ev);
       }
     }
     return map;
-  }, [events, weekDays, viewerTimeZone]);
+  }, [events, weekDays, byEventId, getViewModel]);
 
   const allDayEventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEventItem[]>();
@@ -224,7 +232,8 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
                   }`}
                 >
                   {allDayList.map((ev) => {
-                    const theme = resolveEventLuxuryTheme(ev, projects);
+                    const vm = byEventId.get(ev.id) ?? getViewModel(ev);
+                    const theme = vm.theme;
                     const proj = theme.project;
                     const isEvSelected = selectedEvent?.id === ev.id;
                     const isBeingDragged = draggedAllDayId === ev.id;
@@ -233,13 +242,15 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
                       <div
                         key={ev.id}
                         draggable
+                        data-dragging={isBeingDragged ? 'true' : undefined}
+                        data-selected={isEvSelected && !isBeingDragged ? 'true' : undefined}
                         onDragStart={(e) => handleAllDayDragStart(e, ev.id)}
                         onDragEnd={handleAllDayDragEnd}
                         onClick={() => {
                           onSelectDate(day.date);
                           onSelectEvent(ev);
                         }}
-                        className={`h-[25px] px-2.5 rounded-[6px] text-[11.5px] font-[450] tracking-[0.014em] leading-[1.4] truncate cursor-grab active:cursor-grabbing luxury-event-card border flex items-center gap-2.5 ${
+                        className={`relative overflow-hidden h-[25px] px-2.5 rounded-[6px] text-[11.5px] font-[450] tracking-[0.014em] leading-[1.4] cursor-grab active:cursor-grabbing luxury-event-chip hover:z-20 border flex items-center gap-2.5 ${
                           theme.chipSurfaceClass
                         } ${isEvSelected ? theme.selectedSurfaceClass : ''} ${
                           isBeingDragged
@@ -250,17 +261,17 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
                       >
                         <span
                           aria-hidden="true"
-                          className={`w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
+                          className={`relative z-10 w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
                         />
                         {isComparing && proj && (
                           <span
-                            className={`text-[10px] font-[440] tracking-[0.03em] shrink-0 ${theme.accentTextClass}`}
+                            className={`relative z-10 text-[10px] font-[440] tracking-[0.03em] shrink-0 ${theme.accentTextClass}`}
                           >
                             {proj.code || proj.name.slice(0, 3)}
                           </span>
                         )}
                         <span
-                          className={`truncate ${
+                          className={`relative z-10 truncate ${
                             ev.isCompleted
                               ? 'line-through text-white/32'
                               : 'text-[#f2f4f8]'
@@ -301,3 +312,26 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
     </div>
   );
 };
+
+function areWeekGridViewPropsEqual(
+  prev: WeekGridViewProps,
+  next: WeekGridViewProps
+): boolean {
+  return (
+    prev.selectedDate === next.selectedDate &&
+    prev.selectedEvent === next.selectedEvent &&
+    prev.viewerTimeZone === next.viewerTimeZone &&
+    prev.viewerShortCode === next.viewerShortCode &&
+    prev.emptyGuideText === next.emptyGuideText &&
+    prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
+    prev.onSelectDate === next.onSelectDate &&
+    prev.onSelectEvent === next.onSelectEvent &&
+    prev.onMoveEventDate === next.onMoveEventDate &&
+    prev.onLoadSampleData === next.onLoadSampleData &&
+    areShallowArraysEqual(prev.events, next.events) &&
+    areShallowArraysEqual(prev.projects, next.projects) &&
+    areShallowArraysEqual(prev.comparedProjectIds, next.comparedProjectIds)
+  );
+}
+
+export const WeekGridView = React.memo(WeekGridViewComponent, areWeekGridViewPropsEqual);
