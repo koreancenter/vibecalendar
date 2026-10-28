@@ -2,9 +2,9 @@ import { CalendarCategory, CalendarEventItem, ProjectItem } from '../types';
 
 /**
  * 초 럭셔리 미니멀리즘 단일 색조 위계 (Project-First Chromatic Authority)
- * - 원색 네온 배경을 완전히 배제하고 #13161f 다크 스모크드 옵시디언 베이스에 6~9% 미세 색조 언더톤과 1px 헤어라인만 부여
- * - 프로젝트가 지정된 일정은 소속 프로젝트의 럭셔리 팔레트로 도트·표면·선택 테두리를 단일화하여 색조 충돌 원천 차단
- * - 프로젝트 미지정 일정만 절제된 카테고리 저채도 톤으로 폴백
+ * - 원색 네온 배경을 완전히 배제하고 다크 스모크드 옵시디언 베이스에 미세 색조 언더톤과 1px 헤어라인만 부여
+ * - 호버(Hover) 시 과장된 색 변화 대신 약 2%의 표면 휘도 상승과 미세한 상단 스펙큘러 광택으로 절제된 깊이감 연출
+ * - 클릭/선택(Active & Selected) 시 보더 투명도를 미세하게 밝혀 시각적 피로감 없이 우아한 포커스 표현
  */
 export interface EventLuxuryTheme {
   /** 좌측 상단 단일 5px 주얼 도트 클래스 */
@@ -13,7 +13,7 @@ export interface EventLuxuryTheme {
   chipSurfaceClass: string;
   /** 주간 · 일간 시간 블록용 스모크드 옵시디언 서피스 클래스 */
   blockSurfaceClass: string;
-  /** 선택(Active) 시 두꺼운 백색 링 대신 적용되는 1px 스펙큘러 헤어라인 & 심도 그림자 */
+  /** 클릭·선택(Selected) 시 미세하게 밝아지는 1px 헤어라인 보더 & 내부 스펙큘러 광택 */
   selectedSurfaceClass: string;
   /** 에디토리얼 보조 코드/포인트 텍스트 클래스 */
   accentTextClass: string;
@@ -27,88 +27,88 @@ function getThemeByProjectHex(hex?: string): Omit<EventLuxuryTheme, 'project'> |
       return {
         dotClass: 'bg-[#d4af37]',
         chipSurfaceClass:
-          'bg-[#181611]/92 hover:bg-[#201d15] border-[#d4af37]/24 hover:border-[#d4af37]/42',
+          'bg-[#171510]/90 hover:bg-[#1c1913]/96 border-[#d4af37]/16 hover:border-[#d4af37]/26 active:border-[#f1d779]/34 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(241,215,121,0.065)]',
         blockSurfaceClass:
-          'bg-[#171510]/95 hover:bg-[#1e1b14]/97 border-[#d4af37]/25 hover:border-[#d4af37]/42 shadow-[inset_0_1px_0_0_rgba(241,215,121,0.06)]',
+          'bg-[#161410]/94 hover:bg-[#1b1813]/97 border-[#d4af37]/17 hover:border-[#d4af37]/27 active:border-[#f1d779]/35 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.035)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(241,215,121,0.08)]',
         selectedSurfaceClass:
-          '!border-[#f1d779]/65 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(241,215,121,0.22)]',
+          '!bg-[#1d1a14]/98 !border-[#f1d779]/38 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(241,215,121,0.13)]',
         accentTextClass: 'text-[#e5cc78]',
       };
     case '#6366f1': // 임페리얼 인디고
       return {
         dotClass: 'bg-[#818cf8]',
         chipSurfaceClass:
-          'bg-[#141624]/92 hover:bg-[#1a1d2f] border-[#818cf8]/24 hover:border-[#818cf8]/42',
+          'bg-[#131522]/90 hover:bg-[#171a29]/96 border-[#818cf8]/16 hover:border-[#818cf8]/26 active:border-[#a5b4fc]/34 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(165,180,252,0.065)]',
         blockSurfaceClass:
-          'bg-[#131522]/95 hover:bg-[#191c2d]/97 border-[#818cf8]/25 hover:border-[#818cf8]/42 shadow-[inset_0_1px_0_0_rgba(165,180,252,0.06)]',
+          'bg-[#131521]/94 hover:bg-[#171928]/97 border-[#818cf8]/17 hover:border-[#818cf8]/27 active:border-[#a5b4fc]/35 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.035)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(165,180,252,0.08)]',
         selectedSurfaceClass:
-          '!border-[#a5b4fc]/65 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(165,180,252,0.22)]',
+          '!bg-[#191c2c]/98 !border-[#a5b4fc]/38 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(165,180,252,0.13)]',
         accentTextClass: 'text-[#a5b4fc]',
       };
     case '#10b981': // 세이지 에메랄드
       return {
         dotClass: 'bg-[#34d399]',
         chipSurfaceClass:
-          'bg-[#111917]/92 hover:bg-[#16211e] border-[#34d399]/24 hover:border-[#34d399]/42',
+          'bg-[#111816]/90 hover:bg-[#141d1b]/96 border-[#34d399]/16 hover:border-[#34d399]/26 active:border-[#6ee7b7]/34 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(110,231,183,0.065)]',
         blockSurfaceClass:
-          'bg-[#111816]/95 hover:bg-[#15201d]/97 border-[#34d399]/25 hover:border-[#34d399]/42 shadow-[inset_0_1px_0_0_rgba(110,231,183,0.06)]',
+          'bg-[#101715]/94 hover:bg-[#141c1a]/97 border-[#34d399]/17 hover:border-[#34d399]/27 active:border-[#6ee7b7]/35 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.035)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(110,231,183,0.08)]',
         selectedSurfaceClass:
-          '!border-[#6ee7b7]/60 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(110,231,183,0.2)]',
+          '!bg-[#16201d]/98 !border-[#6ee7b7]/36 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(110,231,183,0.12)]',
         accentTextClass: 'text-[#6ee7b7]',
       };
     case '#3b82f6': // 미드나잇 사파이어
       return {
         dotClass: 'bg-[#60a5fa]',
         chipSurfaceClass:
-          'bg-[#121824]/92 hover:bg-[#171f2e] border-[#60a5fa]/24 hover:border-[#60a5fa]/42',
+          'bg-[#111722]/90 hover:bg-[#151c29]/96 border-[#60a5fa]/16 hover:border-[#60a5fa]/26 active:border-[#93c5fd]/34 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(147,197,253,0.065)]',
         blockSurfaceClass:
-          'bg-[#111722]/95 hover:bg-[#161e2c]/97 border-[#60a5fa]/25 hover:border-[#60a5fa]/42 shadow-[inset_0_1px_0_0_rgba(147,197,253,0.06)]',
+          'bg-[#111621]/94 hover:bg-[#151b28]/97 border-[#60a5fa]/17 hover:border-[#60a5fa]/27 active:border-[#93c5fd]/35 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.035)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(147,197,253,0.08)]',
         selectedSurfaceClass:
-          '!border-[#93c5fd]/60 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(147,197,253,0.2)]',
+          '!bg-[#171e2c]/98 !border-[#93c5fd]/36 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(147,197,253,0.12)]',
         accentTextClass: 'text-[#93c5fd]',
       };
     case '#f43f5e': // 로즈 브론즈
       return {
         dotClass: 'bg-[#fb7185]',
         chipSurfaceClass:
-          'bg-[#1b1317]/92 hover:bg-[#23181e] border-[#fb7185]/24 hover:border-[#fb7185]/42',
+          'bg-[#191216]/90 hover:bg-[#1f161b]/96 border-[#fb7185]/16 hover:border-[#fb7185]/26 active:border-[#fda4af]/34 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(253,164,175,0.065)]',
         blockSurfaceClass:
-          'bg-[#191216]/95 hover:bg-[#21171c]/97 border-[#fb7185]/25 hover:border-[#fb7185]/42 shadow-[inset_0_1px_0_0_rgba(253,164,175,0.06)]',
+          'bg-[#181215]/94 hover:bg-[#1e161a]/97 border-[#fb7185]/17 hover:border-[#fb7185]/27 active:border-[#fda4af]/35 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.035)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(253,164,175,0.08)]',
         selectedSurfaceClass:
-          '!border-[#fda4af]/60 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(253,164,175,0.2)]',
+          '!bg-[#21181d]/98 !border-[#fda4af]/36 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(253,164,175,0.12)]',
         accentTextClass: 'text-[#fda4af]',
       };
     case '#a855f7': // 리걸 아메시스트
       return {
         dotClass: 'bg-[#c084fc]',
         chipSurfaceClass:
-          'bg-[#181322]/92 hover:bg-[#20192d] border-[#c084fc]/24 hover:border-[#c084fc]/42',
+          'bg-[#171220]/90 hover:bg-[#1c1627]/96 border-[#c084fc]/16 hover:border-[#c084fc]/26 active:border-[#d8b4fe]/34 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(216,180,254,0.065)]',
         blockSurfaceClass:
-          'bg-[#161220]/95 hover:bg-[#1e182b]/97 border-[#c084fc]/25 hover:border-[#c084fc]/42 shadow-[inset_0_1px_0_0_rgba(216,180,254,0.06)]',
+          'bg-[#16121f]/94 hover:bg-[#1b1626]/97 border-[#c084fc]/17 hover:border-[#c084fc]/27 active:border-[#d8b4fe]/35 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.035)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(216,180,254,0.08)]',
         selectedSurfaceClass:
-          '!border-[#d8b4fe]/60 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(216,180,254,0.2)]',
+          '!bg-[#1e182a]/98 !border-[#d8b4fe]/36 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(216,180,254,0.12)]',
         accentTextClass: 'text-[#d8b4fe]',
       };
     case '#d97706': // 에스프레소 앰버
       return {
         dotClass: 'bg-[#e09f3e]',
         chipSurfaceClass:
-          'bg-[#191511]/92 hover:bg-[#221c16] border-[#e09f3e]/24 hover:border-[#e09f3e]/42',
+          'bg-[#181410]/90 hover:bg-[#1d1813]/96 border-[#e09f3e]/16 hover:border-[#e09f3e]/26 active:border-[#fcd34d]/34 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(252,211,77,0.065)]',
         blockSurfaceClass:
-          'bg-[#181410]/95 hover:bg-[#201b14]/97 border-[#e09f3e]/25 hover:border-[#e09f3e]/42 shadow-[inset_0_1px_0_0_rgba(252,211,77,0.06)]',
+          'bg-[#171310]/94 hover:bg-[#1c1713]/97 border-[#e09f3e]/17 hover:border-[#e09f3e]/27 active:border-[#fcd34d]/35 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.035)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(252,211,77,0.08)]',
         selectedSurfaceClass:
-          '!border-[#fcd34d]/60 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(252,211,77,0.2)]',
+          '!bg-[#201a14]/98 !border-[#fcd34d]/36 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(252,211,77,0.12)]',
         accentTextClass: 'text-[#ebd089]',
       };
     case '#94a3b8': // 플래티넘 슬레이트
       return {
         dotClass: 'bg-[#cbd5e1]',
         chipSurfaceClass:
-          'bg-[#14171f]/92 hover:bg-[#1a1e28] border-white/[0.12] hover:border-white/[0.24]',
+          'bg-[#14171f]/90 hover:bg-[#181c25]/96 border-white/[0.09] hover:border-white/[0.17] active:border-white/[0.26] hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(255,255,255,0.065)]',
         blockSurfaceClass:
-          'bg-[#14171f]/95 hover:bg-[#1a1e28]/97 border-white/[0.13] hover:border-white/[0.24] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]',
+          'bg-[#13161e]/94 hover:bg-[#171b24]/97 border-white/[0.10] hover:border-white/[0.18] active:border-white/[0.27] shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.035)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(255,255,255,0.075)]',
         selectedSurfaceClass:
-          '!border-white/55 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(255,255,255,0.2)]',
+          '!bg-[#1a1e28]/98 !border-white/[0.32] shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(255,255,255,0.11)]',
         accentTextClass: 'text-neutral-300',
       };
     default:
@@ -120,61 +120,61 @@ const CATEGORY_FALLBACK_THEMES: Record<CalendarCategory, Omit<EventLuxuryTheme, 
   '업무': {
     dotClass: 'bg-[#7aa2f7]',
     chipSurfaceClass:
-      'bg-[#131722]/92 hover:bg-[#181d2b] border-[#7aa2f7]/20 hover:border-[#7aa2f7]/36',
+      'bg-[#131620]/90 hover:bg-[#161a26]/96 border-[#7aa2f7]/15 hover:border-[#7aa2f7]/25 active:border-[#93c5fd]/33 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(255,255,255,0.06)]',
     blockSurfaceClass:
-      'bg-[#131721]/95 hover:bg-[#181d2a]/97 border-[#7aa2f7]/22 hover:border-[#7aa2f7]/38 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]',
+      'bg-[#12161f]/94 hover:bg-[#161a25]/97 border-[#7aa2f7]/16 hover:border-[#7aa2f7]/26 active:border-[#93c5fd]/34 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.03)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(255,255,255,0.07)]',
     selectedSurfaceClass:
-      '!border-[#93c5fd]/55 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(147,197,253,0.18)]',
+      '!bg-[#181d29]/98 !border-[#93c5fd]/35 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(147,197,253,0.11)]',
     accentTextClass: 'text-[#9dbbf8]',
   },
   '방문·출장': {
     dotClass: 'bg-[#4fd1a5]',
     chipSurfaceClass:
-      'bg-[#121917]/92 hover:bg-[#16201d] border-[#4fd1a5]/20 hover:border-[#4fd1a5]/36',
+      'bg-[#111816]/90 hover:bg-[#151d1a]/96 border-[#4fd1a5]/15 hover:border-[#4fd1a5]/25 active:border-[#6ee7b7]/33 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(255,255,255,0.06)]',
     blockSurfaceClass:
-      'bg-[#111816]/95 hover:bg-[#161f1c]/97 border-[#4fd1a5]/22 hover:border-[#4fd1a5]/38 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]',
+      'bg-[#111715]/94 hover:bg-[#141c19]/97 border-[#4fd1a5]/16 hover:border-[#4fd1a5]/26 active:border-[#6ee7b7]/34 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.03)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(255,255,255,0.07)]',
     selectedSurfaceClass:
-      '!border-[#6ee7b7]/55 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(110,231,183,0.18)]',
+      '!bg-[#161f1c]/98 !border-[#6ee7b7]/35 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(110,231,183,0.11)]',
     accentTextClass: 'text-[#7ce0be]',
   },
   '식사·모임': {
     dotClass: 'bg-[#d4a359]',
     chipSurfaceClass:
-      'bg-[#181511]/92 hover:bg-[#201c16] border-[#d4a359]/22 hover:border-[#d4a359]/38',
+      'bg-[#171410]/90 hover:bg-[#1c1813]/96 border-[#d4a359]/16 hover:border-[#d4a359]/26 active:border-[#ebd089]/34 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(255,255,255,0.06)]',
     blockSurfaceClass:
-      'bg-[#171410]/95 hover:bg-[#1f1b15]/97 border-[#d4a359]/24 hover:border-[#d4a359]/40 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]',
+      'bg-[#161310]/94 hover:bg-[#1b1713]/97 border-[#d4a359]/17 hover:border-[#d4a359]/27 active:border-[#ebd089]/35 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.03)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(255,255,255,0.07)]',
     selectedSurfaceClass:
-      '!border-[#ebd089]/55 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(235,208,137,0.18)]',
+      '!bg-[#1e1a14]/98 !border-[#ebd089]/36 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(235,208,137,0.11)]',
     accentTextClass: 'text-[#e2be82]',
   },
   '개인': {
     dotClass: 'bg-[#b497f5]',
     chipSurfaceClass:
-      'bg-[#161420]/92 hover:bg-[#1d1a2a] border-[#b497f5]/20 hover:border-[#b497f5]/36',
+      'bg-[#15131f]/90 hover:bg-[#191725]/96 border-[#b497f5]/15 hover:border-[#b497f5]/25 active:border-[#d8b4fe]/33 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(255,255,255,0.06)]',
     blockSurfaceClass:
-      'bg-[#15131f]/95 hover:bg-[#1c1929]/97 border-[#b497f5]/22 hover:border-[#b497f5]/38 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]',
+      'bg-[#14121e]/94 hover:bg-[#191624]/97 border-[#b497f5]/16 hover:border-[#b497f5]/26 active:border-[#d8b4fe]/34 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.03)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(255,255,255,0.07)]',
     selectedSurfaceClass:
-      '!border-[#d8b4fe]/55 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(216,180,254,0.18)]',
+      '!bg-[#1c1928]/98 !border-[#d8b4fe]/35 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(216,180,254,0.11)]',
     accentTextClass: 'text-[#cbb5fa]',
   },
   '행사·세미나': {
     dotClass: 'bg-[#e58598]',
     chipSurfaceClass:
-      'bg-[#1a1317]/92 hover:bg-[#22191e] border-[#e58598]/20 hover:border-[#e58598]/36',
+      'bg-[#181216]/90 hover:bg-[#1e161b]/96 border-[#e58598]/15 hover:border-[#e58598]/25 active:border-[#fda4af]/33 hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(255,255,255,0.06)]',
     blockSurfaceClass:
-      'bg-[#181216]/95 hover:bg-[#20171c]/97 border-[#e58598]/22 hover:border-[#e58598]/38 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]',
+      'bg-[#171215]/94 hover:bg-[#1d161a]/97 border-[#e58598]/16 hover:border-[#e58598]/26 active:border-[#fda4af]/34 shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.03)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(255,255,255,0.07)]',
     selectedSurfaceClass:
-      '!border-[#fda4af]/55 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(253,164,175,0.18)]',
+      '!bg-[#20181c]/98 !border-[#fda4af]/35 shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(253,164,175,0.11)]',
     accentTextClass: 'text-[#f0a8b6]',
   },
   '기타': {
     dotClass: 'bg-[#94a3b8]',
     chipSurfaceClass:
-      'bg-[#14171f]/92 hover:bg-[#191d27] border-white/[0.10] hover:border-white/[0.20]',
+      'bg-[#14171f]/90 hover:bg-[#181b24]/96 border-white/[0.08] hover:border-white/[0.16] active:border-white/[0.24] hover:shadow-[0_4px_12px_-4px_rgba(0,0,0,0.46),inset_0_1px_0_0_rgba(255,255,255,0.06)]',
     blockSurfaceClass:
-      'bg-[#14171e]/95 hover:bg-[#191d26]/97 border-white/[0.11] hover:border-white/[0.22] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]',
+      'bg-[#13161d]/94 hover:bg-[#171b23]/97 border-white/[0.09] hover:border-white/[0.17] active:border-white/[0.25] shadow-[0_1px_2px_rgba(0,0,0,0.22),inset_0_1px_0_0_rgba(255,255,255,0.03)] hover:shadow-[0_8px_20px_-8px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(255,255,255,0.07)]',
     selectedSurfaceClass:
-      '!border-white/50 shadow-[0_14px_34px_-8px_rgba(0,0,0,0.82),inset_0_1px_0_0_rgba(255,255,255,0.18)]',
+      '!bg-[#191d26]/98 !border-white/[0.30] shadow-[0_10px_24px_-10px_rgba(0,0,0,0.72),inset_0_1px_0_0_rgba(255,255,255,0.10)]',
     accentTextClass: 'text-neutral-300',
   },
 };

@@ -627,6 +627,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 currentYear={currentYear}
                 currentMonth={currentMonth}
                 selectedDate={selectedDate}
+                selectedEvent={selectedEvent}
                 events={filteredEvents}
                 viewerTimeZone={tzPrefs.viewerTimeZone}
                 projects={projects}

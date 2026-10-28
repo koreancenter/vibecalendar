@@ -115,7 +115,7 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
 
         {/* 종일 일정 고정 바 */}
         {allDayEvents.length > 0 && (
-          <div className="bg-[#11141d] border-b border-white/[0.07] px-4 py-2 flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="bg-[#11141d] border-b border-white/[0.07] px-4 py-2.5 flex items-center gap-2.5 shrink-0 flex-wrap">
             <span className="text-[11px] font-medium text-neutral-500 shrink-0">종일</span>
             {allDayEvents.map((ev) => {
               const theme = resolveEventLuxuryTheme(ev, projects);
@@ -125,7 +125,7 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
                 <div
                   key={ev.id}
                   onClick={() => onSelectEvent(ev)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors duration-150 border ${
+                  className={`px-3 py-1 rounded-[8px] text-xs font-medium flex items-center gap-1.5 cursor-pointer luxury-event-card border ${
                     theme.chipSurfaceClass
                   } ${isSelected ? theme.selectedSurfaceClass : ''}`}
                 >

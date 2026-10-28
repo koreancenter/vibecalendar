@@ -12,6 +12,7 @@ interface MonthGridViewProps {
   currentYear: number;
   currentMonth: number;
   selectedDate: string;
+  selectedEvent?: CalendarEventItem | null;
   events: CalendarEventItem[];
   viewerTimeZone: string;
   onSelectDate: (date: string) => void;
@@ -35,24 +36,24 @@ function getTooltipPositionClasses(
   const openUpward = rowIdx >= rowCount - 2;
   const alignRight = colIdx >= 5;
 
-  const horizontalClass = alignRight ? 'right-2' : 'left-2';
+  const horizontalClass = alignRight ? 'right-2.5' : 'left-2.5';
 
   if (openUpward) {
     const upwardTopClass =
       eventIdx === 0
-        ? 'top-[28px]'
+        ? 'top-[32px]'
         : eventIdx === 1
-        ? 'top-[52px]'
-        : 'top-[76px]';
+        ? 'top-[60px]'
+        : 'top-[88px]';
     return `${horizontalClass} ${upwardTopClass} -translate-y-full`;
   }
 
   const downwardTopClass =
     eventIdx === 0
-      ? 'top-[56px]'
+      ? 'top-[62px]'
       : eventIdx === 1
-      ? 'top-[80px]'
-      : 'top-[104px]';
+      ? 'top-[90px]'
+      : 'top-[118px]';
   return `${horizontalClass} ${downwardTopClass}`;
 }
 
@@ -60,6 +61,7 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
   currentYear,
   currentMonth,
   selectedDate,
+  selectedEvent = null,
   events,
   viewerTimeZone,
   onSelectDate,
@@ -246,23 +248,23 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                 onDragOver={(e) => handleDragOver(e, cell.date)}
                 onDragLeave={(e) => handleDragLeave(e, cell.date)}
                 onDrop={(e) => handleDrop(e, cell.date)}
-                className={`min-w-0 min-h-0 p-2 flex flex-col transition-colors duration-150 cursor-pointer relative group h-full ${
+                className={`min-w-0 min-h-0 px-2.5 py-2 flex flex-col transition-colors duration-150 cursor-pointer relative group h-full ${
                   cell.isCurrentMonth ? 'bg-[#12141a]' : 'bg-[#0e1015] text-neutral-600'
                 } ${
                   isDragOver
-                    ? 'ring-1 ring-white/40 bg-white/[0.08] z-30'
+                    ? 'ring-1 ring-inset ring-white/35 bg-white/[0.06] z-30'
                     : isHoveredCell
                     ? isSelected
-                      ? 'ring-1 ring-white/25 bg-[#171a23] z-40'
-                      : 'bg-[#161922] z-40'
+                      ? 'ring-1 ring-inset ring-white/[0.18] bg-[#161922] z-40'
+                      : 'bg-[#151820] z-40'
                     : isSelected
-                    ? 'ring-1 ring-white/25 bg-[#171a23] z-10'
-                    : 'hover:bg-[#161922]'
+                    ? 'ring-1 ring-inset ring-white/[0.18] bg-[#161922] z-10'
+                    : 'hover:bg-[#151820]'
                 }`}
               >
                 {/* 드래그 오버 시 가이드 텍스트 */}
                 {isDragOver && (
-                  <div className="absolute top-1.5 right-2 z-30 pointer-events-none">
+                  <div className="absolute top-1.5 right-2.5 z-30 pointer-events-none">
                     <span className="text-[10px] font-medium text-neutral-200">
                       여기로 이동
                     </span>
@@ -270,7 +272,7 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                 )}
 
                 {/* 날짜 번호 및 인디케이터 */}
-                <div className="flex items-center justify-between mb-1 shrink-0">
+                <div className="flex items-center justify-between mb-1.5 shrink-0">
                   <span
                     className={`text-xs rounded-md px-1.5 py-0.5 tabular-nums ${
                       cell.isToday
@@ -321,7 +323,7 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                 </div>
 
                 {/* 일정 목록 (최대 3개 표시) 또는 선택된 빈 날짜 미니멀 안내 */}
-                <div className="flex-1 min-h-0 flex flex-col gap-1 overflow-hidden">
+                <div className="flex-1 min-h-0 flex flex-col gap-1.5 px-0.5 overflow-hidden">
                   {!isMonthEmpty && isSelected && dayEvents.length === 0 && !isDragOver && (
                     <div className="flex-1 flex items-center justify-center pointer-events-none">
                       <span className="text-[11px] font-light text-neutral-600 opacity-75 tracking-tight select-none">
@@ -333,6 +335,7 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                     const theme = resolveEventLuxuryTheme(ev, projects);
                     const proj = theme.project;
                     const isBeingDragged = draggedEventId === ev.id;
+                    const isEvSelected = selectedEvent?.id === ev.id;
                     const timing = timingById.get(ev.id);
                     const chipTimeLabel = ev.isAllDay
                       ? '종일'
@@ -366,7 +369,11 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                           onSelectDate(cell.date);
                           onSelectEvent(ev);
                         }}
-                        className={`h-[21px] w-full text-left px-1.5 rounded-[5px] text-[11px] truncate flex items-center gap-1.5 border transition-colors duration-150 cursor-grab active:cursor-grabbing shrink-0 ${theme.chipSurfaceClass} ${
+                        className={`h-[22px] w-full text-left px-2 rounded-[6px] text-[11px] truncate flex items-center gap-1.5 border luxury-event-card cursor-grab active:cursor-grabbing shrink-0 ${
+                          theme.chipSurfaceClass
+                        } ${
+                          isEvSelected && !isBeingDragged ? theme.selectedSurfaceClass : ''
+                        } ${
                           isBeingDragged
                             ? 'opacity-30 scale-95 border-dashed border-white/40'
                             : ''
@@ -399,7 +406,7 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                   })}
 
                   {dayEvents.length > 3 && (
-                    <span className="text-[10px] text-neutral-500 font-mono tabular-nums pl-1 shrink-0">
+                    <span className="text-[10px] text-neutral-500 font-mono tabular-nums pl-1.5 shrink-0">
                       +{dayEvents.length - 3}건 더보기
                     </span>
                   )}

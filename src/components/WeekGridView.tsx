@@ -217,7 +217,7 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
                   onDragOver={(e) => handleAllDayDragOver(e, day.date)}
                   onDragLeave={(e) => handleAllDayDragLeave(e, day.date)}
                   onDrop={(e) => handleAllDayDrop(e, day.date)}
-                  className={`p-1 space-y-1 min-h-[30px] transition-colors ${
+                  className={`px-1.5 py-1.5 space-y-1.5 min-h-[34px] transition-colors ${
                     isCellDropOver
                       ? 'bg-white/[0.07] ring-1 ring-inset ring-white/25'
                       : ''
@@ -239,7 +239,7 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
                           onSelectDate(day.date);
                           onSelectEvent(ev);
                         }}
-                        className={`px-2 py-0.5 rounded-[5px] text-[11px] font-medium truncate cursor-grab active:cursor-grabbing transition-colors duration-150 border flex items-center gap-1.5 ${
+                        className={`px-2 py-0.5 rounded-[6px] text-[11px] font-medium truncate cursor-grab active:cursor-grabbing luxury-event-card border flex items-center gap-1.5 ${
                           theme.chipSurfaceClass
                         } ${isEvSelected ? theme.selectedSurfaceClass : ''} ${
                           isBeingDragged

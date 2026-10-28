@@ -137,8 +137,8 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
               </div>
 
               {/* 일간 타임라인 요약 목록 */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-2">
-                <span className="text-xs font-medium text-neutral-400 block mb-2 tabular-nums">
+              <div className="flex-1 p-4 overflow-y-auto space-y-2.5">
+                <span className="text-xs font-medium text-neutral-400 block mb-2.5 tabular-nums">
                   등록된 일정 ({total}건)
                 </span>
 
@@ -150,7 +150,7 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
                     <div
                       key={ev.id}
                       onClick={() => onSelectEvent(ev)}
-                      className={`p-3 rounded-xl border transition-colors duration-150 cursor-pointer group flex items-start gap-3 ${theme.blockSurfaceClass}`}
+                      className={`px-3.5 py-3 rounded-xl border luxury-event-card cursor-pointer group flex items-start gap-3 ${theme.blockSurfaceClass}`}
                     >
                       <button
                         type="button"
@@ -167,7 +167,7 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
                           <Circle className="w-4 h-4" />
                         )}
                       </button>
-                      <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-center gap-1.5 text-[10px] font-mono tabular-nums text-neutral-400 truncate">
                           <span
                             className={`w-[5px] h-[5px] rounded-full shrink-0 ${theme.dotClass}`}

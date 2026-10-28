@@ -269,11 +269,13 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                         )}px`,
                       }}
                       className={`absolute ${
-                        isDayMode ? 'left-2.5 right-2.5 px-3 py-1.5' : 'left-1 right-1 px-2 py-1'
-                      } rounded-lg z-40 pointer-events-none flex flex-col justify-center overflow-hidden ${
+                        isDayMode
+                          ? 'left-3 right-6 px-4 py-2 rounded-[10px]'
+                          : 'left-[4.5px] right-[9px] px-2.5 py-1.5 rounded-[8px]'
+                      } z-40 pointer-events-none flex flex-col justify-center overflow-hidden ${
                         activeInteraction.currentDate !== activeInteraction.originalEvent.date
                           ? 'luxury-glass-border bg-gradient-to-b from-[#1e2332]/92 via-[#141824]/90 to-[#0e111a]/95 backdrop-blur-xl shadow-[0_18px_40px_-10px_rgba(0,0,0,0.85)]'
-                          : 'bg-white/[0.05] border border-white/25 border-dashed backdrop-blur-xs'
+                          : 'bg-white/[0.04] border border-white/20 border-dashed backdrop-blur-xs'
                       }`}
                     >
                       {activeInteraction.currentDate !== activeInteraction.originalEvent.date && (
@@ -348,9 +350,17 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                   const theme = resolveEventLuxuryTheme(rawEv, projects);
                   const proj = theme.project;
 
-                  const widthPercent = 100 / pos.totalColumns;
-                  const leftPercent = pos.column * widthPercent;
-                  const padPx = isDayMode ? 6 : 2.5;
+                  const leftInsetPx = isDayMode ? 12 : pos.totalColumns > 1 ? 3.5 : 4.5;
+                  const rightGutterPx = isDayMode ? 24 : pos.totalColumns > 1 ? 6.5 : 9;
+                  const colGapPx = isDayMode ? 8 : 4.5;
+                  const totalHorizontalDeduction =
+                    leftInsetPx + rightGutterPx + (pos.totalColumns - 1) * colGapPx;
+                  const columnWidthExpr = `(100% - ${totalHorizontalDeduction}px) / ${pos.totalColumns}`;
+                  const leftExpr =
+                    pos.column === 0
+                      ? `${leftInsetPx}px`
+                      : `calc(${leftInsetPx}px + ${pos.column} * (${columnWidthExpr} + ${colGapPx}px))`;
+                  const widthExpr = `calc(${columnWidthExpr})`;
 
                   let topPx = pos.topPx;
                   let heightPx = pos.heightPx;
@@ -375,6 +385,11 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                     displayEnd = minutesToTime(activeInteraction.endMinutes);
                   }
 
+                  const renderTopPx = isMovedInSameDate ? topPx : topPx + 1.5;
+                  const renderHeightPx = isMovedInSameDate
+                    ? heightPx
+                    : Math.max(20, heightPx - 3);
+
                   const isCompactBlock = heightPx < 44 || (!isDayMode && durationMin < 40);
                   const isTallBlock = heightPx >= 78;
 
@@ -396,14 +411,20 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                         startInteraction(e, ev, 'drag', col.date);
                       }}
                       style={{
-                        top: `${topPx}px`,
-                        height: `${heightPx}px`,
-                        left: `calc(${leftPercent}% + ${padPx}px)`,
-                        width: `calc(${widthPercent}% - ${padPx * 2}px)`,
+                        top: `${renderTopPx}px`,
+                        height: `${renderHeightPx}px`,
+                        left: leftExpr,
+                        width: widthExpr,
                       }}
                       className={`group absolute ${
-                        isDayMode ? 'rounded-xl px-3.5 py-2' : 'rounded-lg px-2.5 py-1.5'
-                      } transition-[box-shadow,border-color,background-color,opacity] duration-150 cursor-grab active:cursor-grabbing z-10 flex flex-col justify-between overflow-hidden select-none border ${
+                        isDayMode
+                          ? isCompactBlock
+                            ? 'rounded-[10px] px-3.5 py-1'
+                            : 'rounded-[10px] px-4 py-2.5'
+                          : isCompactBlock
+                          ? 'rounded-[8px] px-2.5 py-0.5'
+                          : 'rounded-[8px] px-2.5 py-2'
+                      } luxury-event-card cursor-grab active:cursor-grabbing z-10 flex flex-col justify-between overflow-hidden select-none border ${
                         theme.blockSurfaceClass
                       } ${
                         isEvSelected && !isMovedToOtherDate
@@ -413,7 +434,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                         isMovedToOtherDate
                           ? 'opacity-25 border-dashed pointer-events-none'
                           : isMovedInSameDate
-                          ? 'z-50 shadow-2xl ring-1 ring-white/40 opacity-95'
+                          ? 'z-50 shadow-2xl ring-1 ring-white/30 opacity-95'
                           : ''
                       } ${rawEv.isCompleted && !isMovedToOtherDate ? 'opacity-65' : ''}`}
                     >
@@ -423,10 +444,10 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                           onSelectDate?.(col.date);
                           startInteraction(e, ev, 'resize-top', col.date);
                         }}
-                        className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.12] transition-opacity duration-150"
+                        className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.06] transition-opacity duration-150"
                         title="위로 당겨 시작 시간 조정"
                       >
-                        <div className="w-6 h-0.5 rounded-full bg-white/40" />
+                        <div className="w-5 h-0.5 rounded-full bg-white/25" />
                       </div>
 
                       {isCompactBlock ? (
@@ -556,10 +577,10 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                           onSelectDate?.(col.date);
                           startInteraction(e, ev, 'resize-bottom', col.date);
                         }}
-                        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.12] transition-opacity duration-150"
+                        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.06] transition-opacity duration-150"
                         title="아래로 당겨 종료 시간 조정"
                       >
-                        <div className="w-6 h-0.5 rounded-full bg-white/40" />
+                        <div className="w-5 h-0.5 rounded-full bg-white/25" />
                       </div>
                     </div>
                   );
