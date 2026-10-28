@@ -27,6 +27,11 @@ interface MonthGridViewProps {
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
+/**
+ * 호버 요약 카드 위치 결정:
+ * - 하단 2개 행(openUpward)에서는 셀 상단 경계 밖(bottom-full mb-1.5)으로 띄워 셀 내부 날짜(예: 28)와 호버된 칩을 전혀 가리지 않도록 설계
+ * - 상단 행에서는 호버된 24px 칩 바로 아래에 6px 여유를 두고 배치
+ */
 function getTooltipPositionClasses(
   rowIdx: number,
   rowCount: number,
@@ -35,25 +40,18 @@ function getTooltipPositionClasses(
 ): string {
   const openUpward = rowIdx >= rowCount - 2;
   const alignRight = colIdx >= 5;
-
-  const horizontalClass = alignRight ? 'right-2.5' : 'left-2.5';
+  const horizontalClass = alignRight ? 'right-2' : 'left-2';
 
   if (openUpward) {
-    const upwardTopClass =
-      eventIdx === 0
-        ? 'top-[32px]'
-        : eventIdx === 1
-        ? 'top-[60px]'
-        : 'top-[88px]';
-    return `${horizontalClass} ${upwardTopClass} -translate-y-full`;
+    return `${horizontalClass} bottom-full mb-1.5`;
   }
 
   const downwardTopClass =
     eventIdx === 0
-      ? 'top-[62px]'
+      ? 'top-[66px]'
       : eventIdx === 1
-      ? 'top-[90px]'
-      : 'top-[118px]';
+      ? 'top-[97px]'
+      : 'top-[128px]';
   return `${horizontalClass} ${downwardTopClass}`;
 }
 
@@ -167,8 +165,8 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
             key={day}
             className={
               idx === 0 || idx === 6
-                ? 'text-neutral-500 font-normal'
-                : 'text-neutral-400 font-medium'
+                ? 'text-white/32 font-normal tracking-tight'
+                : 'text-white/50 font-medium tracking-tight'
             }
           >
             {day}
@@ -215,7 +213,7 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
         <div
           className={`flex-1 min-h-0 grid grid-cols-7 ${
             rowCount === 6 ? 'grid-rows-6' : 'grid-rows-5'
-          } gap-px bg-white/[0.06]`}
+          } gap-px bg-white/[0.055]`}
         >
           {grid.map((cell, cellIdx) => {
             const dayEvents = eventsByDate.get(cell.date) || [];
@@ -249,46 +247,46 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                 onDragLeave={(e) => handleDragLeave(e, cell.date)}
                 onDrop={(e) => handleDrop(e, cell.date)}
                 className={`min-w-0 min-h-0 px-2.5 py-2 flex flex-col transition-colors duration-150 cursor-pointer relative group h-full ${
-                  cell.isCurrentMonth ? 'bg-[#12141a]' : 'bg-[#0e1015] text-neutral-600'
+                  cell.isCurrentMonth ? 'bg-[#12141b]' : 'bg-[#0e1015] text-white/22'
                 } ${
                   isDragOver
-                    ? 'ring-1 ring-inset ring-white/35 bg-white/[0.06] z-30'
+                    ? 'ring-1 ring-inset ring-white/30 bg-white/[0.05] z-30'
                     : isHoveredCell
                     ? isSelected
-                      ? 'ring-1 ring-inset ring-white/[0.18] bg-[#161922] z-40'
-                      : 'bg-[#151820] z-40'
+                      ? 'ring-1 ring-inset ring-white/[0.14] bg-[#161923] z-40'
+                      : 'bg-[#151821] z-40'
                     : isSelected
-                    ? 'ring-1 ring-inset ring-white/[0.18] bg-[#161922] z-10'
-                    : 'hover:bg-[#151820]'
+                    ? 'ring-1 ring-inset ring-white/[0.14] bg-[#161923] z-10'
+                    : 'hover:bg-[#141720]'
                 }`}
               >
                 {/* 드래그 오버 시 가이드 텍스트 */}
                 {isDragOver && (
-                  <div className="absolute top-1.5 right-2.5 z-30 pointer-events-none">
-                    <span className="text-[10px] font-medium text-neutral-200">
+                  <div className="absolute top-2 right-2.5 z-30 pointer-events-none">
+                    <span className="text-[10px] font-medium text-white/75 tracking-tight">
                       여기로 이동
                     </span>
                   </div>
                 )}
 
-                {/* 날짜 번호 및 인디케이터 */}
-                <div className="flex items-center justify-between mb-1.5 shrink-0">
+                {/* 날짜 번호(절제된 글래스 링 마커) 및 우측 상단 카운트 */}
+                <div className="flex items-center justify-between mb-2 shrink-0">
                   <span
-                    className={`text-xs rounded-md px-1.5 py-0.5 tabular-nums ${
+                    className={`min-w-[22px] h-[22px] px-1.5 rounded-full inline-flex items-center justify-center text-[11.5px] tabular-nums tracking-[0.02em] transition-colors ${
                       cell.isToday
-                        ? 'bg-white text-neutral-950 font-semibold'
+                        ? 'bg-white/[0.11] text-[#f5f7fb] ring-1 ring-inset ring-white/[0.26] font-[460]'
                         : isSelected
-                        ? 'text-white font-semibold bg-white/[0.09]'
+                        ? 'bg-white/[0.06] text-white/90 ring-1 ring-inset ring-white/[0.12] font-[450]'
                         : cell.isCurrentMonth
-                        ? 'text-neutral-300 font-medium'
-                        : 'text-neutral-600 font-normal'
+                        ? 'text-white/58 font-[380]'
+                        : 'text-white/22 font-[360]'
                     }`}
                   >
                     {cell.dayNumber}
                   </span>
 
                   {dayEvents.length > 0 && !isDragOver && (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 pr-0.5">
                       {isComparing &&
                         (() => {
                           const distinctProjIds = Array.from(
@@ -315,18 +313,18 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                             </span>
                           );
                         })()}
-                      <span className="text-[10px] text-neutral-500 font-mono tabular-nums">
+                      <span className="text-[10.5px] font-[360] text-white/28 tabular-nums tracking-[0.03em]">
                         {dayEvents.length}
                       </span>
                     </div>
                   )}
                 </div>
 
-                {/* 일정 목록 (최대 3개 표시) 또는 선택된 빈 날짜 미니멀 안내 */}
-                <div className="flex-1 min-h-0 flex flex-col gap-1.5 px-0.5 overflow-hidden">
+                {/* 일정 목록 (최대 3개 표시: 25px 여유 높이 + 미세 웨이트 450/370 + 양(+)의 자간 호흡) */}
+                <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
                   {!isMonthEmpty && isSelected && dayEvents.length === 0 && !isDragOver && (
                     <div className="flex-1 flex items-center justify-center pointer-events-none">
-                      <span className="text-[11px] font-light text-neutral-600 opacity-75 tracking-tight select-none">
+                      <span className="text-[11px] font-[350] text-white/24 tracking-[0.025em] select-none">
                         일정 없음
                       </span>
                     </div>
@@ -339,7 +337,7 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                     const timing = timingById.get(ev.id);
                     const chipTimeLabel = ev.isAllDay
                       ? '종일'
-                      : timing?.compactStartLabel || ev.startTime;
+                      : timing?.localStartTime || ev.startTime;
 
                     return (
                       <div
@@ -369,34 +367,35 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                           onSelectDate(cell.date);
                           onSelectEvent(ev);
                         }}
-                        className={`h-[22px] w-full text-left px-2 rounded-[6px] text-[11px] truncate flex items-center gap-1.5 border luxury-event-card cursor-grab active:cursor-grabbing shrink-0 ${
+                        className={`h-[25px] w-full text-left px-2.5 rounded-[6px] truncate flex items-center gap-2.5 border luxury-event-card cursor-grab active:cursor-grabbing shrink-0 ${
                           theme.chipSurfaceClass
                         } ${
                           isEvSelected && !isBeingDragged ? theme.selectedSurfaceClass : ''
                         } ${
                           isBeingDragged
-                            ? 'opacity-30 scale-95 border-dashed border-white/40'
+                            ? 'opacity-30 scale-95 border-dashed border-white/35'
                             : ''
-                        } ${ev.isCompleted && !isBeingDragged ? 'opacity-65' : ''}`}
+                        } ${ev.isCompleted && !isBeingDragged ? 'opacity-55' : ''}`}
                       >
                         <span
-                          className={`w-[5px] h-[5px] rounded-full shrink-0 ${theme.dotClass}`}
+                          aria-hidden="true"
+                          className={`w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
                         />
-                        <span className="font-mono text-[9.5px] text-neutral-400 shrink-0 tabular-nums">
+                        <span className="text-[10.5px] font-[370] text-white/46 shrink-0 tabular-nums tracking-[0.032em]">
                           {chipTimeLabel}
                         </span>
                         {isComparing && proj && (
                           <span
-                            className={`font-mono text-[9px] shrink-0 tracking-tight ${theme.accentTextClass}`}
+                            className={`text-[10px] font-[440] shrink-0 tracking-[0.03em] ${theme.accentTextClass}`}
                           >
                             {proj.code || proj.name.slice(0, 3)}
                           </span>
                         )}
                         <span
-                          className={`truncate font-medium tracking-[0.005em] ${
+                          className={`text-[11.5px] truncate font-[450] tracking-[0.014em] leading-[1.4] ${
                             ev.isCompleted
-                              ? 'line-through text-neutral-500'
-                              : 'text-neutral-100'
+                              ? 'line-through text-white/32'
+                              : 'text-[#f2f4f8]'
                           }`}
                         >
                           {ev.title}
@@ -406,13 +405,13 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                   })}
 
                   {dayEvents.length > 3 && (
-                    <span className="text-[10px] text-neutral-500 font-mono tabular-nums pl-1.5 shrink-0">
+                    <span className="text-[10.5px] font-[360] text-white/34 tabular-nums pl-2.5 shrink-0 tracking-[0.025em]">
                       +{dayEvents.length - 3}건 더보기
                     </span>
                   )}
                 </div>
 
-                {/* 럭셔리 글래스모피즘 일정 요약 호버 툴팁 (장소명 + 상세 주소 포함) */}
+                {/* 초 럭셔리 에디토리얼 요약 호버 카드 (여유로운 행간·자간 및 미세 웨이트 조판) */}
                 {activeTooltipEvent && hoveredTarget && (
                   <div
                     role="tooltip"
@@ -421,115 +420,117 @@ export const MonthGridView: React.FC<MonthGridViewProps> = ({
                       rowCount,
                       colIdx,
                       hoveredTarget.eventIdx
-                    )} w-64 rounded-xl bg-gradient-to-b from-[#181c27]/92 via-[#11141d]/90 to-[#0c0e15]/95 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.82),0_8px_20px_-4px_rgba(0,0,0,0.55),inset_0_1px_0_0_rgba(255,255,255,0.06)] p-3 z-50 overflow-hidden`}
+                    )} w-[292px] rounded-xl bg-gradient-to-b from-[#171b25]/96 via-[#12151e]/96 to-[#0e1118]/98 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.86),0_8px_20px_-4px_rgba(0,0,0,0.58),inset_0_1px_0_0_rgba(255,255,255,0.07)] p-4 z-50 overflow-hidden`}
                   >
-                    {/* 상단: 일정 제목 */}
-                    <div className="flex items-start justify-between gap-2">
-                      <p
-                        className={`text-xs font-medium leading-snug line-clamp-2 break-keep ${
-                          activeTooltipEvent.isCompleted
-                            ? 'text-neutral-400 line-through'
-                            : 'text-neutral-100'
+                    {/* 상단: 주얼 인레이 + 일정 제목 */}
+                    <div className="flex items-start gap-3">
+                      <span
+                        aria-hidden="true"
+                        className={`w-[2px] h-4 mt-0.5 rounded-full shrink-0 ${
+                          tooltipTheme?.inlayClass || 'bg-neutral-300'
                         }`}
-                      >
-                        {activeTooltipEvent.title}
-                      </p>
-                      {activeTooltipEvent.isCompleted && (
-                        <span className="text-[10px] text-neutral-400 shrink-0">
-                          완료
-                        </span>
-                      )}
+                      />
+                      <div className="flex-1 min-w-0 flex items-start justify-between gap-2.5">
+                        <p
+                          className={`text-[13px] font-[460] leading-[1.54] tracking-[0.015em] line-clamp-2 break-keep ${
+                            activeTooltipEvent.isCompleted
+                              ? 'text-white/40 line-through'
+                              : 'text-[#f2f4f8]'
+                          }`}
+                        >
+                          {activeTooltipEvent.title}
+                        </p>
+                        {activeTooltipEvent.isCompleted && (
+                          <span className="text-[10px] font-[380] tracking-[0.025em] text-white/42 shrink-0 mt-0.5">
+                            완료
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    {/* 방향성 헤어라인 구분선 */}
-                    <div className="h-px my-2 bg-gradient-to-r from-white/[0.14] via-white/[0.07] to-white/[0.02]" />
+                    {/* 미세 중성 헤어라인 구분선 */}
+                    <div className="h-px my-3 bg-white/[0.065]" />
 
-                    {/* 핵심 요약 메타데이터 (시간 · 원천 시간대 · 프로젝트 · 장소/주소 · 체크리스트) */}
-                    <div className="space-y-1.5 text-[11px]">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-neutral-500 shrink-0">시간</span>
-                        <span className="font-mono tabular-nums text-neutral-100 whitespace-nowrap">
-                          {activeTooltipEvent.isAllDay
-                            ? '종일'
-                            : tooltipTiming
-                            ? `${tooltipTiming.localStartTime} – ${tooltipTiming.localEndTime}`
-                            : `${activeTooltipEvent.startTime} – ${activeTooltipEvent.endTime}`}
-                        </span>
-                      </div>
+                    {/* 좌측 고정 라벨 + 단일 좌측 정렬 값 그리드 (여유로운 층간 호흡 gap-y-2.5) */}
+                    <div className="grid grid-cols-[58px_1fr] gap-x-3.5 gap-y-2.5 text-[11px] items-baseline">
+                      <span className="font-[360] text-white/38 tracking-[0.025em]">시간</span>
+                      <span className="font-[400] tabular-nums text-[#f1f3f7] tracking-[0.032em] leading-[1.5] whitespace-nowrap">
+                        {activeTooltipEvent.isAllDay
+                          ? '종일'
+                          : tooltipTiming
+                          ? `${tooltipTiming.localStartTime} – ${tooltipTiming.localEndTime}`
+                          : `${activeTooltipEvent.startTime} – ${activeTooltipEvent.endTime}`}
+                      </span>
 
                       {!activeTooltipEvent.isAllDay &&
                         tooltipTiming &&
                         !tooltipTiming.isSameZone && (
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-neutral-500 shrink-0">원천</span>
-                            <span className="font-mono tabular-nums text-neutral-300 whitespace-nowrap truncate">
+                          <>
+                            <span className="font-[360] text-white/38 tracking-[0.025em]">원천</span>
+                            <span className="font-[370] tabular-nums text-white/60 tracking-[0.025em] leading-[1.5] truncate">
                               {tooltipTiming.sourceRangeWithCode} · {tooltipTiming.sourceMeta.cityKo}
                             </span>
-                          </div>
+                          </>
                         )}
 
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-neutral-500 shrink-0">프로젝트</span>
-                        {tooltipProject ? (
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span
-                              className={`w-[5px] h-[5px] rounded-full shrink-0 ${
-                                tooltipTheme?.dotClass || 'bg-neutral-300'
-                              }`}
-                            />
-                            <span className="text-neutral-200 truncate">
-                              {tooltipProject.name}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-neutral-500">미지정</span>
-                        )}
-                      </div>
+                      <span className="font-[360] text-white/38 tracking-[0.025em]">프로젝트</span>
+                      {tooltipProject ? (
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`w-[5px] h-[5px] rounded-full shrink-0 ${
+                              tooltipTheme?.dotClass || 'bg-neutral-300'
+                            }`}
+                          />
+                          <span className="font-[400] text-white/78 truncate tracking-[0.015em] leading-[1.5]">
+                            {tooltipProject.name}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="font-[360] text-white/34 tracking-[0.02em]">미지정</span>
+                      )}
 
                       {(activeTooltipEvent.location ||
                         activeTooltipEvent.locationAddress) && (
-                        <div className="pt-0.5 space-y-0.5">
-                          <div className="flex items-start justify-between gap-3">
-                            <span className="text-neutral-500 shrink-0">장소</span>
-                            <span className="text-neutral-200 text-right leading-snug line-clamp-2 break-keep">
+                        <>
+                          <span className="font-[360] text-white/38 tracking-[0.025em]">장소</span>
+                          <div className="min-w-0 space-y-1 text-left">
+                            <p className="font-[400] text-white/80 leading-[1.54] tracking-[0.015em] line-clamp-2 break-keep">
                               {activeTooltipEvent.location ||
                                 activeTooltipEvent.locationAddress}
-                            </span>
+                            </p>
+                            {activeTooltipEvent.location &&
+                              activeTooltipEvent.locationAddress && (
+                                <p className="text-[10.5px] font-[350] text-white/38 leading-[1.5] tracking-[0.02em] line-clamp-2 break-keep">
+                                  {activeTooltipEvent.locationAddress}
+                                </p>
+                              )}
                           </div>
-                          {activeTooltipEvent.location &&
-                            activeTooltipEvent.locationAddress && (
-                              <p className="text-[10px] text-neutral-400 text-right leading-snug line-clamp-2 break-keep">
-                                {activeTooltipEvent.locationAddress}
-                              </p>
-                            )}
-                        </div>
+                        </>
                       )}
 
-                      <div className="pt-0.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-neutral-500 shrink-0">체크리스트</span>
-                          {totalChecks > 0 ? (
-                            <div className="flex items-center gap-1 font-mono tabular-nums whitespace-nowrap">
-                              <span className="text-neutral-100 font-medium">
-                                {checkRate}%
-                              </span>
-                              <span className="text-[10px] text-neutral-400">
-                                ({doneChecks}/{totalChecks})
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-neutral-500">항목 없음</span>
-                          )}
+                      <span className="font-[360] text-white/38 tracking-[0.025em]">체크리스트</span>
+                      {totalChecks > 0 ? (
+                        <div className="min-w-0">
+                          <div className="flex items-baseline gap-2 tabular-nums whitespace-nowrap">
+                            <span className="text-[#f1f3f7] font-[450] tracking-[0.03em]">
+                              {checkRate}%
+                            </span>
+                            <span className="text-[10.5px] font-[360] text-white/38 tracking-[0.035em]">
+                              {doneChecks}/{totalChecks}
+                            </span>
+                          </div>
+                          <div className="mt-2 w-full h-[1.5px] rounded-full bg-white/[0.08] overflow-hidden">
+                            <div
+                              style={{
+                                width: `${Math.max(checkRate > 0 ? 5 : 0, checkRate)}%`,
+                              }}
+                              className="h-full rounded-full bg-white/80"
+                            />
+                          </div>
                         </div>
-
-                        {totalChecks > 0 && (
-                          <progress
-                            value={Math.max(checkRate > 0 ? 4 : 0, checkRate)}
-                            max={100}
-                            className="mt-1.5 block w-full h-[1.5px] appearance-none bg-white/[0.08] overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-white/[0.08] [&::-webkit-progress-value]:bg-white/85 [&::-moz-progress-bar]:bg-white/85"
-                          />
-                        )}
-                      </div>
+                      ) : (
+                        <span className="font-[360] text-white/34 tracking-[0.02em]">항목 없음</span>
+                      )}
                     </div>
                   </div>
                 )}

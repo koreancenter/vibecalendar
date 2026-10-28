@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { CheckCircle, Circle, MapPin } from 'lucide-react';
+import { CheckCircle, Circle } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { formatKoreanDateWithDay } from '../shared/dateUtils';
 import { hasEventConflict, calculateCompletionStats } from '../shared/scheduleUtils';
@@ -121,14 +121,14 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
           ) : (
             <>
               {/* 달성률 요약 바 */}
-              <div className="p-3.5 border-b border-white/[0.06] bg-[#131620] shrink-0">
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-neutral-400 text-[11px] font-medium">오늘 일정 달성률</span>
-                  <span className="font-mono text-xs font-medium text-neutral-200 tabular-nums">
+              <div className="p-4 border-b border-white/[0.06] bg-[#131620] shrink-0">
+                <div className="flex items-center justify-between text-xs mb-2">
+                  <span className="text-white/46 text-[11px] font-[370] tracking-[0.02em]">오늘 일정 달성률</span>
+                  <span className="text-xs font-[450] text-[#f1f3f7] tabular-nums tracking-[0.03em]">
                     {completed}/{total} ({rate}%)
                   </span>
                 </div>
-                <div className="w-full h-1 rounded-full bg-white/[0.07] overflow-hidden">
+                <div className="w-full h-[1.5px] rounded-full bg-white/[0.07] overflow-hidden">
                   <div
                     style={{ width: `${rate}%` }}
                     className="h-full bg-white/80 rounded-full transition-all duration-200"
@@ -137,84 +137,100 @@ export const DayInspectorPanel: React.FC<DayInspectorPanelProps> = ({
               </div>
 
               {/* 일간 타임라인 요약 목록 */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-2.5">
-                <span className="text-xs font-medium text-neutral-400 block mb-2.5 tabular-nums">
+              <div className="flex-1 p-4 overflow-y-auto space-y-3">
+                <span className="text-[11px] font-[370] text-white/42 block mb-3 tabular-nums tracking-[0.025em]">
                   등록된 일정 ({total}건)
                 </span>
 
                 {sortedEvents.map((ev) => {
                   const theme = resolveEventLuxuryTheme(ev, projects);
-                  const proj = theme.project;
                   const timing = projectEventToViewerTimeZone(ev, viewerTimeZone);
+                  const primaryTime = ev.isAllDay
+                    ? '종일'
+                    : `${timing.localStartTime} – ${timing.localEndTime}`;
+                  const secondaryZone =
+                    !ev.isAllDay && !timing.isSameZone
+                      ? timing.hasOffsetDiff
+                        ? `${timing.sourceMeta.cityKo} ${ev.startTime}`
+                        : timing.sourceMeta.cityKo
+                      : null;
+                  const checklistTotal = ev.checklist?.length || 0;
+                  const checklistDone = ev.checklist?.filter((c) => c.done).length || 0;
+
                   return (
                     <div
                       key={ev.id}
                       onClick={() => onSelectEvent(ev)}
-                      className={`px-3.5 py-3 rounded-xl border luxury-event-card cursor-pointer group flex items-start gap-3 ${theme.blockSurfaceClass}`}
+                      className={`relative pl-[24px] pr-4 py-3.5 rounded-[10px] border luxury-event-card cursor-pointer group flex items-start justify-between gap-3.5 ${
+                        theme.blockSurfaceClass
+                      } ${ev.isCompleted ? 'opacity-60' : ''}`}
                     >
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleComplete(ev.id);
-                        }}
-                        className="mt-0.5 text-neutral-500 hover:text-emerald-400 transition-colors cursor-pointer shrink-0"
-                        title={ev.isCompleted ? '완료 해제' : '완료 표시'}
-                      >
-                        {ev.isCompleted ? (
-                          <CheckCircle className="w-4 h-4 text-emerald-400" />
-                        ) : (
-                          <Circle className="w-4 h-4" />
-                        )}
-                      </button>
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-center gap-1.5 text-[10px] font-mono tabular-nums text-neutral-400 truncate">
-                          <span
-                            className={`w-[5px] h-[5px] rounded-full shrink-0 ${theme.dotClass}`}
-                          />
-                          {proj && (
+                      <span
+                        aria-hidden="true"
+                        className={`pointer-events-none absolute left-[11px] top-3.5 bottom-3.5 w-[2px] rounded-full ${theme.inlayClass}`}
+                      />
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 text-[11px] tabular-nums tracking-[0.035em] leading-[1.4] truncate">
+                          <span className="font-[370] text-white/52 shrink-0">{primaryTime}</span>
+                          {secondaryZone && (
                             <>
-                              <span className={`font-medium shrink-0 ${theme.accentTextClass}`}>
-                                {proj.code || proj.name.slice(0, 5)}
-                              </span>
-                              <span aria-hidden="true" className="text-neutral-600">
+                              <span aria-hidden="true" className="text-white/20 shrink-0">
                                 ·
+                              </span>
+                              <span className="font-[350] tracking-[0.025em] text-white/32 truncate">
+                                {secondaryZone}
                               </span>
                             </>
                           )}
-                          <span>{ev.isAllDay ? '종일' : timing.rangeLabel}</span>
+                          {checklistTotal > 0 && (
+                            <span className="ml-auto text-[10.5px] font-[360] tracking-[0.04em] text-white/34 tabular-nums shrink-0 pl-2">
+                              {checklistDone}/{checklistTotal}
+                            </span>
+                          )}
                         </div>
 
                         <h5
-                          className={`text-xs font-semibold truncate ${
+                          className={`text-[13px] font-[450] tracking-[0.015em] leading-[1.52] mt-2 truncate ${
                             ev.isCompleted
-                              ? 'line-through text-neutral-500'
-                              : 'text-neutral-100'
+                              ? 'line-through text-white/34'
+                              : 'text-[#f2f4f8]'
                           }`}
                         >
                           {ev.title}
                         </h5>
 
                         {(ev.location || ev.locationAddress) && (
-                          <div className="pt-0.5 space-y-0.5 min-w-0">
+                          <div className="mt-2 space-y-1 min-w-0">
                             {ev.location && (
-                              <p className="text-[11px] text-neutral-300 flex items-center gap-1 truncate">
-                                <MapPin className="w-3 h-3 text-neutral-500 shrink-0" />
-                                <span className="truncate">{ev.location}</span>
+                              <p className="text-[11px] font-[380] leading-[1.5] text-white/58 truncate tracking-[0.016em]">
+                                {ev.location}
                               </p>
                             )}
                             {ev.locationAddress && (
-                              <p
-                                className={`${
-                                  ev.location ? 'pl-4' : ''
-                                } text-[10.5px] text-neutral-500 truncate`}
-                              >
+                              <p className="text-[10.5px] font-[350] leading-[1.48] text-white/34 truncate tracking-[0.02em]">
                                 {ev.locationAddress}
                               </p>
                             )}
                           </div>
                         )}
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleComplete(ev.id);
+                        }}
+                        className="mt-0.5 text-white/28 hover:text-emerald-300 transition-colors cursor-pointer shrink-0"
+                        title={ev.isCompleted ? '완료 해제' : '완료 표시'}
+                      >
+                        {ev.isCompleted ? (
+                          <CheckCircle className="w-4 h-4 text-emerald-300/90" />
+                        ) : (
+                          <Circle className="w-4 h-4" />
+                        )}
+                      </button>
                     </div>
                   );
                 })}

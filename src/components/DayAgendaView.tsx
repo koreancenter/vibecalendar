@@ -108,15 +108,15 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
             </span>
           </div>
 
-          <span className="text-[10px] text-neutral-500 font-mono hidden md:inline">
+          <span className="text-[10.5px] text-white/36 tabular-nums tracking-tight hidden md:inline">
             15분 단위 드래그 조절
           </span>
         </div>
 
         {/* 종일 일정 고정 바 */}
         {allDayEvents.length > 0 && (
-          <div className="bg-[#11141d] border-b border-white/[0.07] px-4 py-2.5 flex items-center gap-2.5 shrink-0 flex-wrap">
-            <span className="text-[11px] font-medium text-neutral-500 shrink-0">종일</span>
+          <div className="bg-[#11141d] border-b border-white/[0.07] px-4 py-2.5 flex items-center gap-3 shrink-0 flex-wrap">
+            <span className="text-[11px] font-[370] text-white/42 shrink-0 tracking-[0.025em]">종일</span>
             {allDayEvents.map((ev) => {
               const theme = resolveEventLuxuryTheme(ev, projects);
               const proj = theme.project;
@@ -125,24 +125,27 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
                 <div
                   key={ev.id}
                   onClick={() => onSelectEvent(ev)}
-                  className={`px-3 py-1 rounded-[8px] text-xs font-medium flex items-center gap-1.5 cursor-pointer luxury-event-card border ${
+                  className={`h-[27px] px-3 rounded-[7px] text-xs font-[450] tracking-[0.014em] leading-[1.4] flex items-center gap-2.5 cursor-pointer luxury-event-card border ${
                     theme.chipSurfaceClass
-                  } ${isSelected ? theme.selectedSurfaceClass : ''}`}
+                  } ${isSelected ? theme.selectedSurfaceClass : ''} ${
+                    ev.isCompleted ? 'opacity-55' : ''
+                  }`}
                 >
                   <span
-                    className={`w-[5px] h-[5px] rounded-full shrink-0 ${theme.dotClass}`}
+                    aria-hidden="true"
+                    className={`w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
                   />
                   {isComparing && proj && (
-                    <span className={`font-mono text-[10px] ${theme.accentTextClass}`}>
+                    <span className={`text-[10.5px] font-[440] tracking-[0.03em] ${theme.accentTextClass}`}>
                       {proj.code || proj.name.slice(0, 4)}
                     </span>
                   )}
                   {ev.isCompleted && (
-                    <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <CheckCircle className="w-3 h-3 text-emerald-300/90 shrink-0" />
                   )}
                   <span
                     className={
-                      ev.isCompleted ? 'line-through text-neutral-500' : 'text-neutral-100'
+                      ev.isCompleted ? 'line-through text-white/34' : 'text-[#f2f4f8]'
                     }
                   >
                     {ev.title}
@@ -160,7 +163,7 @@ export const DayAgendaView: React.FC<DayAgendaViewProps> = ({
           viewerTimeZone={viewerTimeZone}
           startHour={7}
           endHour={23}
-          pxPerHour={72}
+          pxPerHour={76}
           selectedEvent={selectedEvent}
           projects={projects}
           comparedProjectIds={comparedProjectIds}

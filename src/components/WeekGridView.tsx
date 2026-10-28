@@ -141,7 +141,7 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
       {/* 1. 주간 요일 헤더 */}
       <div className="h-10 flex bg-[#101218] border-b border-white/[0.06] shrink-0 z-10 items-stretch">
         <div className="w-14 sm:w-16 border-r border-white/[0.06] flex items-center justify-center shrink-0 px-1">
-          <span className="text-[10px] font-mono text-neutral-500 truncate">
+          <span className="text-[10.5px] text-white/38 tabular-nums tracking-tight truncate">
             {viewerShortCode || '시간'}
           </span>
         </div>
@@ -162,33 +162,33 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
                 onDrop={(e) => handleAllDayDrop(e, day.date)}
                 className={`flex items-center justify-center px-1 text-center transition-colors duration-150 cursor-pointer ${
                   isDropTarget
-                    ? 'bg-white/[0.08] ring-1 ring-inset ring-white/25'
+                    ? 'bg-white/[0.07] ring-1 ring-inset ring-white/25'
                     : isSelected
-                    ? 'bg-white/[0.04]'
-                    : 'hover:bg-white/[0.02]'
+                    ? 'bg-white/[0.035]'
+                    : 'hover:bg-white/[0.018]'
                 }`}
               >
                 <div className="flex items-center justify-center gap-1.5">
                   <span
-                    className={`text-[11px] ${
+                    className={`text-[11px] tracking-[0.02em] ${
                       isDropTarget
-                        ? 'text-white font-medium'
+                        ? 'text-white font-[460]'
                         : isWeekend
-                        ? 'text-neutral-500 font-normal'
-                        : 'text-neutral-400 font-medium'
+                        ? 'text-white/34 font-[360]'
+                        : 'text-white/52 font-[420]'
                     }`}
                   >
                     {day.dayOfWeek}
                   </span>
                   <span
-                    className={`w-5 h-5 rounded-md flex items-center justify-center text-[11px] font-mono tabular-nums transition-colors ${
+                    className={`min-w-[22px] h-[22px] px-1.5 rounded-full flex items-center justify-center text-[11.5px] tabular-nums tracking-[0.02em] transition-colors ${
                       day.isToday
-                        ? 'bg-white text-neutral-950 font-semibold'
+                        ? 'bg-white/[0.11] text-[#f5f7fb] ring-1 ring-inset ring-white/[0.26] font-[460]'
                         : isDropTarget
-                        ? 'bg-white/[0.16] text-white font-semibold'
+                        ? 'bg-white/[0.15] text-white font-[460]'
                         : isSelected
-                        ? 'bg-white/[0.10] text-white font-semibold'
-                        : 'text-neutral-300 font-normal'
+                        ? 'bg-white/[0.07] text-white/90 ring-1 ring-inset ring-white/[0.12] font-[450]'
+                        : 'text-white/60 font-[380]'
                     }`}
                   >
                     {day.dayNumber}
@@ -239,21 +239,22 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
                           onSelectDate(day.date);
                           onSelectEvent(ev);
                         }}
-                        className={`px-2 py-0.5 rounded-[6px] text-[11px] font-medium truncate cursor-grab active:cursor-grabbing luxury-event-card border flex items-center gap-1.5 ${
+                        className={`h-[25px] px-2.5 rounded-[6px] text-[11.5px] font-[450] tracking-[0.014em] leading-[1.4] truncate cursor-grab active:cursor-grabbing luxury-event-card border flex items-center gap-2.5 ${
                           theme.chipSurfaceClass
                         } ${isEvSelected ? theme.selectedSurfaceClass : ''} ${
                           isBeingDragged
-                            ? 'opacity-30 scale-95 border-dashed border-white/40'
+                            ? 'opacity-30 scale-95 border-dashed border-white/35'
                             : ''
-                        }`}
+                        } ${ev.isCompleted && !isBeingDragged ? 'opacity-55' : ''}`}
                         title={`${ev.title} (드래그하여 다른 날짜로 이동)`}
                       >
                         <span
-                          className={`w-[5px] h-[5px] rounded-full shrink-0 ${theme.dotClass}`}
+                          aria-hidden="true"
+                          className={`w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
                         />
                         {isComparing && proj && (
                           <span
-                            className={`font-mono text-[9px] shrink-0 ${theme.accentTextClass}`}
+                            className={`text-[10px] font-[440] tracking-[0.03em] shrink-0 ${theme.accentTextClass}`}
                           >
                             {proj.code || proj.name.slice(0, 3)}
                           </span>
@@ -261,8 +262,8 @@ export const WeekGridView: React.FC<WeekGridViewProps> = ({
                         <span
                           className={`truncate ${
                             ev.isCompleted
-                              ? 'line-through text-neutral-500'
-                              : 'text-neutral-100'
+                              ? 'line-through text-white/32'
+                              : 'text-[#f2f4f8]'
                           }`}
                         >
                           {ev.title}

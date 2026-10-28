@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo, useCallback } from 'react';
-import { Calendar, MapPin, CheckCircle, AlertTriangle, Sparkles } from 'lucide-react';
+import { Calendar, CheckCircle, AlertTriangle, Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { layoutTimeEvents, PositionedEvent } from '../utils/timeGridLayout';
 import { minutesToTime } from '../shared/scheduleUtils';
@@ -54,6 +54,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
   pxPerHour = 64,
   selectedEvent,
   projects = [],
+  comparedProjectIds = [],
   scrollResetKey,
   onSelectDate,
   onSelectEvent,
@@ -68,6 +69,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
   const columnsGridRef = useRef<HTMLDivElement>(null);
   const totalHeight = (endHour - startHour) * pxPerHour;
   const isDayMode = variant === 'day';
+  const isComparing = comparedProjectIds.length >= 2;
 
   const columnDates = useMemo(() => columns.map((c) => c.date), [columns]);
 
@@ -171,11 +173,11 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto overflow-x-hidden relative flex bg-[#0c0e14]"
       >
-        {/* 좌측 현재 위치 기준 단일 시간 축 */}
+        {/* 좌측 현재 위치 기준 단일 시간 축 (Pretendard 정폭 숫자) */}
         <div
           className={`${
             isDayMode ? 'w-16 sm:w-20' : 'w-14 sm:w-16'
-          } border-r border-white/[0.07] shrink-0 bg-[#0f1118]/80 select-none`}
+          } border-r border-white/[0.06] shrink-0 bg-[#0e1017]/85 select-none`}
         >
           <div style={{ height: `${totalHeight}px` }} className="relative">
             {hours.map((h, i) => {
@@ -188,13 +190,13 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                   key={h}
                   style={{ top: `${top}px` }}
                   className={`absolute left-0 right-0 -translate-y-1/2 ${
-                    isDayMode ? 'pr-3' : 'pr-2'
+                    isDayMode ? 'pr-3.5' : 'pr-2.5'
                   } text-right pointer-events-none`}
                 >
                   <span
                     className={`${
-                      isDayMode ? 'text-[11px]' : 'text-[10px]'
-                    } text-neutral-500 font-mono font-medium block tabular-nums leading-tight`}
+                      isDayMode ? 'text-[11px]' : 'text-[10.5px]'
+                    } text-white/36 font-[360] block tabular-nums tracking-[0.02em] leading-tight`}
                   >
                     {displayHour}
                   </span>
@@ -208,7 +210,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
         <div
           ref={columnsGridRef}
           className={`flex-1 relative ${
-            isDayMode ? '' : 'grid grid-cols-7 divide-x divide-white/[0.06]'
+            isDayMode ? '' : 'grid grid-cols-7 divide-x divide-white/[0.055]'
           }`}
         >
           {columns.map((col) => {
@@ -230,11 +232,11 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                 style={{ height: `${totalHeight}px` }}
                 className={`relative transition-colors duration-150 ${
                   isDragTargetCol
-                    ? 'bg-white/[0.035] ring-1 ring-inset ring-white/[0.14]'
+                    ? 'bg-white/[0.03] ring-1 ring-inset ring-white/[0.14]'
                     : !isDayMode && col.isSelected
-                    ? 'bg-white/[0.015]'
+                    ? 'bg-white/[0.014]'
                     : !isDayMode
-                    ? 'hover:bg-white/[0.01]'
+                    ? 'hover:bg-white/[0.008]'
                     : ''
                 }`}
               >
@@ -243,16 +245,16 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                   <div
                     key={h}
                     style={{ top: `${i * pxPerHour}px` }}
-                    className="absolute left-0 right-0 border-t border-white/[0.05] pointer-events-none"
+                    className="absolute left-0 right-0 border-t border-white/[0.045] pointer-events-none"
                   >
                     <div
                       style={{ top: `${pxPerHour / 2}px` }}
-                      className="absolute left-0 right-0 border-t border-dashed border-white/[0.022]"
+                      className="absolute left-0 right-0 border-t border-dashed border-white/[0.02]"
                     />
                   </div>
                 ))}
 
-                {/* 타 날짜로 드래그 이동 중일 때 대상 컬럼에 표시되는 럭셔리 글래스 프리뷰 카드 */}
+                {/* 타 날짜로 드래그 이동 중일 때 대상 컬럼에 표시되는 쿨 옵시디언 글래스 프리뷰 카드 */}
                 {activeInteraction &&
                   activeInteraction.hasMoved &&
                   activeInteraction.currentDate === col.date && (
@@ -271,19 +273,19 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                       className={`absolute ${
                         isDayMode
                           ? 'left-3 right-6 px-4 py-2 rounded-[10px]'
-                          : 'left-[4.5px] right-[9px] px-2.5 py-1.5 rounded-[8px]'
+                          : 'left-[4.5px] right-[9px] px-3 py-1.5 rounded-[9px]'
                       } z-40 pointer-events-none flex flex-col justify-center overflow-hidden ${
                         activeInteraction.currentDate !== activeInteraction.originalEvent.date
-                          ? 'luxury-glass-border bg-gradient-to-b from-[#1e2332]/92 via-[#141824]/90 to-[#0e111a]/95 backdrop-blur-xl shadow-[0_18px_40px_-10px_rgba(0,0,0,0.85)]'
+                          ? 'luxury-glass-border bg-gradient-to-b from-[#1a1f2c]/95 via-[#131722]/94 to-[#0e111a]/96 backdrop-blur-xl shadow-[0_18px_40px_-10px_rgba(0,0,0,0.85)]'
                           : 'bg-white/[0.04] border border-white/20 border-dashed backdrop-blur-xs'
                       }`}
                     >
                       {activeInteraction.currentDate !== activeInteraction.originalEvent.date && (
-                        <span className="text-[11px] font-semibold text-neutral-100 truncate leading-tight">
+                        <span className="text-[11.5px] font-[450] text-[#f2f4f8] tracking-[0.014em] leading-[1.45] truncate">
                           {activeInteraction.originalEvent.title}
                         </span>
                       )}
-                      <span className="text-[10px] font-mono font-medium text-neutral-300 tabular-nums truncate">
+                      <span className="text-[10.5px] font-[370] text-white/60 tabular-nums tracking-[0.032em] leading-[1.4] truncate">
                         {activeInteraction.currentDate !== activeInteraction.originalEvent.date
                           ? `${col.date.slice(5).replace('-', '.')} · `
                           : ''}
@@ -300,7 +302,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                     className="absolute left-0 right-0 z-20 pointer-events-none flex items-center"
                   >
                     <div className="w-2 h-2 rounded-full bg-rose-500 -ml-1" />
-                    <div className="flex-1 h-px bg-rose-500/85" />
+                    <div className="flex-1 h-px bg-rose-500/80" />
                   </div>
                 )}
 
@@ -310,7 +312,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                     <div className="pointer-events-auto text-center p-6 bg-[#131620]/90 backdrop-blur-md rounded-2xl border border-white/[0.08] max-w-sm space-y-3">
                       <Calendar className="w-7 h-7 text-neutral-500 mx-auto" strokeWidth={1.6} />
                       <div className="space-y-1">
-                        <p className="text-sm font-semibold text-neutral-200">
+                        <p className="text-sm font-medium text-neutral-200 tracking-tight">
                           등록된 시간제 일정이 없습니다
                         </p>
                         <p className="text-xs text-neutral-400 leading-relaxed">
@@ -336,7 +338,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                   </div>
                 )}
 
-                {/* 배치된 시간제 이벤트 블록 (Smoked Obsidian + Zero-Pill + 2단 장소/주소 위계) */}
+                {/* 배치된 시간제 이벤트 블록 (쿨 옵시디언 글래스 + 2px 주얼 인레이 + 단일 좌측 수직 정렬축) */}
                 {positioned.map((pos) => {
                   const ev = pos.event; // projected event in viewerTimeZone
                   const rawEv = rawEventsById.get(ev.id) || ev;
@@ -390,18 +392,39 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                     ? heightPx
                     : Math.max(20, heightPx - 3);
 
-                  const isCompactBlock = heightPx < 44 || (!isDayMode && durationMin < 40);
-                  const isTallBlock = heightPx >= 78;
+                  const isCompactBlock = heightPx < 52 || (!isDayMode && durationMin < 40);
+                  const isLargeBlock = heightPx >= 92;
 
-                  const shortTimeLabel =
-                    !isMovedInSameDate && timing ? timing.compactStartLabel : displayStart;
-                  const fullRangeLabel =
-                    !isMovedInSameDate && timing
-                      ? timing.rangeLabel
-                      : `${displayStart} – ${displayEnd}`;
+                  const primaryRangeText = `${displayStart} – ${displayEnd}`;
+                  const secondaryZoneText =
+                    !isMovedInSameDate && timing && !timing.isSameZone
+                      ? timing.hasOffsetDiff
+                        ? `${timing.sourceMeta.cityKo} ${rawEv.startTime}`
+                        : timing.sourceMeta.cityKo
+                      : null;
 
                   const checklistTotal = rawEv.checklist?.length || 0;
                   const checklistDone = rawEv.checklist?.filter((c) => c.done).length || 0;
+
+                  const paddingClasses = isCompactBlock
+                    ? isDayMode
+                      ? 'rounded-[9px] px-3.5 py-1'
+                      : 'rounded-[8px] px-3 py-0.5'
+                    : isLargeBlock
+                    ? isDayMode
+                      ? 'rounded-[11px] pl-[26px] pr-4 py-4'
+                      : 'rounded-[10px] pl-[24px] pr-4 py-3.5'
+                    : isDayMode
+                    ? 'rounded-[10px] pl-[22px] pr-3.5 py-2.5'
+                    : 'rounded-[9px] pl-[20px] pr-3 py-2';
+
+                  const inlayGeometryClasses = isLargeBlock
+                    ? isDayMode
+                      ? 'left-[12px] top-4 bottom-4'
+                      : 'left-[11px] top-3.5 bottom-3.5'
+                    : isDayMode
+                    ? 'left-[10px] top-2.5 bottom-2.5'
+                    : 'left-[9px] top-2 bottom-2';
 
                   return (
                     <div
@@ -416,15 +439,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                         left: leftExpr,
                         width: widthExpr,
                       }}
-                      className={`group absolute ${
-                        isDayMode
-                          ? isCompactBlock
-                            ? 'rounded-[10px] px-3.5 py-1'
-                            : 'rounded-[10px] px-4 py-2.5'
-                          : isCompactBlock
-                          ? 'rounded-[8px] px-2.5 py-0.5'
-                          : 'rounded-[8px] px-2.5 py-2'
-                      } luxury-event-card cursor-grab active:cursor-grabbing z-10 flex flex-col justify-between overflow-hidden select-none border ${
+                      className={`group absolute ${paddingClasses} luxury-event-card cursor-grab active:cursor-grabbing z-10 flex flex-col justify-between overflow-hidden select-none border ${
                         theme.blockSurfaceClass
                       } ${
                         isEvSelected && !isMovedToOtherDate
@@ -436,7 +451,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                           : isMovedInSameDate
                           ? 'z-50 shadow-2xl ring-1 ring-white/30 opacity-95'
                           : ''
-                      } ${rawEv.isCompleted && !isMovedToOtherDate ? 'opacity-65' : ''}`}
+                      } ${rawEv.isCompleted && !isMovedToOtherDate ? 'opacity-55' : ''}`}
                     >
                       {/* 상단 리사이즈 핸들 */}
                       <div
@@ -444,131 +459,149 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                           onSelectDate?.(col.date);
                           startInteraction(e, ev, 'resize-top', col.date);
                         }}
-                        className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.06] transition-opacity duration-150"
+                        className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.05] transition-opacity duration-150"
                         title="위로 당겨 시작 시간 조정"
                       >
                         <div className="w-5 h-0.5 rounded-full bg-white/25" />
                       </div>
 
                       {isCompactBlock ? (
-                        <div className="flex items-center gap-1.5 w-full overflow-hidden leading-tight my-auto">
+                        <div className="flex items-center gap-2.5 w-full overflow-hidden leading-[1.4] my-auto">
                           <span
-                            className={`w-[5px] h-[5px] rounded-full shrink-0 ${theme.dotClass}`}
+                            aria-hidden="true"
+                            className={`w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
                           />
                           {pos.hasConflict && (
-                            <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
+                            <AlertTriangle className="w-3 h-3 text-amber-300/90 shrink-0" />
                           )}
                           {rawEv.isCompleted && (
-                            <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" />
+                            <CheckCircle className="w-3 h-3 text-emerald-300/90 shrink-0" />
                           )}
-                          <span className="text-[10px] font-mono text-neutral-400 shrink-0 tabular-nums">
-                            {shortTimeLabel}
+                          <span className="text-[10.5px] font-[370] text-white/46 shrink-0 tabular-nums tracking-[0.032em]">
+                            {displayStart}
                           </span>
                           <span
-                            className={`text-[11px] font-medium truncate tracking-[0.005em] ${
+                            className={`text-[11.5px] font-[450] truncate tracking-[0.014em] ${
                               rawEv.isCompleted
-                                ? 'line-through text-neutral-500'
-                                : 'text-neutral-100'
+                                ? 'line-through text-white/34'
+                                : 'text-[#f2f4f8]'
                             }`}
                           >
                             {rawEv.title}
                           </span>
                         </div>
                       ) : (
-                        <div className="flex flex-col h-full overflow-hidden justify-start min-w-0">
-                          {/* 1열: 무박스 에디토리얼 메타데이터 킥커 (Zero-Pill) */}
-                          <div className="flex items-center gap-1.5 text-[10px] font-mono tabular-nums text-neutral-400 leading-none min-w-0">
-                            <span
-                              className={`w-[5px] h-[5px] rounded-full shrink-0 ${theme.dotClass}`}
-                            />
-                            {proj && (
-                              <>
-                                <span
-                                  className={`font-medium shrink-0 tracking-tight ${theme.accentTextClass}`}
-                                  title={proj.name}
-                                >
-                                  {proj.code || proj.name.slice(0, 5)}
-                                </span>
-                                <span aria-hidden="true" className="text-neutral-600 shrink-0">
-                                  ·
-                                </span>
-                              </>
-                            )}
-                            <span className="truncate">
-                              {fullRangeLabel}
-                              {isDayMode ? ` · ${durationMin}분` : ''}
-                            </span>
-                            {(pos.hasConflict || rawEv.isCompleted) && (
-                              <span className="ml-auto flex items-center gap-1 shrink-0 pl-1">
-                                {pos.hasConflict && (
-                                  <AlertTriangle className="w-3 h-3 text-amber-400" />
-                                )}
-                                {rawEv.isCompleted && (
-                                  <CheckCircle className="w-3 h-3 text-emerald-400" />
-                                )}
-                              </span>
-                            )}
-                          </div>
+                        <>
+                          {/* 좌측 내경에 정밀 가공된 2px 수직 주얼 인레이 바 (모든 행의 단일 좌측 정렬축 기준선) */}
+                          <span
+                            aria-hidden="true"
+                            className={`pointer-events-none absolute w-[2px] rounded-full ${inlayGeometryClasses} ${theme.inlayClass}`}
+                          />
 
-                          {/* 2열: 일정 제목 */}
-                          <div
-                            className={`${
-                              isDayMode ? 'text-xs sm:text-sm' : 'text-[11.5px]'
-                            } font-semibold leading-snug truncate mt-1 tracking-[0.005em] ${
-                              rawEv.isCompleted
-                                ? 'line-through text-neutral-500'
-                                : 'text-neutral-100'
-                            }`}
-                          >
-                            {rawEv.title}
-                          </div>
-
-                          {/* 3열: 중형 블록(62~77px) 1줄 공식 장소명 / 대형 블록(78px+) 2단 공식 장소명 + 상세 주소 */}
-                          {!isTallBlock &&
-                            heightPx >= 62 &&
-                            (rawEv.location || rawEv.locationAddress) && (
-                              <div className="flex items-center gap-1 text-[10px] text-neutral-400 mt-0.5 truncate">
-                                <MapPin className="w-2.5 h-2.5 text-neutral-500 shrink-0" />
-                                <span className="truncate">
-                                  {rawEv.location || rawEv.locationAddress}
-                                </span>
-                              </div>
-                            )}
-
-                          {isTallBlock && (rawEv.location || rawEv.locationAddress) && (
-                            <div className="mt-1.5 space-y-0.5 min-w-0">
-                              {rawEv.location && (
-                                <div
-                                  className={`flex items-center gap-1 ${
-                                    isDayMode ? 'text-xs' : 'text-[10.5px]'
-                                  } text-neutral-300 font-medium truncate`}
-                                >
-                                  <MapPin className="w-3 h-3 text-neutral-500 shrink-0" />
-                                  <span className="truncate">{rawEv.location}</span>
-                                </div>
+                          <div className="flex flex-col h-full overflow-hidden justify-start min-w-0">
+                            {/* 1행: 미세 웨이트(370/350) + 여유로운 정폭 자간(+0.035em) 시간 킥커 */}
+                            <div className="flex items-center gap-2 text-[10.5px] sm:text-[11px] tabular-nums leading-[1.4] min-w-0 tracking-[0.035em]">
+                              {isComparing && proj && (
+                                <>
+                                  <span
+                                    className={`font-[440] tracking-[0.03em] shrink-0 ${theme.accentTextClass}`}
+                                    title={proj.name}
+                                  >
+                                    {proj.code || proj.name.slice(0, 5)}
+                                  </span>
+                                  <span aria-hidden="true" className="text-white/22 shrink-0">
+                                    ·
+                                  </span>
+                                </>
                               )}
-                              {rawEv.locationAddress &&
-                                (heightPx >= 94 || isDayMode || !rawEv.location) && (
+
+                              <span className="font-[370] text-white/52 shrink-0">
+                                {primaryRangeText}
+                              </span>
+
+                              {secondaryZoneText && (
+                                <>
+                                  <span aria-hidden="true" className="text-white/20 shrink-0">
+                                    ·
+                                  </span>
+                                  <span className="font-[350] tracking-[0.025em] text-white/32 truncate">
+                                    {secondaryZoneText}
+                                  </span>
+                                </>
+                              )}
+
+                              {(checklistTotal > 0 || pos.hasConflict || rawEv.isCompleted) && (
+                                <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
+                                  {checklistTotal > 0 && (
+                                    <span
+                                      className="text-[10.5px] font-[360] tracking-[0.04em] text-white/34 tabular-nums"
+                                      title={`체크리스트 ${checklistDone}/${checklistTotal}`}
+                                    >
+                                      {checklistDone}/{checklistTotal}
+                                    </span>
+                                  )}
+                                  {pos.hasConflict && (
+                                    <AlertTriangle className="w-3 h-3 text-amber-300/90" />
+                                  )}
+                                  {rawEv.isCompleted && (
+                                    <CheckCircle className="w-3 h-3 text-emerald-300/90" />
+                                  )}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 2행: 빛 번짐을 억제한 미세 웨이트(450) + 여유로운 행간(1.52)·자간(+0.015em) 제목 */}
+                            <div
+                              className={`${
+                                isDayMode ? 'text-[13px] sm:text-[13.5px]' : 'text-[12px]'
+                              } font-[450] leading-[1.52] ${
+                                isLargeBlock ? 'mt-2' : 'mt-1.5'
+                              } tracking-[0.015em] ${
+                                heightPx >= 140 ? 'line-clamp-2 break-keep' : 'truncate'
+                              } ${
+                                rawEv.isCompleted
+                                  ? 'line-through text-white/34'
+                                  : 'text-[#f2f4f8]'
+                              }`}
+                            >
+                              {rawEv.title}
+                            </div>
+
+                            {/* 3행: 중형 블록(72~91px) 1줄 장소명 */}
+                            {!isLargeBlock &&
+                              heightPx >= 72 &&
+                              (rawEv.location || rawEv.locationAddress) && (
+                                <p className="text-[10.5px] font-[370] text-white/44 mt-1.5 truncate leading-[1.45] tracking-[0.016em]">
+                                  {rawEv.location || rawEv.locationAddress}
+                                </p>
+                              )}
+
+                            {/* 3·4행: 대형 블록(92px+) 여유로운 층간 호흡(mt-2.5, space-y-1) 장소명 + 상세 주소 */}
+                            {isLargeBlock && (rawEv.location || rawEv.locationAddress) && (
+                              <div className="mt-2.5 space-y-1 min-w-0">
+                                {rawEv.location && (
                                   <p
                                     className={`${
-                                      rawEv.location ? 'pl-4' : ''
-                                    } text-[10px] text-neutral-500 truncate leading-tight`}
+                                      isDayMode ? 'text-[11.5px]' : 'text-[11px]'
+                                    } text-white/58 font-[380] leading-[1.48] truncate tracking-[0.016em]`}
                                   >
-                                    {rawEv.locationAddress}
+                                    {rawEv.location}
                                   </p>
                                 )}
-                            </div>
-                          )}
-
-                          {/* 하단 보조: 여유 높이가 충분할 때 체크리스트 완료 수 표기 */}
-                          {checklistTotal > 0 && heightPx >= 112 && (
-                            <div className="mt-auto pt-1 flex items-center justify-end text-[10px] font-mono tabular-nums text-neutral-500">
-                              <span>
-                                체크리스트 {checklistDone}/{checklistTotal}
-                              </span>
-                            </div>
-                          )}
-                        </div>
+                                {rawEv.locationAddress &&
+                                  (heightPx >= 108 || isDayMode || !rawEv.location) && (
+                                    <p
+                                      className={`${
+                                        isDayMode ? 'text-[11px]' : 'text-[10.5px]'
+                                      } text-white/34 font-[350] truncate leading-[1.48] tracking-[0.02em]`}
+                                    >
+                                      {rawEv.locationAddress}
+                                    </p>
+                                  )}
+                              </div>
+                            )}
+                          </div>
+                        </>
                       )}
 
                       {/* 하단 리사이즈 핸들 */}
@@ -577,7 +610,7 @@ export const TimeGridCanvas: React.FC<TimeGridCanvasProps> = ({
                           onSelectDate?.(col.date);
                           startInteraction(e, ev, 'resize-bottom', col.date);
                         }}
-                        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.06] transition-opacity duration-150"
+                        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.05] transition-opacity duration-150"
                         title="아래로 당겨 종료 시간 조정"
                       >
                         <div className="w-5 h-0.5 rounded-full bg-white/25" />
