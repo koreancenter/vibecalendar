@@ -7,6 +7,7 @@ import {
 import { BiometricUserCancelledError } from '../../utils/webauthnBiometrics';
 import { ReminderLeadMinutes } from '../../hooks/useEventReminders';
 import { PWAInstallButton } from '../PWAInstallButton';
+import { TopBarTooltip } from '../common/TopBarTooltip';
 import { LegalDrawerTab } from './LegalAndColophonDrawer';
 
 interface VaultControlMenuProps {
@@ -150,31 +151,36 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
   };
 
   return (
-    <div ref={menuRef} className="relative shrink-0">
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer ${
-          isVaultEncrypted
-            ? 'text-neutral-300 hover:text-white hover:bg-white/[0.06]'
-            : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.06]'
-        }`}
-        title={
-          isVaultEncrypted
-            ? 'AES-256-GCM 볼트 보호 중 · 잠금 및 생체 인증 설정'
-            : '잠금 없이 둘러보는 중 · 볼트 암호화 설정'
-        }
-        aria-label="로컬 볼트 및 보안 메뉴"
+    <div ref={menuRef} className="relative flex items-center shrink-0">
+      <TopBarTooltip
+        label={isVaultEncrypted ? '보안 볼트 활성' : '보안 볼트 · 설정'}
+        shortcut={isVaultEncrypted ? '⌘L' : undefined}
+        align="right"
+        disabled={isOpen}
       >
-        {isVaultEncrypted ? (
-          <Lock className="w-3.5 h-3.5" strokeWidth={1.75} />
-        ) : (
-          <LockOpen className="w-3.5 h-3.5" strokeWidth={1.75} />
-        )}
-      </button>
+        <button
+          type="button"
+          onClick={() => setIsOpen((prev) => !prev)}
+          aria-label="로컬 볼트 및 보안 메뉴"
+          aria-expanded={isOpen}
+          className={`relative h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
+            isOpen
+              ? 'bg-white/[0.09] text-white'
+              : isVaultEncrypted
+              ? 'text-neutral-300 hover:text-white hover:bg-white/[0.06]'
+              : 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+          }`}
+        >
+          {isVaultEncrypted ? (
+            <Lock className="w-[15px] h-[15px]" strokeWidth={1.65} />
+          ) : (
+            <LockOpen className="w-[15px] h-[15px]" strokeWidth={1.65} />
+          )}
+        </button>
+      </TopBarTooltip>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-72 rounded-xl bg-[#13161f] border border-white/[0.09] shadow-2xl py-2 z-50 text-xs text-neutral-200 select-none">
+        <div className="luxury-glass-border absolute right-0 top-full mt-2 w-72 rounded-xl bg-gradient-to-b from-[#181c27]/82 via-[#11141d]/80 to-[#0c0e15]/88 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] py-2 z-50 text-xs text-neutral-200 select-none overflow-hidden">
           <div className="px-3.5 py-2 border-b border-white/[0.06] space-y-0.5">
             <div className="font-semibold text-white flex items-center gap-1.5">
               <Shield className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
@@ -467,7 +473,7 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
           <form
             onSubmit={handleSubmitPinModal}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-sm rounded-2xl bg-[#13161f] p-6 luxury-glass-border space-y-5 text-neutral-200"
+            className="luxury-glass-border relative w-full max-w-sm rounded-xl bg-gradient-to-b from-[#181c27]/84 via-[#11141d]/82 to-[#0c0e15]/90 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] p-6 space-y-5 text-neutral-200 overflow-hidden"
           >
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-white tracking-tight">

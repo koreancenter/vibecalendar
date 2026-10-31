@@ -7,6 +7,7 @@ import {
   formatClockInTimeZone,
   formatHourDiffShort,
 } from '../shared/timeZoneUtils';
+import { TopBarTooltip } from './common/TopBarTooltip';
 
 interface TimeZoneControlProps {
   now?: Date;
@@ -80,61 +81,69 @@ export const TimeZoneControl: React.FC<TimeZoneControlProps> = ({
     );
   }, [searchQuery]);
 
+  const tooltipLabel =
+    secondaryMeta && secondaryClock
+      ? `듀얼 시간대 · ${viewerMeta.shortCode} / ${secondaryMeta.shortCode}`
+      : `시간대 설정 · ${viewerMeta.shortCode} (${viewerClock.utcOffsetLabel})`;
+
   if (!isInteractive) {
     return (
-      <div
-        className="hidden sm:flex items-center gap-1.5 px-1.5 text-xs text-neutral-400 select-none whitespace-nowrap shrink-0"
-        title={`현재 위치 시간대 · ${viewerMeta.cityKo} (${viewerMeta.iana}, ${viewerClock.utcOffsetLabel})`}
-      >
-        <span className="text-[11px] text-neutral-400 tracking-tight">{viewerMeta.cityKo}</span>
-        <span className="font-mono tabular-nums text-xs text-neutral-200 font-medium">
-          {viewerClock.time24}
-        </span>
+      <div className="hidden sm:flex items-center shrink-0">
+        <TopBarTooltip
+          label={`${viewerMeta.cityKo} · ${viewerMeta.shortCode}`}
+          shortcut={viewerClock.utcOffsetLabel}
+        >
+          <div className="h-7 px-2 flex items-center gap-1.5 text-xs text-neutral-400 select-none whitespace-nowrap">
+            <span className="text-[11.5px] text-neutral-400 tracking-tight">
+              {viewerMeta.cityKo}
+            </span>
+            <span className="font-mono tabular-nums text-xs text-neutral-200 font-medium">
+              {viewerClock.time24}
+            </span>
+          </div>
+        </TopBarTooltip>
       </div>
     );
   }
 
   return (
     <div ref={containerRef} className="relative hidden sm:flex items-center shrink-0">
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        className={`h-7 px-2 rounded-lg flex items-center gap-1.5 text-xs transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
-          isOpen || secondaryMeta
-            ? 'bg-white/[0.05] text-neutral-100 hover:bg-white/[0.08]'
-            : 'text-neutral-400 hover:text-neutral-100 hover:bg-white/[0.05]'
-        }`}
-        title={
-          secondaryMeta && secondaryClock
-            ? `듀얼 시간대 활성 · ${viewerMeta.cityKo} ${viewerClock.time24} (${viewerMeta.shortCode}) / ${secondaryMeta.cityKo} ${secondaryClock.time24} (${secondaryMeta.shortCode})`
-            : `기준 시간대 · ${viewerMeta.cityKo} (${viewerClock.utcOffsetLabel}) — 클릭하여 글로벌 보조 시간대 추가`
-        }
-      >
-        <span className="text-[11px] text-neutral-400 tracking-tight">{viewerMeta.cityKo}</span>
-        <span className="font-mono tabular-nums text-xs text-neutral-100 font-medium">
-          {viewerClock.time24}
-        </span>
-        {secondaryMeta && secondaryClock ? (
-          <>
-            <span aria-hidden="true" className="text-neutral-600">
-              ·
-            </span>
-            <span className="text-[11px] text-sky-300/85 tracking-tight">
-              {secondaryMeta.cityKo}
-            </span>
-            <span className="font-mono tabular-nums text-xs text-sky-200 font-medium">
-              {secondaryClock.time24}
-            </span>
-          </>
-        ) : (
-          <span className="hidden xl:inline font-mono text-[10px] text-neutral-500">
-            {viewerMeta.shortCode}
+      <TopBarTooltip label={tooltipLabel} disabled={isOpen}>
+        <button
+          type="button"
+          onClick={() => setIsOpen((prev) => !prev)}
+          aria-label="글로벌 시간대 설정"
+          aria-expanded={isOpen}
+          className={`group/tz h-7 px-2 rounded-lg flex items-center gap-1.5 text-xs transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
+            isOpen || secondaryMeta
+              ? 'bg-white/[0.06] text-neutral-100 hover:bg-white/[0.09]'
+              : 'text-neutral-400 hover:text-neutral-100 hover:bg-white/[0.05]'
+          }`}
+        >
+          <span className="text-[11.5px] text-neutral-400 group-hover/tz:text-neutral-200 tracking-tight transition-colors">
+            {viewerMeta.cityKo}
           </span>
-        )}
-      </button>
+          <span className="font-mono tabular-nums text-xs text-neutral-200 group-hover/tz:text-white font-medium transition-colors">
+            {viewerClock.time24}
+          </span>
+          {secondaryMeta && secondaryClock && (
+            <>
+              <span aria-hidden="true" className="text-neutral-600">
+                ·
+              </span>
+              <span className="text-[11.5px] text-sky-300/85 tracking-tight">
+                {secondaryMeta.cityKo}
+              </span>
+              <span className="font-mono tabular-nums text-xs text-sky-200 font-medium">
+                {secondaryClock.time24}
+              </span>
+            </>
+          )}
+        </button>
+      </TopBarTooltip>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-white/[0.09] bg-[#12141c] p-3.5 text-neutral-100 shadow-2xl z-[95]">
+        <div className="luxury-glass-border absolute right-0 top-full mt-2 w-80 rounded-xl bg-gradient-to-b from-[#181c27]/82 via-[#11141d]/80 to-[#0c0e15]/88 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] p-3.5 text-neutral-100 z-[95] overflow-hidden">
           {/* 현재 기준 · 보조 시각 요약 */}
           <div className="flex items-center justify-between gap-2 pb-3 border-b border-white/[0.06]">
             <div className="min-w-0">
@@ -190,13 +199,13 @@ export const TimeZoneControl: React.FC<TimeZoneControlProps> = ({
           </div>
 
           {/* 탭 전환: 보조 시간대 vs 기준 시간대 */}
-          <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-lg bg-[#0b0d13] p-1 border border-white/[0.05]">
+          <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-lg bg-white/[0.03] p-0.5 border border-white/[0.06]">
             <button
               type="button"
               onClick={() => setActiveTab('secondary')}
-              className={`py-1.5 px-2 rounded-md text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
+              className={`py-1.5 px-2 rounded-[6px] text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 activeTab === 'secondary'
-                  ? 'bg-white/[0.09] text-white'
+                  ? 'bg-white/[0.10] text-white'
                   : 'text-neutral-400 hover:text-neutral-200'
               }`}
             >
@@ -205,9 +214,9 @@ export const TimeZoneControl: React.FC<TimeZoneControlProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('primary')}
-              className={`py-1.5 px-2 rounded-md text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
+              className={`py-1.5 px-2 rounded-[6px] text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 activeTab === 'primary'
-                  ? 'bg-white/[0.09] text-white'
+                  ? 'bg-white/[0.10] text-white'
                   : 'text-neutral-400 hover:text-neutral-200'
               }`}
             >
@@ -223,7 +232,7 @@ export const TimeZoneControl: React.FC<TimeZoneControlProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="도시·국가·코드 검색 (예: 자카르타, WIB, 런던)"
-              className="w-full h-8 pl-8 pr-7 rounded-lg bg-[#0b0d13] border border-white/[0.07] text-xs text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:border-white/[0.2]"
+              className="w-full h-8 pl-8 pr-7 rounded-lg bg-black/25 border border-white/[0.08] text-xs text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:border-white/[0.2]"
             />
             {searchQuery && (
               <button

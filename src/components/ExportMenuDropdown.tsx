@@ -25,6 +25,7 @@ import {
   PdfExportScope,
   PdfThemeMode,
 } from '../utils/pdfExport';
+import { TopBarTooltip } from './common/TopBarTooltip';
 
 const PDF_THEME_STORAGE_KEY = 'vibe_pdf_export_theme_v1';
 
@@ -233,30 +234,31 @@ export const ExportMenuDropdown: React.FC<ExportMenuDropdownProps> = ({
         }}
       />
 
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        disabled={Boolean(exportingScope)}
-        aria-label="내보내기 및 백업"
-        aria-expanded={isOpen}
-        title="내보내기 · 가져오기 · 백업 (PDF · ICS · JSON)"
-        className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer disabled:opacity-60 ${
-          isOpen
-            ? 'bg-white/[0.08] text-white'
-            : 'text-neutral-500 hover:text-white hover:bg-white/[0.05]'
-        }`}
-      >
-        {exportingScope ? (
-          <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
-        ) : hasExported ? (
-          <Check className="w-3.5 h-3.5 text-emerald-300" />
-        ) : (
-          <Download className="w-3.5 h-3.5" strokeWidth={1.65} />
-        )}
-      </button>
+      <TopBarTooltip label="내보내기 · 백업" align="right" disabled={isOpen}>
+        <button
+          type="button"
+          onClick={() => setIsOpen((prev) => !prev)}
+          disabled={Boolean(exportingScope)}
+          aria-label="내보내기 및 백업"
+          aria-expanded={isOpen}
+          className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
+            isOpen
+              ? 'bg-white/[0.09] text-white'
+              : 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+          }`}
+        >
+          {exportingScope ? (
+            <Loader2 className="w-[15px] h-[15px] text-white animate-spin" />
+          ) : hasExported ? (
+            <Check className="w-[15px] h-[15px] text-emerald-300" />
+          ) : (
+            <Download className="w-[15px] h-[15px]" strokeWidth={1.65} />
+          )}
+        </button>
+      </TopBarTooltip>
 
       {isOpen && (
-        <div className="luxury-glass-border absolute right-0 top-full mt-2 w-64 rounded-xl bg-gradient-to-b from-[#181c27]/88 via-[#11141d]/84 to-[#0c0e15]/92 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.82),0_8px_20px_-4px_rgba(0,0,0,0.52),inset_0_1px_0_0_rgba(255,255,255,0.05)] p-1.5 z-50 overflow-hidden">
+        <div className="luxury-glass-border absolute right-0 top-full mt-2 w-64 rounded-xl bg-gradient-to-b from-[#181c27]/82 via-[#11141d]/80 to-[#0c0e15]/88 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] p-1.5 z-50 overflow-hidden">
           {/* 섹션 1: 일정 리포트 (PDF) */}
           <div className="px-2.5 pt-1.5 pb-1 flex items-center justify-between">
             <span className="text-[10px] font-medium text-neutral-500 whitespace-nowrap">
