@@ -490,7 +490,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     setSelectedCategory('전체');
     jumpToDate(dataset.focusDate);
 
-    showToast('가상 장소 기반 학습용 샘플 데이터를 불러왔습니다.', () => {
+    showToast('가상 장소 기반 샘플 데이터를 불러왔습니다.', () => {
       setProjects(prevProjects);
       setEvents(prevEvents);
       setSelectedProjectIds(prevSelectedIds);
@@ -514,7 +514,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     setEvents((curr) => curr.filter((e) => !isSampleEventItem(e)));
     setSelectedEvent((curr) => (curr && isSampleEventItem(curr) ? null : curr));
 
-    showToast('학습용 샘플 데이터를 모두 비웠습니다.', () => {
+    showToast('샘플 데이터를 모두 비웠습니다.', () => {
       setProjects(prevProjects);
       setEvents(prevEvents);
       setSelectedProjectIds(prevSelectedIds);

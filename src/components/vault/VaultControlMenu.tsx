@@ -402,7 +402,7 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
                   }}
                   className="w-full px-3.5 py-2 text-left hover:bg-white/[0.05] text-neutral-300 hover:text-white transition-colors duration-150 cursor-pointer whitespace-nowrap"
                 >
-                  학습용 샘플 데이터 불러오기
+                  샘플 데이터 불러오기
                 </button>
               )}
               {hasSampleData && onClearSampleData && (

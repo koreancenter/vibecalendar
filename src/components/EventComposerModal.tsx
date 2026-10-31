@@ -336,10 +336,10 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
         onKeyDown={handleFormKeyDown}
-        className="luxury-glass-border w-full max-w-xl bg-[#12151e] border border-white/[0.10] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="luxury-glass-border relative w-full max-w-xl bg-gradient-to-b from-[#181c27]/86 via-[#11141d]/84 to-[#0c0e15]/90 backdrop-blur-xl backdrop-saturate-150 rounded-xl shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] overflow-hidden flex flex-col max-h-[90vh]"
       >
         {/* 헤더 */}
-        <div className="px-5 py-3.5 border-b border-white/[0.07] bg-[#13161f] flex items-center justify-between gap-3 shrink-0">
+        <div className="px-5 py-3.5 border-b border-white/[0.07] bg-white/[0.02] flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 text-xs text-neutral-300">
             <Calendar className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
             <span className="font-semibold text-white tracking-tight">새 일정 등록</span>

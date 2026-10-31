@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo, useCallback } from 'react';
-import { Calendar, Plus, Sparkles } from 'lucide-react';
+import { Plus, Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { layoutTimeEvents, PositionedEvent } from '../utils/timeGridLayout';
 import { minutesToTime } from '../shared/scheduleUtils';
@@ -157,43 +157,33 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
       {!isDayMode && showEmptyGuide && emptyGuideText && !activeInteraction && (
         <div className="absolute inset-0 pl-14 sm:pl-16 pointer-events-none flex items-center justify-center z-20 px-6">
           {isWorkspaceEmpty && onLoadSampleData ? (
-            <div className="pointer-events-auto max-w-sm rounded-2xl bg-[#12151e]/92 backdrop-blur-md border border-white/[0.08] px-6 py-5 text-center space-y-3 shadow-[0_24px_56px_-16px_rgba(0,0,0,0.75)]">
-              <div className="space-y-1">
-                <p className="text-xs sm:text-[13px] font-medium text-neutral-200 tracking-tight">
-                  현재 등록된 일정이 없습니다
-                </p>
-                <p className="text-[11px] text-neutral-400 leading-relaxed">
-                  좌측 컨시어지에 일정을 지시하거나, 사용법 학습을 위한 가상 샘플 일정을 불러와 보세요.
-                </p>
-              </div>
-              <div className="pt-0.5 flex flex-col items-center gap-2">
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  {onQuickCreateSlot && columns[0] && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const targetDate =
-                          columns.find((c) => c.isSelected)?.date || columns[0].date;
-                        onQuickCreateSlot(targetDate, '10:00', '11:00');
-                      }}
-                      className="h-9 px-4 rounded-xl bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
-                    >
-                      <Plus className="w-3.5 h-3.5 shrink-0" />
-                      <span>새 일정 직접 등록</span>
-                    </button>
-                  )}
+            <div className="luxury-glass-border relative pointer-events-auto rounded-xl bg-gradient-to-b from-[#181c27]/78 via-[#11141d]/76 to-[#0c0e15]/84 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] px-6 py-5 text-center space-y-3.5 overflow-hidden">
+              <p className="text-[13px] font-medium text-neutral-100 tracking-tight">
+                현재 등록된 일정이 없습니다
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {onQuickCreateSlot && columns[0] && (
                   <button
                     type="button"
-                    onClick={onLoadSampleData}
-                    className="h-9 px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.11] text-xs font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                    onClick={() => {
+                      const targetDate =
+                        columns.find((c) => c.isSelected)?.date || columns[0].date;
+                      onQuickCreateSlot(targetDate, '10:00', '11:00');
+                    }}
+                    className="h-9 px-4 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                    <span>학습용 샘플 데이터 불러오기</span>
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    <span>새 일정 등록</span>
                   </button>
-                </div>
-                <span className="text-[10.5px] text-neutral-500">
-                  빈 시간대 더블클릭으로 즉시 등록 · 샘플은 언제든 비우기 가능
-                </span>
+                )}
+                <button
+                  type="button"
+                  onClick={onLoadSampleData}
+                  className="h-9 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.13] border border-white/[0.09] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                  <span>샘플 데이터 불러오기</span>
+                </button>
               </div>
             </div>
           ) : (
@@ -391,40 +381,32 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                 {/* 일간 뷰 빈 상태 안내 */}
                 {isDayMode && positioned.length === 0 && !activeInteraction && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-6">
-                    <div className="pointer-events-auto text-center p-6 bg-[#131620]/90 backdrop-blur-md rounded-2xl border border-white/[0.08] max-w-sm space-y-3">
-                      <Calendar className="w-7 h-7 text-neutral-500 mx-auto" strokeWidth={1.6} />
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-neutral-200 tracking-tight">
-                          등록된 시간제 일정이 없습니다
-                        </p>
-                        <p className="text-xs text-neutral-400 leading-relaxed">
-                          원하는 시간대를 더블클릭해 바로 등록하거나, 좌측 컨시어지에 지시해 보세요.
-                        </p>
-                      </div>
+                    <div className="luxury-glass-border relative pointer-events-auto rounded-xl bg-gradient-to-b from-[#181c27]/78 via-[#11141d]/76 to-[#0c0e15]/84 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] px-6 py-5 text-center space-y-3.5 overflow-hidden">
+                      <p className="text-[13px] font-medium text-neutral-100 tracking-tight">
+                        등록된 시간제 일정이 없습니다
+                      </p>
                       {(onQuickCreateSlot || (isWorkspaceEmpty && onLoadSampleData)) && (
-                        <div className="pt-1 flex flex-col items-center gap-2">
-                          <div className="flex flex-wrap items-center justify-center gap-2">
-                            {onQuickCreateSlot && (
-                              <button
-                                type="button"
-                                onClick={() => onQuickCreateSlot(col.date, '10:00', '11:00')}
-                                className="h-8.5 px-3.5 rounded-xl bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
-                              >
-                                <Plus className="w-3.5 h-3.5 shrink-0" />
-                                <span>새 일정 직접 등록</span>
-                              </button>
-                            )}
-                            {isWorkspaceEmpty && onLoadSampleData && (
-                              <button
-                                type="button"
-                                onClick={onLoadSampleData}
-                                className="h-8.5 px-3.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.11] text-xs font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
-                              >
-                                <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                                <span>샘플 데이터 불러오기</span>
-                              </button>
-                            )}
-                          </div>
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          {onQuickCreateSlot && (
+                            <button
+                              type="button"
+                              onClick={() => onQuickCreateSlot(col.date, '10:00', '11:00')}
+                              className="h-9 px-4 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                            >
+                              <Plus className="w-3.5 h-3.5 shrink-0" />
+                              <span>새 일정 등록</span>
+                            </button>
+                          )}
+                          {isWorkspaceEmpty && onLoadSampleData && (
+                            <button
+                              type="button"
+                              onClick={onLoadSampleData}
+                              className="h-9 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.13] border border-white/[0.09] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                              <span>샘플 데이터 불러오기</span>
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>

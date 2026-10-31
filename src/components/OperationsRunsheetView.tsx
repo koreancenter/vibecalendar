@@ -569,20 +569,15 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
         {/* 3. 본문 영역: 빈 상태 / 런시트 표 / 3열 준비 보드 */}
         {sortedViewModels.length === 0 ? (
           <div className="flex-1 flex items-center justify-center p-6">
-            <div className="max-w-md rounded-2xl bg-[#12151e] border border-white/[0.08] px-6 py-6 text-center space-y-3.5">
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-neutral-100 tracking-tight">
-                  {emptyGuideText || '등록된 행사 공정 일정이 없습니다'}
-                </p>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  개최 예정일 기준으로 D-30부터 본행사 리허설·사후 정산까지 준비 마일스톤과 체크리스트를 역산 생성하거나 새 일정을 직접 추가해 보세요.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            <div className="luxury-glass-border relative rounded-xl bg-gradient-to-b from-[#181c27]/78 via-[#11141d]/76 to-[#0c0e15]/84 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] px-6 py-5 text-center space-y-3.5 overflow-hidden">
+              <p className="text-[13px] font-medium text-neutral-100 tracking-tight">
+                {emptyGuideText || '등록된 행사 공정 일정이 없습니다'}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={handleTriggerReverseMilestones}
-                  className="h-9 px-4 rounded-xl bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                  className="h-9 px-4 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <Sparkles className="w-3.5 h-3.5 shrink-0" />
                   <span>D-Day 역산 공정 설계</span>
@@ -591,7 +586,7 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
                   <button
                     type="button"
                     onClick={() => onOpenCreateEvent(selectedDate)}
-                    className="h-9 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.10] text-xs font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    className="h-9 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.13] border border-white/[0.09] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                   >
                     <Plus className="w-3.5 h-3.5 shrink-0" />
                     <span>새 일정 등록</span>
@@ -601,9 +596,10 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
                   <button
                     type="button"
                     onClick={onLoadSampleData}
-                    className="h-9 px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-xs text-neutral-300 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    className="h-9 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.13] border border-white/[0.09] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    샘플 데이터 체험
+                    <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                    <span>샘플 데이터 불러오기</span>
                   </button>
                 )}
               </div>

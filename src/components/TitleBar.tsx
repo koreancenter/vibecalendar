@@ -202,7 +202,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             type="button"
             onClick={onOpenCreateEvent}
             className="h-7 px-2.5 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
-            title="새 일정 직접 등록 (단축키 N)"
+            title="새 일정 등록 (단축키 N)"
           >
             <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
             <span>새 일정</span>
