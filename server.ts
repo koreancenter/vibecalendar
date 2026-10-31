@@ -13,6 +13,8 @@ import {
   sanitizeGroundingDatesPayload,
   validateResolveLocationRequest,
   sanitizeResolveLocationPayload,
+  validateAndSanitizeOllamaProxyRequest,
+  getHostHardwareMetrics,
   toSafeErrorResponse,
   logSafeServerError,
   apiErrorHandler,
@@ -123,6 +125,82 @@ app.post(
       logSafeServerError('Resolve Location API', err);
       const safe = toSafeErrorResponse(err, 'location', false);
       res.status(safe.status).json({ error: safe.error });
+    }
+  }
+);
+
+// 로컬 실행 환경 호스트 CPU/메모리 텔레메트리 스냅샷 조회
+app.get('/api/agent/system-metrics', apiRateLimiter, (_req, res) => {
+  res.json(getHostHardwareMetrics());
+});
+
+// 브라우저 CORS 정책으로 로컬 Ollama 직접 호출이 차단될 때 안전하게 중계하는 루프백 전용 프록시
+app.post(
+  '/api/agent/ollama-proxy',
+  apiRateLimiter,
+  inlineMediaJsonParser,
+  async (req, res) => {
+    const validation = validateAndSanitizeOllamaProxyRequest(req.body);
+    if (!validation.ok) {
+      res.status(validation.status).json({
+        ok: false,
+        reachable: false,
+        error: validation.error,
+      });
+      return;
+    }
+
+    const { targetUrl, endpoint, method, payload } = validation.value;
+    const timeoutMs = endpoint === '/api/chat' ? 90_000 : 5_000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const upstreamRes = await fetch(targetUrl, {
+        method,
+        headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
+        body: method === 'POST' && payload ? JSON.stringify(payload) : undefined,
+        signal: controller.signal,
+      });
+
+      const contentType = upstreamRes.headers.get('content-type') || '';
+      const rawBody = contentType.includes('application/json')
+        ? await upstreamRes.json().catch(() => null)
+        : await upstreamRes.text().catch(() => '');
+
+      if (!upstreamRes.ok) {
+        res.status(upstreamRes.status).json({
+          ok: false,
+          reachable: true,
+          status: upstreamRes.status,
+          error:
+            typeof rawBody === 'string' && rawBody.trim()
+              ? rawBody.slice(0, 200)
+              : `Ollama 응답 오류 (${upstreamRes.status})`,
+          hostMetrics: getHostHardwareMetrics(),
+        });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        reachable: true,
+        data: rawBody,
+        hostMetrics: getHostHardwareMetrics(),
+      });
+    } catch (err: unknown) {
+      const isTimeout = err instanceof Error && err.name === 'AbortError';
+      res.status(200).json({
+        ok: false,
+        reachable: false,
+        timedOut: isTimeout,
+        error: isTimeout
+          ? '로컬 Ollama 응답 시간이 초과되었습니다 (5초).'
+          : '서버 프록시 경로에서도 로컬 Ollama 인스턴스를 찾을 수 없습니다.',
+        hostMetrics: getHostHardwareMetrics(),
+      });
+    } finally {
+      clearTimeout(timer);
     }
   }
 );

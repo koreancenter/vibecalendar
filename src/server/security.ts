@@ -1,4 +1,5 @@
 import http from 'http';
+import os from 'os';
 import express from 'express';
 import { z } from 'zod';
 import { CalendarCategory, CalendarEventItem, ChecklistItem } from '../types';
@@ -1083,6 +1084,162 @@ export function validateResolveLocationRequest(
   return { ok: true, value: parsed.data };
 }
 
+const ALLOWED_OLLAMA_ENDPOINTS = new Set([
+  '/api/tags',
+  '/api/ps',
+  '/api/version',
+  '/api/chat',
+]);
+
+const ALLOWED_LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+export const OllamaProxyRequestSchema = z
+  .object({
+    baseUrl: z.string().min(1).max(200).optional().default('http://127.0.0.1:11434'),
+    endpoint: z.enum(['/api/tags', '/api/ps', '/api/version', '/api/chat']),
+    method: z.enum(['GET', 'POST']).optional().default('GET'),
+    payload: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+export type OllamaProxyRequestInput = z.infer<typeof OllamaProxyRequestSchema>;
+
+export interface ValidatedOllamaProxyTarget {
+  targetUrl: string;
+  endpoint: '/api/tags' | '/api/ps' | '/api/version' | '/api/chat';
+  method: 'GET' | 'POST';
+  payload?: Record<string, unknown>;
+}
+
+export function validateAndSanitizeOllamaProxyRequest(
+  body: unknown
+): ValidationResult<ValidatedOllamaProxyTarget> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, status: 400, error: '유효하지 않은 프록시 요청 형식입니다.' };
+  }
+
+  const parsed = OllamaProxyRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      error: '허용되지 않은 로컬 프록시 요청 파라미터입니다.',
+    };
+  }
+
+  const { baseUrl, endpoint, method, payload } = parsed.data;
+  if (!ALLOWED_OLLAMA_ENDPOINTS.has(endpoint)) {
+    return { ok: false, status: 400, error: '허용되지 않은 Ollama API 경로입니다.' };
+  }
+
+  if (endpoint === '/api/chat' && method !== 'POST') {
+    return { ok: false, status: 400, error: '채팅 요청은 POST 메서드만 허용됩니다.' };
+  }
+  if (endpoint !== '/api/chat' && method !== 'GET') {
+    return { ok: false, status: 400, error: '상태 조회 요청은 GET 메서드만 허용됩니다.' };
+  }
+
+  let parsedUrl: URL;
+  try {
+    const rawTrimmed = stripUnsafeChars(baseUrl).trim().replace(/\/+$/, '');
+    const withProto = /^https?:\/\//i.test(rawTrimmed) ? rawTrimmed : `http://${rawTrimmed}`;
+    parsedUrl = new URL(withProto);
+  } catch {
+    return { ok: false, status: 400, error: '올바른 로컬 서버 URL 형식이 아닙니다.' };
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    return { ok: false, status: 400, error: 'HTTP/HTTPS 프로토콜만 허용됩니다.' };
+  }
+
+  const hostname = parsedUrl.hostname.toLowerCase();
+  if (!ALLOWED_LOOPBACK_HOSTS.has(hostname)) {
+    return {
+      ok: false,
+      status: 403,
+      error: '보안 정책상 백엔드 프록시는 로컬 루프백(127.0.0.1 / localhost) 주소만 지원합니다.',
+    };
+  }
+
+  if (parsedUrl.username || parsedUrl.password) {
+    return { ok: false, status: 400, error: 'URL 내 인증 정보는 허용되지 않습니다.' };
+  }
+
+  const portNum = parsedUrl.port ? Number(parsedUrl.port) : 11434;
+  if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+    return { ok: false, status: 400, error: '유효하지 않은 포트 번호입니다.' };
+  }
+
+  const origin = `${parsedUrl.protocol}//${parsedUrl.hostname}:${portNum}`;
+  return {
+    ok: true,
+    value: {
+      targetUrl: `${origin}${endpoint}`,
+      endpoint,
+      method,
+      payload: method === 'POST' ? payload : undefined,
+    },
+  };
+}
+
+interface CpuTickTotals {
+  idle: number;
+  total: number;
+}
+
+function readCpuTickTotals(): CpuTickTotals {
+  const cpus = os.cpus();
+  let idle = 0;
+  let total = 0;
+  for (const cpu of cpus) {
+    const t = cpu.times;
+    idle += t.idle;
+    total += t.user + t.nice + t.sys + t.idle + t.irq;
+  }
+  return { idle, total };
+}
+
+let prevCpuSnapshot: CpuTickTotals = readCpuTickTotals();
+let lastHostCpuPercent = 0;
+
+const cpuSampleInterval = setInterval(() => {
+  const current = readCpuTickTotals();
+  const totalDelta = current.total - prevCpuSnapshot.total;
+  const idleDelta = current.idle - prevCpuSnapshot.idle;
+  if (totalDelta > 0) {
+    const busyRatio = Math.max(0, Math.min(1, 1 - idleDelta / totalDelta));
+    lastHostCpuPercent = Math.round(busyRatio * 100);
+  }
+  prevCpuSnapshot = current;
+}, 2000);
+cpuSampleInterval.unref();
+
+export interface HostHardwareMetrics {
+  cpuPercent: number;
+  cores: number;
+  totalMemBytes: number;
+  usedMemBytes: number;
+  isLocalHostServer: boolean;
+}
+
+export function getHostHardwareMetrics(): HostHardwareMetrics {
+  const totalMemBytes = os.totalmem();
+  const freeMemBytes = os.freemem();
+  const usedMemBytes = Math.max(0, totalMemBytes - freeMemBytes);
+  const cores = Math.max(1, os.cpus().length);
+  const isCloudContainer = Boolean(
+    process.env.K_SERVICE || process.env.CLOUD_RUN_JOB || process.env.DYNO
+  );
+
+  return {
+    cpuPercent: lastHostCpuPercent,
+    cores,
+    totalMemBytes,
+    usedMemBytes,
+    isLocalHostServer: !isCloudContainer,
+  };
+}
+
 /**
  * 통합 검증 + 살균 헬퍼 (하위 호환 유지)
  */
@@ -1229,7 +1386,8 @@ export function apiErrorHandler(
     return;
   }
 
-  const isInlineMediaEndpoint = req.path === '/api/agent/command';
+  const isInlineMediaEndpoint =
+    req.path === '/api/agent/command' || req.path === '/api/agent/ollama-proxy';
   const safe = toSafeErrorResponse(err, 'general', isInlineMediaEndpoint);
   logSafeServerError('API Middleware Error', err);
   res.status(safe.status).json({ error: safe.error });

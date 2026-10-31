@@ -421,7 +421,7 @@ export const PromptMarkdownInput = forwardRef<PromptMarkdownInputRef, PromptMark
 
         {/* 3. 미니멀 하단 액션 바 (무테 Ghost + 메뉴 · AI 모델 선택기 · 전송 버튼) */}
         <div className="flex items-center justify-between pt-1 gap-2">
-          <div className="flex items-center gap-1 min-w-0">
+          <div className="flex items-center gap-1 min-w-0 flex-1">
             <div className="relative" ref={menuContainerRef}>
               <button
                 type="button"
