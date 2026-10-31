@@ -1,4 +1,5 @@
 import express from 'express';
+import { createServer as createHttpServer } from 'http';
 import path from 'path';
 import dotenv from 'dotenv';
 import {
@@ -305,10 +306,18 @@ app.use('/api', (_req, res) => {
 app.use(apiErrorHandler);
 
 async function startServer() {
+  const httpServer = createHttpServer(app);
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
+    const hmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        ...(hmrDisabled
+          ? { ws: false as const, hmr: false, watch: null }
+          : { hmr: { server: httpServer }, watch: {} }),
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -319,7 +328,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on http://0.0.0.0:${PORT}`);
   });
 }

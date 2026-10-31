@@ -62,6 +62,15 @@ interface PaletteItem {
   onExecute: () => void;
 }
 
+interface HoveredTooltipState {
+  id: string;
+  section: PaletteItem['section'];
+  text: string;
+  x: number;
+  y: number;
+  placement: 'side' | 'above-modal';
+}
+
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   isOpen,
   events,
@@ -92,13 +101,19 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 }) => {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [hoveredTooltip, setHoveredTooltip] = useState<HoveredTooltipState | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setHoveredTooltip(null);
+      return;
+    }
     setQuery('');
     setActiveIndex(0);
+    setHoveredTooltip(null);
     const t = window.setTimeout(() => {
       inputRef.current?.focus();
     }, 25);
@@ -441,9 +456,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         id: `proj-${proj.id}`,
         section: 'project',
         title: proj.name,
-        subtitle: [proj.code, proj.clientOrOrg, selectedProjectId === proj.id ? '선택됨' : '']
-          .filter(Boolean)
-          .join(' · '),
+        subtitle:
+          [proj.code, proj.clientOrOrg, selectedProjectId === proj.id ? '선택됨' : '']
+            .filter(Boolean)
+            .join(' · ') || '해당 프로젝트 일정만 필터링하여 보기',
         dotClass: pTheme.dotClass,
         onExecute: () => {
           onClose();
@@ -485,6 +501,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
   useEffect(() => {
     setActiveIndex(0);
+    setHoveredTooltip(null);
   }, [query]);
 
   useEffect(() => {
@@ -497,6 +514,41 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
   if (!isOpen) return null;
 
+  const showItemTooltip = (item: PaletteItem, target: HTMLElement) => {
+    if (!item.subtitle) {
+      setHoveredTooltip(null);
+      return;
+    }
+    const itemRect = target.getBoundingClientRect();
+    const modalRect = modalRef.current?.getBoundingClientRect() ?? itemRect;
+    const rightSpace = window.innerWidth - modalRect.right - 12;
+
+    if (rightSpace >= 156) {
+      const anchorX = modalRect.right + 10;
+      const anchorY = Math.min(
+        Math.max(36, itemRect.top + itemRect.height / 2),
+        window.innerHeight - 36
+      );
+      setHoveredTooltip({
+        id: item.id,
+        section: item.section,
+        text: item.subtitle,
+        x: Math.round(anchorX),
+        y: Math.round(anchorY),
+        placement: 'side',
+      });
+    } else {
+      setHoveredTooltip({
+        id: item.id,
+        section: item.section,
+        text: item.subtitle,
+        x: Math.round(modalRect.left),
+        y: Math.round(Math.max(12, modalRect.top - 8)),
+        placement: 'above-modal',
+      });
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -505,11 +557,13 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      setHoveredTooltip(null);
       setActiveIndex((prev) => (items.length > 0 ? (prev + 1) % items.length : 0));
       return;
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
+      setHoveredTooltip(null);
       setActiveIndex((prev) => (items.length > 0 ? (prev - 1 + items.length) % items.length : 0));
       return;
     }
@@ -530,66 +584,91 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     <div
       onClick={onClose}
       onKeyDown={handleKeyDown}
-      className="fixed inset-0 z-[55] flex items-start justify-center pt-[12vh] px-4 bg-black/65 backdrop-blur-xs select-none"
+      className="fixed inset-0 z-[55] flex items-start justify-center pt-[15vh] px-4 bg-black/60 backdrop-blur-xs select-none"
       role="dialog"
       aria-modal="true"
       aria-label="통합 검색 및 명령 팔레트"
     >
       <div
+        ref={modalRef}
         onClick={(e) => e.stopPropagation()}
-        className="luxury-glass-border w-full max-w-xl bg-[#12151e] border border-white/[0.11] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[72vh]"
+        className="luxury-glass-border relative w-full max-w-[388px] bg-[#11141d]/98 border border-white/[0.09] rounded-xl shadow-[0_24px_60px_-12px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col max-h-[min(388px,50vh)]"
       >
         {/* 검색 입력창 */}
-        <div className="h-12 px-4 border-b border-white/[0.07] bg-[#13161f] flex items-center gap-3 shrink-0">
-          <Search className="w-4 h-4 text-neutral-400 shrink-0" />
+        <div className="h-[42px] px-3.5 border-b border-white/[0.06] bg-[#131722] flex items-center gap-2.5 shrink-0">
+          <Search className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="일정 제목 · 장소 · 메모 · 프로젝트 검색 또는 명령 실행..."
-            className="flex-1 bg-transparent text-xs sm:text-sm text-white placeholder:text-neutral-500 outline-hidden"
+            placeholder="일정 · 장소 · 프로젝트 검색 및 명령..."
+            className="no-focus-outline flex-1 bg-transparent text-[12.5px] text-neutral-100 placeholder:text-neutral-500 outline-none"
           />
           {query ? (
             <button
               type="button"
               onClick={() => setQuery('')}
-              className="p-1 rounded text-neutral-500 hover:text-neutral-200 cursor-pointer"
+              className="no-focus-outline p-1 rounded text-neutral-500 hover:text-neutral-200 cursor-pointer"
               title="검색어 지우기"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-3 h-3" />
             </button>
           ) : (
-            <span className="text-[10.5px] font-mono text-neutral-500 shrink-0">ESC</span>
+            <span className="text-[9.5px] font-mono text-neutral-500 px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.06] shrink-0">
+              ESC
+            </span>
           )}
         </div>
 
         {/* 결과 목록 */}
-        <div ref={listRef} className="flex-1 overflow-y-auto p-2 space-y-0.5">
+        <div
+          ref={listRef}
+          onScroll={() => setHoveredTooltip(null)}
+          onMouseLeave={() => setHoveredTooltip(null)}
+          className="flex-1 overflow-y-auto p-1.5 space-y-0.5"
+        >
           {items.length === 0 ? (
-            <div className="py-10 text-center text-xs text-neutral-500">
-              검색어와 일치하는 일정이나 명령이 없습니다.
+            <div className="py-8 text-center text-[11.5px] text-neutral-500">
+              일치하는 일정이나 명령이 없습니다.
             </div>
           ) : (
             items.map((item, idx) => {
               const showHeader = item.section !== lastSection;
               lastSection = item.section;
               const isSelected = idx === activeIndex;
+              const isTooltipTarget = hoveredTooltip?.id === item.id;
 
               return (
                 <React.Fragment key={item.id}>
                   {showHeader && (
-                    <div className="px-2.5 pt-2 pb-1 text-[10.5px] font-medium text-neutral-500 tracking-tight">
+                    <div className="px-2.5 pt-2 pb-1 text-[10px] font-medium text-neutral-500 tracking-tight">
                       {sectionLabels[item.section]}
                     </div>
                   )}
                   <button
                     type="button"
                     data-palette-index={idx}
-                    onMouseEnter={() => setActiveIndex(idx)}
+                    aria-label={item.subtitle ? `${item.title} — ${item.subtitle}` : item.title}
+                    aria-describedby={isTooltipTarget ? 'command-palette-item-tooltip' : undefined}
+                    onMouseEnter={(e) => {
+                      setActiveIndex(idx);
+                      showItemTooltip(item, e.currentTarget);
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredTooltip((prev) => (prev?.id === item.id ? null : prev));
+                    }}
+                    onFocus={(e) => {
+                      if (e.currentTarget.matches(':focus-visible')) {
+                        showItemTooltip(item, e.currentTarget);
+                      }
+                    }}
+                    onBlur={() => {
+                      setHoveredTooltip((prev) => (prev?.id === item.id ? null : prev));
+                    }}
                     onClick={item.onExecute}
-                    className={`w-full px-3 py-2 rounded-xl flex items-center justify-between gap-3 text-left transition-colors cursor-pointer ${
-                      isSelected ? 'bg-white/[0.08] text-white' : 'text-neutral-300 hover:bg-white/[0.04]'
+                    className={`no-focus-outline w-full h-9 px-2.5 rounded-lg flex items-center justify-between gap-2.5 text-left transition-colors duration-100 cursor-pointer ${
+                      isSelected ? 'bg-white/[0.07] text-white' : 'text-neutral-300 hover:bg-white/[0.04]'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -597,34 +676,28 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                         item.icon
                       ) : (
                         <span
-                          className={`w-2 h-2 rounded-full shrink-0 ${
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                             item.dotClass || 'bg-neutral-400'
                           }`}
                         />
                       )}
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium truncate text-neutral-100">
-                          {item.title}
-                        </div>
-                        {item.subtitle && (
-                          <div className="text-[11px] text-neutral-400 truncate font-mono tabular-nums mt-0.5 flex items-center gap-1">
-                            {item.section === 'event' && (
-                              <MapPin className="w-2.5 h-2.5 text-neutral-500 shrink-0 hidden sm:inline" />
-                            )}
-                            <span className="truncate">{item.subtitle}</span>
-                          </div>
-                        )}
-                      </div>
+                      <span
+                        className={`text-[12px] font-medium tracking-[-0.01em] truncate ${
+                          isSelected ? 'text-white' : 'text-neutral-200'
+                        }`}
+                      >
+                        {item.title}
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       {item.shortcut && (
-                        <span className="text-[10.5px] font-mono text-neutral-400 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.07]">
+                        <span className="text-[10px] font-mono text-neutral-400 px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.07] leading-none whitespace-nowrap">
                           {item.shortcut}
                         </span>
                       )}
                       {isSelected && (
-                        <CornerDownLeft className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                        <CornerDownLeft className="w-3 h-3 text-neutral-400 shrink-0" />
                       )}
                     </div>
                   </button>
@@ -635,11 +708,44 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         </div>
 
         {/* 하단 단축키 안내 헤어라인 */}
-        <div className="h-8 px-4 bg-[#0f121a] border-t border-white/[0.06] flex items-center justify-between text-[10.5px] text-neutral-500 font-mono shrink-0">
-          <span>↑↓ 이동 · Enter 실행</span>
-          <span className="hidden sm:inline">단축키: N 새 일정 · T 오늘 · M/W/D/O 뷰 전환</span>
+        <div className="h-7 px-3.5 bg-[#0d1017] border-t border-white/[0.06] flex items-center justify-between text-[10px] text-neutral-500 font-mono shrink-0">
+          <span>↑↓ 이동 · ↵ 실행</span>
+          <span className="hidden sm:inline">N 새 일정 · T 오늘 · M/W/D/O 뷰</span>
         </div>
       </div>
+
+      {/* 항목 설명 호버 툴팁 (모달 우측 외곽 플라이아웃 — 상·하 인접 메뉴 가림 원천 차단) */}
+      {hoveredTooltip && (
+        <div
+          id="command-palette-item-tooltip"
+          role="tooltip"
+          style={{
+            transform: `translate3d(${hoveredTooltip.x}px, ${hoveredTooltip.y}px, 0)`,
+          }}
+          className="pointer-events-none fixed top-0 left-0 z-[70]"
+        >
+          <div
+            className={`relative ${
+              hoveredTooltip.placement === 'side'
+                ? '-translate-y-1/2 max-w-[156px] md:max-w-[184px] lg:max-w-[280px] xl:max-w-[340px]'
+                : '-translate-y-full max-w-[min(388px,calc(100vw-32px))]'
+            } px-2.5 py-1.5 rounded-lg bg-[#151925]/96 backdrop-blur-md border border-white/[0.14] shadow-[0_12px_32px_-6px_rgba(0,0,0,0.75)] flex items-start gap-1.5 text-[11px] leading-relaxed text-neutral-200 ${
+              hoveredTooltip.section === 'event' ? 'font-mono tabular-nums' : 'tabular-nums'
+            }`}
+          >
+            {hoveredTooltip.placement === 'side' && (
+              <span
+                aria-hidden="true"
+                className="absolute -left-[4px] top-1/2 -translate-y-1/2 w-[7px] h-[7px] rotate-45 bg-[#151925] border-l border-b border-white/[0.14]"
+              />
+            )}
+            {hoveredTooltip.section === 'event' && (
+              <MapPin className="w-3 h-3 text-neutral-400 shrink-0 mt-0.5" />
+            )}
+            <span className="break-keep break-words">{hoveredTooltip.text}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

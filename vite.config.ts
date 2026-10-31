@@ -1,14 +1,66 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, type Plugin} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
+
+function safeHmrClientTransportPlugin(): Plugin {
+  let hmrDisabled = false;
+
+  return {
+    name: 'safe-hmr-client-transport',
+    apply: 'serve',
+    enforce: 'post',
+    configResolved(config) {
+      hmrDisabled =
+        config.server.hmr === false ||
+        config.server.ws === false ||
+        process.env.DISABLE_HMR === 'true';
+    },
+    transform(code, id) {
+      if (!id.includes('vite/dist/client/client.mjs')) {
+        return null;
+      }
+
+      if (hmrDisabled) {
+        let patched = code.replace('console.debug("[vite] connecting...");', '');
+
+        const wsStart = patched.indexOf('const createWebSocketModuleRunnerTransport =');
+        const wsEnd = patched.indexOf('function createHMRHandler(');
+        if (wsStart !== -1 && wsEnd !== -1 && wsEnd > wsStart) {
+          patched =
+            patched.slice(0, wsStart) +
+            'const createWebSocketModuleRunnerTransport = () => ({ async connect() {}, disconnect() {}, send() {} });\n\n' +
+            patched.slice(wsEnd);
+        }
+
+        const transportStart = patched.indexOf('const transport = normalizeModuleRunnerTransport(');
+        const transportEnd = patched.indexOf('let willUnload = false;');
+        if (transportStart !== -1 && transportEnd !== -1 && transportEnd > transportStart) {
+          patched =
+            patched.slice(0, transportStart) +
+            'const transport = normalizeModuleRunnerTransport(createWebSocketModuleRunnerTransport());\n' +
+            patched.slice(transportEnd);
+        }
+
+        return {code: patched, map: null};
+      }
+
+      const guarded = code.replace(
+        'transport.connect(createHMRHandler(handleMessage));',
+        'transport.connect(createHMRHandler(handleMessage)).catch(() => {});',
+      );
+      return {code: guarded, map: null};
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
     plugins: [
       react(),
       tailwindcss(),
+      safeHmrClientTransportPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: [
@@ -52,7 +104,7 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallbackDenylist: [/^\/api\//, /^\/@vite\//, /^\/@react-refresh/, /^\/src\//],
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           runtimeCaching: [
             {
