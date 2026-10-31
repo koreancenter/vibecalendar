@@ -477,7 +477,9 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
                 <div className="flex items-center gap-2 text-[10px] text-neutral-400 mt-1 font-mono tabular-nums flex-wrap">
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
-                    {ev.date}
+                    {ev.endDate && ev.endDate > ev.date
+                      ? `${ev.date} – ${ev.endDate.slice(5)}`
+                      : ev.date}
                   </span>
                   <span className="flex items-center gap-1 text-neutral-300">
                     <Clock className="w-3 h-3" />
@@ -519,12 +521,18 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
             <div className="space-y-1.5 pt-1.5 border-t border-amber-500/20">
               <span className="text-[10px] font-medium text-neutral-300 flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-amber-400" />
-                <span>여유 시간대로 즉시 변경:</span>
+                <span>
+                  {resp.conflictWarning.targetEventTitle &&
+                  (resp.createdEvents?.length || 0) > 1
+                    ? `'${resp.conflictWarning.targetEventTitle}' 여유 시간대로 즉시 변경:`
+                    : '여유 시간대로 즉시 변경:'}
+                </span>
               </span>
 
               <div className="grid grid-cols-1 gap-1.5">
                 {resp.conflictWarning.suggestedSlots.map((slot, sIdx) => {
-                  const targetEvtId = resp.createdEvents?.[0]?.id;
+                  const targetEvtId =
+                    resp.conflictWarning?.targetEventId || resp.createdEvents?.[0]?.id;
                   return (
                     <button
                       key={`${slot.startTime}-${sIdx}`}

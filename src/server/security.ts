@@ -3,7 +3,7 @@ import os from 'os';
 import express from 'express';
 import { z } from 'zod';
 import { CalendarCategory, CalendarEventItem, ChecklistItem } from '../types';
-import { getTodayDateString } from '../shared/dateUtils';
+import { getDayDistance, getTodayDateString, parseNaturalDateFromText } from '../shared/dateUtils';
 import { normalizeCoordinates, normalizePlaceAndAddress } from '../shared/locationUtils';
 import { isValidTimeZone } from '../shared/timeZoneUtils';
 
@@ -57,7 +57,7 @@ const MAX_ATTACHMENT_TEXT_LENGTH = 40_000;
 const MAX_PROMPT_LENGTH = 8_000;
 const MAX_GROUNDING_TOPIC_LENGTH = 300;
 const MAX_EXISTING_EVENTS_INPUT = 500;
-const MAX_EXISTING_EVENTS_SANITIZED = 40;
+const MAX_EXISTING_EVENTS_SANITIZED = 120;
 const MAX_CHAT_HISTORY_INPUT = 50;
 const MAX_CHAT_HISTORY_SANITIZED = 10;
 const MAX_PROJECTS_INPUT = 200;
@@ -628,9 +628,25 @@ export const ResolveLocationRequestSchema = z
     }
   });
 
+export const EnrichLocationsRequestSchema = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          key: z.string().min(1).max(160),
+          queryName: z.string().min(1).max(400),
+        })
+      )
+      .min(1)
+      .max(8),
+    modelId: z.string().max(80).optional(),
+  })
+  .strict();
+
 export type AgentCommandRequestInput = z.infer<typeof AgentCommandRequestSchema>;
 export type GroundingDatesRequestInput = z.infer<typeof GroundingDatesRequestSchema>;
 export type ResolveLocationRequestInput = z.infer<typeof ResolveLocationRequestSchema>;
+export type EnrichLocationsRequestInput = z.infer<typeof EnrichLocationsRequestSchema>;
 
 /**
  * 살균(Sanitized) 출력 인터페이스 (executeGeminiAgentCommand 및 하위 명령 계약)
@@ -689,6 +705,11 @@ export interface ValidatedGroundingDiscoveryRequest {
 export interface ValidatedLocationResolveRequest {
   location: string;
   locationAddress?: string;
+  modelId: string;
+}
+
+export interface ValidatedEnrichLocationsRequest {
+  items: Array<{ key: string; queryName: string }>;
   modelId: string;
 }
 
@@ -808,6 +829,43 @@ function sanitizeEventSummary(raw: ParsedCalendarEventInput | null | undefined):
   };
 }
 
+function prioritizeEventsByDateProximity(
+  rawEvents: ParsedCalendarEventInput[],
+  anchorDates: string[],
+  limit: number
+): CalendarEventItem[] {
+  const sanitizedAll = rawEvents
+    .map((ev) => sanitizeEventSummary(ev))
+    .filter((ev): ev is CalendarEventItem => ev !== null);
+
+  if (sanitizedAll.length <= limit) {
+    return sanitizedAll;
+  }
+
+  const validAnchors = anchorDates.filter((d) => Boolean(d) && isValidIsoDateString(d));
+  if (validAnchors.length === 0) {
+    return sanitizedAll.slice(0, limit);
+  }
+
+  return sanitizedAll
+    .map((ev) => {
+      let minDist = Number.MAX_SAFE_INTEGER;
+      for (const anchor of validAnchors) {
+        const startDist = getDayDistance(ev.date, anchor);
+        const endDist = ev.endDate ? getDayDistance(ev.endDate, anchor) : startDist;
+        const spanned = ev.endDate && ev.date <= anchor && anchor <= ev.endDate ? 0 : Math.min(startDist, endDist);
+        if (spanned < minDist) {
+          minDist = spanned;
+        }
+      }
+      return { ev, minDist };
+    })
+    .sort((a, b) => a.minDist - b.minDist || a.ev.date.localeCompare(b.ev.date))
+    .slice(0, limit)
+    .map((item) => item.ev)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+}
+
 /**
  * Zod 스키마 검증 완료 후 executeGeminiAgentCommand 전달 전 정밀 페이로드 살균
  */
@@ -879,10 +937,19 @@ export function sanitizeAgentCommandPayload(
   const viewerTimeZone =
     rawViewerTz && isValidTimeZone(rawViewerTz) ? rawViewerTz : 'Asia/Seoul';
 
-  const existingEvents = (rawCtx?.existingEvents ?? [])
-    .slice(0, MAX_EXISTING_EVENTS_SANITIZED)
-    .map((ev) => sanitizeEventSummary(ev))
-    .filter((ev): ev is CalendarEventItem => ev !== null);
+  const promptNaturalDate = parseNaturalDateFromText(prompt, currentYear);
+  const anchorDates = [
+    selectedDate,
+    promptNaturalDate || '',
+    rawCtx?.selectedEvent?.date || '',
+    rawCtx?.lastReferencedEvent?.date || '',
+  ].filter(Boolean);
+
+  const existingEvents = prioritizeEventsByDateProximity(
+    rawCtx?.existingEvents ?? [],
+    anchorDates,
+    MAX_EXISTING_EVENTS_SANITIZED
+  );
 
   const chatHistory = (rawCtx?.chatHistory ?? [])
     .slice(-MAX_CHAT_HISTORY_SANITIZED)
@@ -954,10 +1021,11 @@ export function sanitizeGroundingDatesPayload(
       ? input.selectedDate.trim()
       : getTodayDateString();
 
-  const existingEvents = input.existingEvents
-    .slice(0, MAX_EXISTING_EVENTS_SANITIZED)
-    .map((ev) => sanitizeEventSummary(ev))
-    .filter((ev): ev is CalendarEventItem => ev !== null);
+  const existingEvents = prioritizeEventsByDateProximity(
+    input.existingEvents,
+    [selectedDate, parseNaturalDateFromText(topic, currentYear) || ''],
+    MAX_EXISTING_EVENTS_SANITIZED
+  );
 
   return {
     topic,
@@ -982,6 +1050,23 @@ export function sanitizeResolveLocationPayload(
   return {
     location: effectiveLocation,
     locationAddress: locationAddress || rawAddress,
+    modelId: resolveAllowedCloudModel(input.modelId),
+  };
+}
+
+export function sanitizeEnrichLocationsPayload(
+  input: EnrichLocationsRequestInput
+): ValidatedEnrichLocationsRequest {
+  const items = input.items
+    .slice(0, 8)
+    .map((it) => ({
+      key: sanitizeIdentifier(it.key, 120),
+      queryName: sanitizeSingleLineText(it.queryName, 260),
+    }))
+    .filter((it) => Boolean(it.key && it.queryName));
+
+  return {
+    items,
     modelId: resolveAllowedCloudModel(input.modelId),
   };
 }
@@ -1078,6 +1163,25 @@ export function validateResolveLocationRequest(
       ok: false,
       status: 400,
       error: formatSafeZodError(parsed.error, '유효하지 않은 위치 탐색 요청 형식입니다.'),
+    };
+  }
+
+  return { ok: true, value: parsed.data };
+}
+
+export function validateEnrichLocationsRequest(
+  body: unknown
+): ValidationResult<EnrichLocationsRequestInput> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, status: 400, error: '유효하지 않은 요청 형식입니다.' };
+  }
+
+  const parsed = EnrichLocationsRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      error: formatSafeZodError(parsed.error, '유효하지 않은 일괄 위치 탐색 요청 형식입니다.'),
     };
   }
 
@@ -1283,6 +1387,7 @@ export type ApiErrorContext = 'command' | 'grounding' | 'location' | 'general';
 const UpstreamErrorShapeSchema = z.object({
   status: z.number().int().optional(),
   statusCode: z.number().int().optional(),
+  code: z.string().optional(),
   type: z.string().optional(),
   name: z.string().optional(),
 });
@@ -1303,6 +1408,7 @@ export function toSafeErrorResponse(
   const rawStatus = parsedErr.success
     ? parsedErr.data.statusCode ?? parsedErr.data.status
     : undefined;
+  const rawCode = parsedErr.success ? parsedErr.data.code : undefined;
   const errType = parsedErr.success ? parsedErr.data.type : undefined;
 
   if (errType === 'entity.too.large' || rawStatus === 413) {
@@ -1339,6 +1445,14 @@ export function toSafeErrorResponse(
     };
   }
 
+  if (rawStatus === 503 && rawCode === 'GEMINI_KEY_MISSING') {
+    return {
+      status: 503,
+      error:
+        '클라우드 AI 연결을 위해 Settings > Secrets 패널에서 GEMINI_API_KEY를 설정하거나, 모델 선택기에서 로컬 모델(WebLLM · Ollama)로 전환해 주세요.',
+    };
+  }
+
   if (rawStatus === 503) {
     return {
       status: 503,
@@ -1349,7 +1463,8 @@ export function toSafeErrorResponse(
   if (rawStatus === 401 || rawStatus === 403) {
     return {
       status: 502,
-      error: 'AI 서비스 연결을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.',
+      error:
+        'GEMINI_API_KEY 인증을 확인할 수 없습니다. Settings > Secrets 패널에 설정된 키가 유효한지 점검해 주세요.',
     };
   }
 

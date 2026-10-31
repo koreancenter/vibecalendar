@@ -12,6 +12,7 @@ import {
   AgentMessage,
   AiModelSelection,
   CalendarEventItem,
+  FreeTimeSlot,
   GroundedDateSuggestion,
   RecommendedVenue,
   ChatSessionHistoryItem,
@@ -21,13 +22,20 @@ import {
 } from '../types';
 import {
   DEFAULT_AI_MODEL_SELECTION,
+  enrichLocationsBatch,
+  fetchAgentHealth,
   sendAgentCommand,
 } from '../services/agentApi';
-import { WebLlmLoadProgress } from '../services/webllmProvider';
+import {
+  CURATED_WEBLLM_MODELS,
+  isWebGpuAvailable,
+  WebLlmLoadProgress,
+} from '../services/webllmProvider';
 import {
   detectConflictAndSuggest,
   shouldUseSearchGroundingForPlanning,
 } from '../shared/scheduleUtils';
+import { isInternalOrVirtualLocation } from '../shared/locationUtils';
 import {
   detectBrowserTimeZone,
   isValidTimeZone,
@@ -59,6 +67,15 @@ interface AiChatSidebarProps {
   existingEvents: CalendarEventItem[];
   selectedEvent: CalendarEventItem | null;
   onApplyResponse: (res: AgentCommandResponse) => void;
+  onPatchEventsLocations?: (
+    patches: Array<{
+      id: string;
+      location?: string;
+      locationAddress?: string;
+      locationLat?: number;
+      locationLng?: number;
+    }>
+  ) => void;
   onCreateEventFromVenue: (venue: RecommendedVenue) => void;
   onAddGroundedSuggestion?: (item: GroundedDateSuggestion) => void;
   onJumpToDate?: (date: string) => void;
@@ -76,6 +93,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
   existingEvents,
   selectedEvent,
   onApplyResponse,
+  onPatchEventsLocations,
   onCreateEventFromVenue,
   onAddGroundedSuggestion,
   onJumpToDate,
@@ -145,6 +163,19 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
     return DEFAULT_AI_MODEL_SELECTION;
   });
   const [webllmProgress, setWebllmProgress] = useState<WebLlmLoadProgress | null>(null);
+  const [geminiEnabled, setGeminiEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    void fetchAgentHealth().then(({ geminiEnabled: enabled }) => {
+      if (mounted) {
+        setGeminiEnabled(enabled);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -389,35 +420,72 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
         undefined,
         apiAttachments.length > 0 ? apiAttachments : undefined,
         modelSelection,
-        (prog) => setWebllmProgress(prog.percent >= 100 ? null : prog)
+        (prog) => setWebllmProgress(prog.percent >= 100 ? null : prog),
+        {
+          cloudAvailable: geminiEnabled !== false,
+          onCloudGroundingRoute: () => {
+            showToast('실시간 공휴일·웹 검색 검증을 위해 Cloud 검색 그라운딩으로 조회합니다.');
+          },
+        }
       );
+
+      if (geminiEnabled === false && modelSelection.provider === 'cloud') {
+        setGeminiEnabled(true);
+      }
 
       const enhancedResponse: AgentCommandResponse = { ...res };
       if (res.createdEvents && res.createdEvents.length > 0) {
-        const created = res.createdEvents[0];
-        if (!created.isAllDay && created.startTime && created.endTime) {
+        const projectedPool = mapEventsToViewerZone(existingEvents, effectiveViewerZone);
+        const aggregatedConflicts = new Map<
+          string,
+          { id: string; title: string; startTime: string; endTime: string }
+        >();
+        let firstConflictedEvent: CalendarEventItem | null = null;
+        let firstSuggestedSlots: FreeTimeSlot[] = [];
+        const conflictMessages: string[] = [];
+
+        for (const created of res.createdEvents) {
           const projectedCreated = toViewerProjectedEvent(created, effectiveViewerZone);
-          const projectedExisting = mapEventsToViewerZone(existingEvents, effectiveViewerZone);
-          const conflict = detectConflictAndSuggest(
-            projectedCreated.date,
-            projectedCreated.startTime,
-            projectedCreated.endTime,
-            projectedExisting,
-            created.id
-          );
-          if (conflict.hasConflict) {
-            enhancedResponse.conflictWarning = {
-              hasConflict: true,
-              conflictingEvents: conflict.conflictingEvents.map((c) => ({
-                id: c.id,
-                title: c.title,
-                startTime: c.startTime,
-                endTime: c.endTime,
-              })),
-              suggestedSlots: conflict.suggestedSlots,
-              message: conflict.message,
-            };
+          if (!created.isAllDay && created.startTime && created.endTime) {
+            const conflict = detectConflictAndSuggest(
+              projectedCreated.date,
+              projectedCreated.startTime,
+              projectedCreated.endTime,
+              projectedPool,
+              created.id
+            );
+            if (conflict.hasConflict) {
+              if (!firstConflictedEvent) {
+                firstConflictedEvent = created;
+                firstSuggestedSlots = conflict.suggestedSlots;
+              }
+              for (const c of conflict.conflictingEvents) {
+                aggregatedConflicts.set(c.id, {
+                  id: c.id,
+                  title: c.title,
+                  startTime: c.startTime,
+                  endTime: c.endTime,
+                });
+              }
+              conflictMessages.push(
+                res.createdEvents.length > 1
+                  ? `'${created.title}': ${conflict.message}`
+                  : conflict.message
+              );
+            }
           }
+          projectedPool.push(projectedCreated);
+        }
+
+        if (firstConflictedEvent && aggregatedConflicts.size > 0) {
+          enhancedResponse.conflictWarning = {
+            hasConflict: true,
+            targetEventId: firstConflictedEvent.id,
+            targetEventTitle: firstConflictedEvent.title,
+            conflictingEvents: Array.from(aggregatedConflicts.values()),
+            suggestedSlots: firstSuggestedSlots,
+            message: conflictMessages.join(' / '),
+          };
         }
       }
 
@@ -447,8 +515,9 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
         setLastReferencedEvent(currentActiveEvent);
       }
 
+      const assistantMsgId = `msg-ai-${Date.now()}`;
       const assistantMsg: AgentMessage = {
-        id: `msg-ai-${Date.now()}`,
+        id: assistantMsgId,
         role: 'assistant',
         content: enhancedResponse.replyText || '요청이 처리되었습니다.',
         timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
@@ -459,6 +528,168 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
       setMessages((prev) => [...prev, assistantMsg]);
       onApplyResponse(enhancedResponse);
       speakText(enhancedResponse.replyText);
+
+      // 비동기 백그라운드 위치 주소·좌표 보강 (1차 응답 블로킹 제거)
+      if (geminiEnabled !== false) {
+        const batchTargets: Array<{ key: string; queryName: string }> = [];
+
+        if (enhancedResponse.createdEvents) {
+          for (const ev of enhancedResponse.createdEvents) {
+            if (
+              ev.location &&
+              !isInternalOrVirtualLocation(ev.location) &&
+              (!ev.locationAddress || ev.locationLat === undefined || ev.locationLng === undefined)
+            ) {
+              batchTargets.push({
+                key: `created:${ev.id}`,
+                queryName: [ev.location, ev.locationAddress].filter(Boolean).join(' '),
+              });
+            }
+          }
+        }
+
+        if (
+          enhancedResponse.updatedEvent?.id &&
+          enhancedResponse.updatedEvent.updates?.location &&
+          !isInternalOrVirtualLocation(enhancedResponse.updatedEvent.updates.location) &&
+          (!enhancedResponse.updatedEvent.updates.locationAddress ||
+            enhancedResponse.updatedEvent.updates.locationLat === undefined)
+        ) {
+          batchTargets.push({
+            key: `updated:${enhancedResponse.updatedEvent.id}`,
+            queryName: [
+              enhancedResponse.updatedEvent.updates.location,
+              enhancedResponse.updatedEvent.updates.locationAddress,
+            ]
+              .filter(Boolean)
+              .join(' '),
+          });
+        }
+
+        if (enhancedResponse.recommendedVenues) {
+          for (const v of enhancedResponse.recommendedVenues) {
+            if (
+              v.name &&
+              !isInternalOrVirtualLocation(v.name) &&
+              (!v.address || v.lat === undefined || v.lng === undefined)
+            ) {
+              batchTargets.push({
+                key: `venue:${v.id}`,
+                queryName: [v.name, v.address].filter(Boolean).join(' '),
+              });
+            }
+          }
+        }
+
+        if (batchTargets.length > 0) {
+          void enrichLocationsBatch({
+            items: batchTargets.slice(0, 8),
+            modelId:
+              modelSelection.provider === 'cloud'
+                ? modelSelection.modelId
+                : DEFAULT_AI_MODEL_SELECTION.modelId,
+          }).then((batchRes) => {
+            if (!batchRes.items.length && !batchRes.groundingSources.length) return;
+            const byKey = new Map(batchRes.items.map((item) => [item.key, item]));
+
+            const eventPatches: Array<{
+              id: string;
+              location?: string;
+              locationAddress?: string;
+              locationLat?: number;
+              locationLng?: number;
+            }> = [];
+
+            for (const item of batchRes.items) {
+              if (item.key.startsWith('created:') || item.key.startsWith('updated:')) {
+                const eventId = item.key.replace(/^(?:created|updated):/, '');
+                eventPatches.push({
+                  id: eventId,
+                  location: item.location,
+                  locationAddress: item.locationAddress,
+                  locationLat: item.locationLat,
+                  locationLng: item.locationLng,
+                });
+              }
+            }
+
+            if (eventPatches.length > 0) {
+              onPatchEventsLocations?.(eventPatches);
+            }
+
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id !== assistantMsgId || !m.response) return m;
+                const prevResp = m.response;
+                const nextCreated = prevResp.createdEvents?.map((ev) => {
+                  const found = byKey.get(`created:${ev.id}`);
+                  if (!found) return ev;
+                  return {
+                    ...ev,
+                    location: found.location || ev.location,
+                    locationAddress: found.locationAddress || ev.locationAddress,
+                    locationLat: found.locationLat ?? ev.locationLat,
+                    locationLng: found.locationLng ?? ev.locationLng,
+                  };
+                });
+                const updFound = prevResp.updatedEvent?.id
+                  ? byKey.get(`updated:${prevResp.updatedEvent.id}`)
+                  : undefined;
+                const nextUpdated =
+                  prevResp.updatedEvent && updFound
+                    ? {
+                        ...prevResp.updatedEvent,
+                        updates: {
+                          ...prevResp.updatedEvent.updates,
+                          location: updFound.location || prevResp.updatedEvent.updates.location,
+                          locationAddress:
+                            updFound.locationAddress ||
+                            prevResp.updatedEvent.updates.locationAddress,
+                          locationLat:
+                            updFound.locationLat ?? prevResp.updatedEvent.updates.locationLat,
+                          locationLng:
+                            updFound.locationLng ?? prevResp.updatedEvent.updates.locationLng,
+                        },
+                      }
+                    : prevResp.updatedEvent;
+                const nextVenues = prevResp.recommendedVenues?.map((v) => {
+                  const found = byKey.get(`venue:${v.id}`);
+                  if (!found) return v;
+                  return {
+                    ...v,
+                    name: found.location || v.name,
+                    address: found.locationAddress || v.address,
+                    lat: found.locationLat ?? v.lat,
+                    lng: found.locationLng ?? v.lng,
+                  };
+                });
+
+                const existingSourceMap = new Map(
+                  (prevResp.groundingSources || []).map((s) => [s.uri, s])
+                );
+                for (const src of batchRes.groundingSources) {
+                  if (!existingSourceMap.has(src.uri)) {
+                    existingSourceMap.set(src.uri, src);
+                  }
+                }
+                const mergedSources = Array.from(existingSourceMap.values()).slice(0, 6);
+
+                return {
+                  ...m,
+                  response: {
+                    ...prevResp,
+                    createdEvents: nextCreated,
+                    updatedEvent: nextUpdated,
+                    recommendedVenues: nextVenues,
+                    groundingSources:
+                      mergedSources.length > 0 ? mergedSources : prevResp.groundingSources,
+                  },
+                };
+              })
+            );
+          });
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : '잠시 후 다시 시도해 주세요.';
       const errorMsg: AgentMessage = {
@@ -601,6 +832,37 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
           </button>
         </div>
       </div>
+
+      {/* 1-1. Cloud API 키 미연결 시 절제된 인라인 안내 바 */}
+      {geminiEnabled === false && modelSelection.provider === 'cloud' && (
+        <div className="px-4 py-2 bg-[#141720] border-b border-amber-500/20 flex items-center justify-between gap-2 text-[11px] shrink-0">
+          <p className="text-neutral-300 leading-snug min-w-0">
+            <span className="text-amber-300 font-medium">Cloud 키 미설정</span>
+            <span aria-hidden="true" className="text-neutral-600 mx-1.5">·</span>
+            <span className="text-neutral-400">
+              Settings &gt; Secrets에 GEMINI_API_KEY 등록 또는 로컬 모델 이용
+            </span>
+          </p>
+          {isWebGpuAvailable() && CURATED_WEBLLM_MODELS[0] && (
+            <button
+              type="button"
+              onClick={() => {
+                const target = CURATED_WEBLLM_MODELS[0];
+                setModelSelection({
+                  provider: 'webllm',
+                  modelId: target.id,
+                  displayName: target.label,
+                  ollamaBaseUrl: modelSelection.ollamaBaseUrl,
+                });
+                showToast(`브라우저 온디바이스 모델(${target.label})로 전환했습니다.`);
+              }}
+              className="h-6 px-2 rounded-md bg-white/[0.08] hover:bg-white/[0.14] text-[10.5px] font-medium text-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            >
+              WebLLM 전환
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 1-2. 조건부 참조 문맥 바 (일정 선택 시에만 무채색 인라인 노출) */}
       {lastReferencedEvent && (

@@ -4,6 +4,8 @@ import {
   ChevronRight,
   PanelLeftOpen,
   PanelLeftClose,
+  Plus,
+  Search,
 } from 'lucide-react';
 import { CalendarCategory, CalendarEventItem, ProjectItem } from '../types';
 import { getWeekRangeLabel, formatKoreanDateWithDay } from '../shared/dateUtils';
@@ -26,6 +28,8 @@ interface TitleBarProps {
   onToday: () => void;
   viewMode: 'month' | 'week' | 'agenda';
   onChangeViewMode: (mode: 'month' | 'week' | 'agenda') => void;
+  onOpenCommandPalette?: () => void;
+  onOpenCreateEvent?: () => void;
   showToast: (msg: string) => void;
 }
 
@@ -46,6 +50,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onToday,
   viewMode,
   onChangeViewMode,
+  onOpenCommandPalette,
+  onOpenCreateEvent,
   showToast,
 }) => {
   return (
@@ -89,7 +95,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           type="button"
           onClick={onToday}
           className="text-[13px] font-medium text-white hover:text-neutral-200 px-1.5 tracking-tight tabular-nums whitespace-nowrap transition-colors duration-150 cursor-pointer"
-          title="오늘 날짜로 이동"
+          title="오늘 날짜로 이동 (단축키 T)"
         >
           {viewMode === 'month' && `${currentYear}년 ${currentMonth + 1}월`}
           {viewMode === 'week' && `${currentYear}년 ${getWeekRangeLabel(selectedDate)}`}
@@ -109,23 +115,38 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           type="button"
           onClick={onToday}
           className="ml-1 px-1.5 h-6 text-xs font-normal text-neutral-500 hover:text-white transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+          title="오늘로 이동 (T)"
         >
           오늘
         </button>
       </div>
 
-      {/* Zone 3: 우측 현재 위치 시각 · 무테 뷰 전환(월 · 주 · 일) · 단일 내보내기 아이콘 */}
-      <div className="flex items-center gap-4 sm:gap-5 shrink-0">
+      {/* Zone 3: 통합 검색(⌘K) · 현재 위치 시각 · 무테 뷰 전환(월 · 주 · 일) · 새 일정 · 내보내기 · 볼트 */}
+      <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+        {onOpenCommandPalette && (
+          <button
+            type="button"
+            onClick={onOpenCommandPalette}
+            className="h-7 px-2 rounded-lg flex items-center gap-1.5 text-neutral-400 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+            title="통합 검색 및 명령 팔레트 (⌘K 또는 /)"
+          >
+            <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={1.7} />
+            <span className="hidden lg:inline text-[11px] font-mono text-neutral-500 tabular-nums">
+              ⌘K
+            </span>
+          </button>
+        )}
+
         {timeZoneSlot}
 
         <div className="flex items-center gap-3" role="tablist" aria-label="캘린더 뷰 전환">
           {(
             [
-              { mode: 'month', label: '월' },
-              { mode: 'week', label: '주' },
-              { mode: 'agenda', label: '일' },
+              { mode: 'month', label: '월', shortcut: 'M' },
+              { mode: 'week', label: '주', shortcut: 'W' },
+              { mode: 'agenda', label: '일', shortcut: 'D' },
             ] as const
-          ).map(({ mode, label }) => {
+          ).map(({ mode, label, shortcut }) => {
             const active = viewMode === mode;
             return (
               <button
@@ -134,6 +155,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 role="tab"
                 aria-selected={active}
                 onClick={() => onChangeViewMode(mode)}
+                title={`${label}간 뷰 (${shortcut})`}
                 className={`text-xs transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
                   active
                     ? 'text-white font-medium'
@@ -145,6 +167,18 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             );
           })}
         </div>
+
+        {onOpenCreateEvent && (
+          <button
+            type="button"
+            onClick={onOpenCreateEvent}
+            className="h-7 px-2.5 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+            title="새 일정 직접 등록 (단축키 N)"
+          >
+            <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            <span>새 일정</span>
+          </button>
+        )}
 
         <ExportMenuDropdown
           currentYear={currentYear}

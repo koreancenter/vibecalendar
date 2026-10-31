@@ -6,7 +6,7 @@ import {
   RecommendedVenue,
 } from '../types';
 import { AgentAttachmentPayload, AgentContext } from './agentApi';
-import { parseNaturalDateFromText } from '../shared/dateUtils';
+import { getDayDistance, parseNaturalDateFromText } from '../shared/dateUtils';
 import { normalizePlaceAndAddress } from '../shared/locationUtils';
 import { calculateFreeTimeSlots } from '../shared/scheduleUtils';
 import {
@@ -47,6 +47,7 @@ export const COMPACT_LOCAL_SYSTEM_PROMPT = `당신은 한국어 일정 관리 �
     {
       "title": "일정 제목",
       "date": "YYYY-MM-DD",
+      "endDate": "YYYY-MM-DD",
       "startTime": "HH:mm",
       "endTime": "HH:mm",
       "timeZone": "Asia/Seoul",
@@ -61,7 +62,7 @@ export const COMPACT_LOCAL_SYSTEM_PROMPT = `당신은 한국어 일정 관리 �
     "id": "대상 일정 id",
     "targetTitle": "대상 일정 제목",
     "diffSummary": "변경 요약",
-    "updates": { "date": "YYYY-MM-DD", "startTime": "HH:mm", "endTime": "HH:mm", "timeZone": "Asia/Seoul", "title": "제목", "location": "정확한 공식 장소명", "locationAddress": "상세 도로명 주소" }
+    "updates": { "date": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "startTime": "HH:mm", "endTime": "HH:mm", "timeZone": "Asia/Seoul", "title": "제목", "location": "정확한 공식 장소명", "locationAddress": "상세 도로명 주소" }
   },
   "deletedEventId": null,
   "recommendedVenues": [
@@ -112,10 +113,18 @@ export function prepareLocalPromptPayload(
     }
   }
 
-  const compactEvents = context.existingEvents.slice(0, 20).map((e) => ({
+  const targetAnchor =
+    parseNaturalDateFromText(prompt, context.currentYear) || context.selectedDate;
+  const sortedByProximity = [...context.existingEvents]
+    .sort((a, b) => getDayDistance(a.date, targetAnchor) - getDayDistance(b.date, targetAnchor))
+    .slice(0, 30)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+
+  const compactEvents = sortedByProximity.map((e) => ({
     id: e.id,
     title: e.title,
     date: e.date,
+    endDate: e.endDate,
     startTime: e.startTime,
     endTime: e.endTime,
     timeZone: e.timeZone,
@@ -274,13 +283,22 @@ export function normalizeLocalModelOutput(
               inferTimeZoneFromLocation(title) ||
               undefined;
 
+            const resolvedDate =
+              typeof ev.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.date)
+                ? ev.date
+                : targetDate;
+            const resolvedEndDate =
+              typeof ev.endDate === 'string' &&
+              /^\d{4}-\d{2}-\d{2}$/.test(ev.endDate) &&
+              ev.endDate > resolvedDate
+                ? ev.endDate
+                : undefined;
+
             return {
               id: typeof ev.id === 'string' && ev.id ? ev.id : `local-evt-${now}-${idx}`,
               title,
-              date:
-                typeof ev.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.date)
-                  ? ev.date
-                  : targetDate,
+              date: resolvedDate,
+              endDate: resolvedEndDate,
               startTime: normalizeTime(ev.startTime, '10:00'),
               endTime: normalizeTime(ev.endTime, '11:00'),
               timeZone: Boolean(ev.isAllDay) ? undefined : modelTz || inferredTz,
@@ -330,6 +348,9 @@ export function normalizeLocalModelOutput(
     }
     if (typeof rawUpdates.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawUpdates.date)) {
       updates.date = rawUpdates.date;
+    }
+    if (typeof rawUpdates.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawUpdates.endDate)) {
+      updates.endDate = rawUpdates.endDate;
     }
     if (typeof rawUpdates.startTime === 'string' && /^\d{2}:\d{2}$/.test(rawUpdates.startTime)) {
       updates.startTime = rawUpdates.startTime;

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Plus } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { formatKoreanDateWithDay } from '../shared/dateUtils';
 import { hasEventConflict, calculateCompletionStats } from '../shared/scheduleUtils';
@@ -30,6 +31,15 @@ interface DayInspectorPanelProps {
     locationLat?: number,
     locationLng?: number
   ) => void;
+  onUpdateEventFields?: (
+    eventId: string,
+    updates: Partial<CalendarEventItem>,
+    toastLabel?: string
+  ) => void;
+  onAddChecklistItem?: (eventId: string, text: string) => void;
+  onUpdateChecklistItemText?: (eventId: string, itemId: string, text: string) => void;
+  onDeleteChecklistItem?: (eventId: string, itemId: string) => void;
+  onOpenCreateEvent?: (date: string) => void;
   onShareEvent?: (event: CalendarEventItem) => void;
   emptyGuideText?: string;
 }
@@ -49,6 +59,11 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
   onUpdateProject,
   onUpdateTimeZone,
   onUpdateLocation,
+  onUpdateEventFields,
+  onAddChecklistItem,
+  onUpdateChecklistItemText,
+  onDeleteChecklistItem,
+  onOpenCreateEvent,
   onShareEvent,
   emptyGuideText,
 }) => {
@@ -106,8 +121,12 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
           onUpdateProject={onUpdateProject}
           onUpdateTimeZone={onUpdateTimeZone}
           onUpdateLocation={onUpdateLocation}
+          onUpdateEventFields={onUpdateEventFields}
           onToggleComplete={onToggleComplete}
           onToggleChecklistItem={onToggleChecklistItem}
+          onAddChecklistItem={onAddChecklistItem}
+          onUpdateChecklistItemText={onUpdateChecklistItemText}
+          onDeleteChecklistItem={onDeleteChecklistItem}
           onShare={onShareEvent}
           onDelete={onDeleteEvent}
           onClose={() => onSelectEvent(null)}
@@ -115,17 +134,29 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
       ) : (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           {/* 상단 일자 헤더 (h-10 수평 그리드 정렬) */}
-          <div className="h-10 px-4 border-b border-white/[0.06] bg-[#101218] flex items-center justify-between shrink-0">
-            <h4 className="text-xs font-medium text-neutral-300 tracking-tight tabular-nums">
+          <div className="h-10 px-4 border-b border-white/[0.06] bg-[#101218] flex items-center justify-between gap-2 shrink-0">
+            <h4 className="text-xs font-medium text-neutral-300 tracking-tight tabular-nums truncate">
               {dateTitle}
             </h4>
-            <button
-              type="button"
-              onClick={() => onQuickAiPromptForDate(selectedDate)}
-              className="h-6 px-2.5 rounded-md bg-white/[0.07] hover:bg-white/[0.13] text-[11px] text-neutral-100 font-medium transition-colors duration-150 cursor-pointer whitespace-nowrap"
-            >
-              일정 지시
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {onOpenCreateEvent && (
+                <button
+                  type="button"
+                  onClick={() => onOpenCreateEvent(selectedDate)}
+                  className="h-6 px-2.5 rounded-md bg-white text-neutral-950 hover:bg-neutral-200 text-[11px] font-semibold inline-flex items-center gap-1 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Plus className="w-3 h-3 shrink-0" />
+                  <span>새 일정</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onQuickAiPromptForDate(selectedDate)}
+                className="h-6 px-2.5 rounded-md bg-white/[0.07] hover:bg-white/[0.13] text-[11px] text-neutral-100 font-medium transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+              >
+                일정 지시
+              </button>
+            </div>
           </div>
 
           {sortedViewModels.length === 0 ? (
@@ -197,6 +228,11 @@ function areDayInspectorPanelPropsEqual(
     prev.onUpdateProject === next.onUpdateProject &&
     prev.onUpdateTimeZone === next.onUpdateTimeZone &&
     prev.onUpdateLocation === next.onUpdateLocation &&
+    prev.onUpdateEventFields === next.onUpdateEventFields &&
+    prev.onAddChecklistItem === next.onAddChecklistItem &&
+    prev.onUpdateChecklistItemText === next.onUpdateChecklistItemText &&
+    prev.onDeleteChecklistItem === next.onDeleteChecklistItem &&
+    prev.onOpenCreateEvent === next.onOpenCreateEvent &&
     prev.onShareEvent === next.onShareEvent &&
     areShallowArraysEqual(prev.events, next.events) &&
     areShallowArraysEqual(prev.projects, next.projects) &&

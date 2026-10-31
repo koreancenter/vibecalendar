@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Plus, Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
-import { getCalendarGrid } from '../shared/dateUtils';
+import { getCalendarGrid, getEventDateSpan } from '../shared/dateUtils';
 import { hasEventConflict } from '../shared/scheduleUtils';
 import {
   areShallowArraysEqual,
@@ -20,6 +20,7 @@ interface MonthGridViewProps {
   onSelectDate: (date: string) => void;
   onSelectEvent: (event: CalendarEventItem) => void;
   onMoveEventDate: (eventId: string, targetDate: string) => void;
+  onOpenCreateEvent?: (date: string) => void;
   projects?: ProjectItem[];
   comparedProjectIds?: string[];
   emptyGuideText?: string;
@@ -67,6 +68,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
   onSelectDate,
   onSelectEvent,
   onMoveEventDate,
+  onOpenCreateEvent,
   projects = [],
   comparedProjectIds = [],
   emptyGuideText,
@@ -114,12 +116,14 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
     const map = new Map<string, CalendarEventItem[]>();
     for (const ev of events) {
       const timing = (byEventId.get(ev.id) ?? getViewModel(ev)).timing;
-      const cellDate = timing.localDate;
-      const list = map.get(cellDate);
-      if (list) {
-        list.push(ev);
-      } else {
-        map.set(cellDate, [ev]);
+      const spanDates = getEventDateSpan(timing.localDate, ev.endDate);
+      for (const cellDate of spanDates) {
+        const list = map.get(cellDate);
+        if (list) {
+          list.push(ev);
+        } else {
+          map.set(cellDate, [ev]);
+        }
       }
     }
     map.forEach((list) => {
@@ -189,17 +193,29 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                     좌측 컨시어지에 일정을 지시하거나, 사용법 학습을 위한 가상 샘플 일정을 불러와 체험해 보세요.
                   </p>
                 </div>
-                <div className="pt-0.5 flex flex-col items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={onLoadSampleData}
-                    className="h-9 px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.11] text-xs font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                    <span>학습용 샘플 데이터 불러오기</span>
-                  </button>
+                <div className="pt-0.5 flex flex-col items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    {onOpenCreateEvent && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenCreateEvent(selectedDate)}
+                        className="h-9 px-4 rounded-xl bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                      >
+                        <Plus className="w-3.5 h-3.5 shrink-0" />
+                        <span>새 일정 직접 등록</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={onLoadSampleData}
+                      className="h-9 px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.11] text-xs font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                      <span>학습용 샘플 데이터 불러오기</span>
+                    </button>
+                  </div>
                   <span className="text-[10.5px] text-neutral-500">
-                    100% 가상 장소 예시 · 상단 잠금 메뉴에서 언제든 비우기 가능
+                    셀 더블클릭 또는 N 키로 즉시 등록 · 샘플은 언제든 비우기 가능
                   </span>
                 </div>
               </div>
@@ -243,6 +259,18 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
               <div
                 key={cell.date}
                 onClick={() => onSelectDate(cell.date)}
+                onDoubleClick={(e) => {
+                  const targetEl = e.target as HTMLElement | null;
+                  if (
+                    targetEl?.closest(
+                      '.luxury-event-chip, .luxury-event-card, button, [role="button"]'
+                    )
+                  ) {
+                    return;
+                  }
+                  onSelectDate(cell.date);
+                  onOpenCreateEvent?.(cell.date);
+                }}
                 onDragOver={(e) => handleCellDragOver(e, cell.date)}
                 onDragLeave={(e) => handleCellDragLeave(e, cell.date)}
                 onDrop={(e) => handleCellDrop(e, cell.date)}
@@ -269,7 +297,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                   </div>
                 )}
 
-                {/* 날짜 번호(절제된 글래스 링 마커) 및 우측 상단 카운트 */}
+                {/* 날짜 번호(절제된 글래스 링 마커) 및 우측 상단 카운트 · 빠른 추가 버튼 */}
                 <div className="flex items-center justify-between mb-2 shrink-0">
                   <span
                     className={`min-w-[22px] h-[22px] px-1.5 rounded-full inline-flex items-center justify-center text-[11.5px] tabular-nums tracking-[0.02em] transition-colors ${
@@ -285,36 +313,54 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                     {cell.dayNumber}
                   </span>
 
-                  {dayEvents.length > 0 && !isDragOver && (
+                  {!isDragOver && (
                     <div className="flex items-center gap-1 pr-0.5">
-                      {isComparing &&
-                        (() => {
-                          const distinctProjIds = Array.from(
-                            new Set(dayEvents.map((e) => e.projectId).filter(Boolean))
-                          );
-                          if (distinctProjIds.length < 2) return null;
-                          return (
-                            <span
-                              className="flex items-center gap-0.5 mr-0.5"
-                              title="비교 중인 프로젝트 간 일정 중첩일"
-                            >
-                              {distinctProjIds.slice(0, 4).map((pid) => {
-                                const dotClass =
-                                  (pid ? projectThemesById.get(pid)?.dotClass : undefined) ||
-                                  'bg-[#94a3b8]';
-                                return (
-                                  <span
-                                    key={pid}
-                                    className={`w-1.5 h-1.5 rounded-full ${dotClass}`}
-                                  />
-                                );
-                              })}
-                            </span>
-                          );
-                        })()}
-                      <span className="text-[10.5px] font-[360] text-white/28 tabular-nums tracking-[0.03em]">
-                        {dayEvents.length}
-                      </span>
+                      {dayEvents.length > 0 && (
+                        <>
+                          {isComparing &&
+                            (() => {
+                              const distinctProjIds = Array.from(
+                                new Set(dayEvents.map((e) => e.projectId).filter(Boolean))
+                              );
+                              if (distinctProjIds.length < 2) return null;
+                              return (
+                                <span
+                                  className="flex items-center gap-0.5 mr-0.5"
+                                  title="비교 중인 프로젝트 간 일정 중첩일"
+                                >
+                                  {distinctProjIds.slice(0, 4).map((pid) => {
+                                    const dotClass =
+                                      (pid ? projectThemesById.get(pid)?.dotClass : undefined) ||
+                                      'bg-[#94a3b8]';
+                                    return (
+                                      <span
+                                        key={pid}
+                                        className={`w-1.5 h-1.5 rounded-full ${dotClass}`}
+                                      />
+                                    );
+                                  })}
+                                </span>
+                              );
+                            })()}
+                          <span className="text-[10.5px] font-[360] text-white/28 tabular-nums tracking-[0.03em]">
+                            {dayEvents.length}
+                          </span>
+                        </>
+                      )}
+                      {onOpenCreateEvent && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectDate(cell.date);
+                            onOpenCreateEvent(cell.date);
+                          }}
+                          className="w-5 h-5 rounded-md flex items-center justify-center text-white/32 hover:text-white hover:bg-white/[0.09] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity duration-150 cursor-pointer shrink-0"
+                          title={`${cell.date} 새 일정 등록`}
+                        >
+                          <Plus className="w-3 h-3" strokeWidth={1.85} />
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -531,6 +577,7 @@ function areMonthGridViewPropsEqual(
     prev.onSelectDate === next.onSelectDate &&
     prev.onSelectEvent === next.onSelectEvent &&
     prev.onMoveEventDate === next.onMoveEventDate &&
+    prev.onOpenCreateEvent === next.onOpenCreateEvent &&
     prev.onLoadSampleData === next.onLoadSampleData &&
     areShallowArraysEqual(prev.events, next.events) &&
     areShallowArraysEqual(prev.projects, next.projects) &&

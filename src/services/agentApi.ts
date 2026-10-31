@@ -54,20 +54,45 @@ export interface AgentAttachmentPayload {
   textContent?: string;
 }
 
+export interface SendAgentCommandOptions {
+  cloudAvailable?: boolean;
+  onCloudGroundingRoute?: () => void;
+}
+
+export async function fetchAgentHealth(): Promise<{ geminiEnabled: boolean }> {
+  try {
+    const res = await fetch('/api/health');
+    if (!res.ok) return { geminiEnabled: false };
+    const data = (await res.json()) as { geminiEnabled?: boolean };
+    return { geminiEnabled: Boolean(data.geminiEnabled) };
+  } catch {
+    return { geminiEnabled: false };
+  }
+}
+
 export async function sendAgentCommand(
   prompt: string,
   context: AgentContext,
   image?: AgentImagePayload,
   attachments?: AgentAttachmentPayload[],
   modelSelection: AiModelSelection = DEFAULT_AI_MODEL_SELECTION,
-  onWebLlmProgress?: (progress: WebLlmLoadProgress) => void
+  onWebLlmProgress?: (progress: WebLlmLoadProgress) => void,
+  options?: SendAgentCommandOptions
 ): Promise<AgentCommandResponse> {
-  const requiresLiveWebGrounding =
+  const wantsLiveWebGrounding =
     !image &&
     (!attachments || attachments.length === 0) &&
     shouldUseSearchGroundingForPlanning(prompt);
 
-  if (!requiresLiveWebGrounding) {
+  const canUseCloudGrounding = options?.cloudAvailable !== false;
+  const routeToCloudForGrounding =
+    modelSelection.provider !== 'cloud' && wantsLiveWebGrounding && canUseCloudGrounding;
+
+  if (routeToCloudForGrounding) {
+    options?.onCloudGroundingRoute?.();
+  }
+
+  if (modelSelection.provider !== 'cloud' && !routeToCloudForGrounding) {
     if (modelSelection.provider === 'ollama') {
       return executeOllamaAgentCommand(
         modelSelection.modelId,
@@ -173,5 +198,41 @@ export async function resolveLocationDetails(params: {
   }
 
   return res.json() as Promise<ResolveLocationResponse>;
+}
+
+export interface EnrichLocationBatchItem {
+  key: string;
+  location?: string;
+  locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
+}
+
+export interface EnrichLocationsBatchResponse {
+  items: EnrichLocationBatchItem[];
+  groundingSources: Array<{ uri: string; title: string }>;
+  searchQueries: string[];
+}
+
+export async function enrichLocationsBatch(params: {
+  items: Array<{ key: string; queryName: string }>;
+  modelId?: string;
+}): Promise<EnrichLocationsBatchResponse> {
+  if (!params.items.length) {
+    return { items: [], groundingSources: [], searchQueries: [] };
+  }
+  const res = await fetch('/api/agent/enrich-locations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    return { items: [], groundingSources: [], searchQueries: [] };
+  }
+
+  return res.json() as Promise<EnrichLocationsBatchResponse>;
 }
 

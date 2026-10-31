@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { CalendarEventItem, ProjectItem } from '../types';
-import { getWeekDays, WeekDayItem } from '../shared/dateUtils';
+import { getEventDateSpan, getWeekDays, WeekDayItem } from '../shared/dateUtils';
 import {
   areShallowArraysEqual,
   useCalendarEventViewModels,
@@ -23,6 +23,7 @@ interface WeekGridViewProps {
     targetStartTime?: string,
     targetEndTime?: string
   ) => void;
+  onOpenCreateEvent?: (date: string, startTime?: string, endTime?: string) => void;
   projects?: ProjectItem[];
   comparedProjectIds?: string[];
   emptyGuideText?: string;
@@ -39,6 +40,7 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
   onSelectDate,
   onSelectEvent,
   onMoveEventDate,
+  onOpenCreateEvent,
   projects = [],
   comparedProjectIds = [],
   emptyGuideText,
@@ -77,9 +79,12 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
     }
     for (const ev of events) {
       const localDate = (byEventId.get(ev.id) ?? getViewModel(ev)).timing.localDate;
-      const list = map.get(localDate);
-      if (list) {
-        list.push(ev);
+      const spanDates = getEventDateSpan(localDate, ev.endDate);
+      for (const dStr of spanDates) {
+        const list = map.get(dStr);
+        if (list) {
+          list.push(ev);
+        }
       }
     }
     return map;
@@ -141,6 +146,10 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
               <div
                 key={day.date}
                 onClick={() => onSelectDate(day.date)}
+                onDoubleClick={() => {
+                  onSelectDate(day.date);
+                  onOpenCreateEvent?.(day.date);
+                }}
                 onDragOver={(e) => handleCellDragOver(e, day.date)}
                 onDragLeave={(e) => handleCellDragLeave(e, day.date)}
                 onDrop={(e) => handleCellDrop(e, day.date)}
@@ -198,6 +207,14 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
               return (
                 <div
                   key={day.date}
+                  onDoubleClick={(e) => {
+                    const targetEl = e.target as HTMLElement | null;
+                    if (targetEl?.closest('.luxury-event-chip, .luxury-event-card, button')) {
+                      return;
+                    }
+                    onSelectDate(day.date);
+                    onOpenCreateEvent?.(day.date);
+                  }}
                   onDragOver={(e) => handleCellDragOver(e, day.date)}
                   onDragLeave={(e) => handleCellDragLeave(e, day.date)}
                   onDrop={(e) => handleCellDrop(e, day.date)}
@@ -255,6 +272,7 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
         onSelectDate={onSelectDate}
         onSelectEvent={onSelectEvent}
         onMoveEventDate={onMoveEventDate}
+        onQuickCreateSlot={onOpenCreateEvent}
         onDragHoverDateChange={setTimelineHoverDate}
         showEmptyGuide={isWeekEmpty && !draggedAllDayId}
         emptyGuideText={emptyGuideText}
@@ -279,6 +297,7 @@ function areWeekGridViewPropsEqual(
     prev.onSelectDate === next.onSelectDate &&
     prev.onSelectEvent === next.onSelectEvent &&
     prev.onMoveEventDate === next.onMoveEventDate &&
+    prev.onOpenCreateEvent === next.onOpenCreateEvent &&
     prev.onLoadSampleData === next.onLoadSampleData &&
     areShallowArraysEqual(prev.events, next.events) &&
     areShallowArraysEqual(prev.projects, next.projects) &&

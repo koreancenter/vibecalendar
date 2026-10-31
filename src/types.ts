@@ -138,6 +138,8 @@ export interface AgentCommandResponse {
   suggestedPrompts?: string[];
   conflictWarning?: {
     hasConflict: boolean;
+    targetEventId?: string;
+    targetEventTitle?: string;
     conflictingEvents: Array<{ id: string; title: string; startTime: string; endTime: string }>;
     suggestedSlots: FreeTimeSlot[];
     message: string;

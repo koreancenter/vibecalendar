@@ -7,6 +7,8 @@ import { MonthGridView } from './components/MonthGridView';
 import { WeekGridView } from './components/WeekGridView';
 import { DayAgendaView } from './components/DayAgendaView';
 import { EventDetailModal } from './components/EventDetailModal';
+import { EventComposerModal, EventComposerSeed } from './components/EventComposerModal';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
 import { ProjectSelectorBar } from './components/ProjectSelectorBar';
 import { ProjectModal } from './components/ProjectModal';
@@ -230,10 +232,16 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     handleUpdateEventTimeZone,
     handleUpdateEventProject,
     handleUpdateEventLocation,
+    handleCreateManualEvent,
+    handleUpdateEventFields,
+    handlePatchEventsLocations,
     clearProjectAssociation,
     handleDeleteEvent,
     handleToggleComplete,
     handleToggleChecklistItem,
+    handleAddChecklistItem,
+    handleUpdateChecklistItemText,
+    handleDeleteChecklistItem,
     handleApplyAgentResponse,
     handleCreateEventFromVenue,
     handleCreateEventFromGroundedSuggestion,
@@ -336,6 +344,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
 
   const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [composerSeed, setComposerSeed] = useState<EventComposerSeed | null>(null);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   const [legalDrawer, setLegalDrawer] = useState<{
     isOpen: boolean;
@@ -345,21 +355,38 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     tab: 'disclaimer',
   });
 
-  // 글로벌 단축키 (Cmd/Ctrl + L) 지원
-  useEffect(() => {
-    const handleShortcut = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
-        e.preventDefault();
-        if (isVaultEncrypted) {
-          onLockNow();
-        } else {
-          onReturnToIntroGate();
-        }
-      }
-    };
-    window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
-  }, [isVaultEncrypted, onLockNow, onReturnToIntroGate]);
+  const handleOpenCreateEvent = useCallback(
+    (seedOverrides?: Partial<EventComposerSeed>) => {
+      const defaultProjId =
+        selectedProjectId && selectedProjectId !== 'all'
+          ? selectedProjectId
+          : selectedProjectIds.length === 1
+          ? selectedProjectIds[0]
+          : undefined;
+      const defaultCat =
+        selectedCategory && selectedCategory !== '전체' ? selectedCategory : undefined;
+
+      setComposerSeed({
+        date: selectedDate,
+        projectId: defaultProjId,
+        category: defaultCat,
+        ...seedOverrides,
+      });
+    },
+    [selectedDate, selectedProjectId, selectedProjectIds, selectedCategory]
+  );
+
+  const handleOpenCreateEventFromSlot = useCallback(
+    (date: string, startTime?: string, endTime?: string) => {
+      handleOpenCreateEvent({
+        date,
+        startTime,
+        endTime,
+        isAllDay: false,
+      });
+    },
+    [handleOpenCreateEvent]
+  );
 
   // 초기 마운트 완료 후 부트스트랩 평문 번들 참조 즉시 해제 및 언마운트(잠금/종료) 시 latestBundleRef 명시적 해제
   useEffect(() => {
@@ -558,6 +585,92 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     [showToast]
   );
 
+  // 글로벌 단축키: Cmd/Ctrl+K (통합 검색·명령 팔레트), Cmd/Ctrl+L (볼트 잠금), /, N, C, T, M, W, D
+  useEffect(() => {
+    const isEditableElement = (el: EventTarget | null): boolean => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (el.isContentEditable || el.closest('[contenteditable="true"]')) return true;
+      return false;
+    };
+
+    const handleShortcut = (e: KeyboardEvent) => {
+      const lowerKey = e.key.toLowerCase();
+
+      if ((e.metaKey || e.ctrlKey) && lowerKey === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && lowerKey === 'l') {
+        e.preventDefault();
+        if (isVaultEncrypted) {
+          onLockNow();
+        } else {
+          onReturnToIntroGate();
+        }
+        return;
+      }
+
+      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+      if (isEditableElement(e.target) || isEditableElement(document.activeElement)) return;
+
+      const hasBlockingOverlay =
+        Boolean(composerSeed) ||
+        isCommandPaletteOpen ||
+        Boolean(selectedEvent && viewMode !== 'agenda') ||
+        isProjectModalOpen ||
+        isProjectManagementOpen ||
+        Boolean(shareTarget) ||
+        Boolean(previewSharedPayload) ||
+        legalDrawer.isOpen ||
+        deleteModalState.isOpen;
+
+      if (hasBlockingOverlay) return;
+
+      if (e.key === '/') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(true);
+      } else if (lowerKey === 'n' || lowerKey === 'c') {
+        e.preventDefault();
+        handleOpenCreateEvent();
+      } else if (lowerKey === 't') {
+        e.preventDefault();
+        handleToday();
+      } else if (lowerKey === 'm') {
+        e.preventDefault();
+        setViewMode('month');
+      } else if (lowerKey === 'w') {
+        e.preventDefault();
+        setViewMode('week');
+      } else if (lowerKey === 'd') {
+        e.preventDefault();
+        setViewMode('agenda');
+      }
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [
+    composerSeed,
+    deleteModalState.isOpen,
+    handleOpenCreateEvent,
+    handleToday,
+    isCommandPaletteOpen,
+    isProjectManagementOpen,
+    isProjectModalOpen,
+    isVaultEncrypted,
+    legalDrawer.isOpen,
+    onLockNow,
+    onReturnToIntroGate,
+    previewSharedPayload,
+    selectedEvent,
+    shareTarget,
+    viewMode,
+  ]);
+
   return (
     <CalendarEventViewModelsProvider value={workspaceViewModels}>
       <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0a0c10] text-neutral-200 font-sans antialiased">
@@ -572,6 +685,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         onToday={handleToday}
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onOpenCreateEvent={() => handleOpenCreateEvent()}
         selectedDate={selectedDate}
         events={filteredEvents}
         projects={projects}
@@ -683,6 +798,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 }
                 handleApplyAgentResponse(res);
               }}
+              onPatchEventsLocations={handlePatchEventsLocations}
               onCreateEventFromVenue={handleCreateEventFromVenue}
               onAddGroundedSuggestion={handleCreateEventFromGroundedSuggestion}
               onJumpToDate={jumpToDate}
@@ -713,6 +829,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 onSelectDate={setSelectedDate}
                 onSelectEvent={handleSelectCalendarEvent}
                 onMoveEventDate={handleMoveEventDate}
+                onOpenCreateEvent={(date) => handleOpenCreateEvent({ date })}
               />
             </div>
           )}
@@ -733,6 +850,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 onSelectDate={setSelectedDate}
                 onSelectEvent={handleSelectCalendarEvent}
                 onMoveEventDate={handleMoveEventDate}
+                onOpenCreateEvent={handleOpenCreateEventFromSlot}
               />
             </div>
           )}
@@ -749,6 +867,11 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 onUpdateProject={handleUpdateEventProject}
                 onUpdateTimeZone={handleUpdateEventTimeZone}
                 onUpdateLocation={handleUpdateEventLocation}
+                onUpdateEventFields={handleUpdateEventFields}
+                onAddChecklistItem={handleAddChecklistItem}
+                onUpdateChecklistItemText={handleUpdateChecklistItemText}
+                onDeleteChecklistItem={handleDeleteChecklistItem}
+                onOpenCreateEvent={handleOpenCreateEventFromSlot}
                 onSelectEvent={setSelectedEvent}
                 onDeleteEvent={requestDeleteEvent}
                 onToggleComplete={handleToggleComplete}
@@ -784,6 +907,10 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           onUpdateProject={handleUpdateEventProject}
           onUpdateTimeZone={handleUpdateEventTimeZone}
           onUpdateLocation={handleUpdateEventLocation}
+          onUpdateEventFields={handleUpdateEventFields}
+          onAddChecklistItem={handleAddChecklistItem}
+          onUpdateChecklistItemText={handleUpdateChecklistItemText}
+          onDeleteChecklistItem={handleDeleteChecklistItem}
           hasConflict={selectedEventHasConflict}
           onClose={() => setSelectedEvent(null)}
           onDelete={(id) => {
@@ -798,6 +925,64 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           }}
         />
       )}
+
+      {/* 4-2. 수동 새 일정 빠른 등록 모달 */}
+      {composerSeed && (
+        <EventComposerModal
+          isOpen={Boolean(composerSeed)}
+          seed={composerSeed}
+          viewerTimeZone={tzPrefs.viewerTimeZone}
+          existingEvents={events}
+          projects={projects}
+          onClose={() => setComposerSeed(null)}
+          onSubmit={(draft) => {
+            handleCreateManualEvent(draft);
+            setComposerSeed(null);
+          }}
+        />
+      )}
+
+      {/* 4-3. 통합 검색 및 빠른 명령 팔레트 (Cmd/Ctrl + K) */}
+      <CommandPaletteModal
+        isOpen={isCommandPaletteOpen}
+        events={events}
+        projects={projects}
+        selectedProjectId={selectedProjectId}
+        viewMode={viewMode}
+        isSidebarOpen={isSidebarOpen}
+        isVaultEncrypted={isVaultEncrypted}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onSelectEvent={(ev) => {
+          jumpToDate(ev.date);
+          handleSelectCalendarEvent(ev);
+        }}
+        onSelectProject={(projId) => {
+          setSelectedProjectId(projId);
+          if (projId !== 'all') {
+            const proj = projects.find((p) => p.id === projId);
+            if (proj?.startDate) {
+              jumpToDate(proj.startDate);
+            }
+          }
+        }}
+        onOpenCreateEvent={(prefillTitle) => {
+          handleOpenCreateEvent(prefillTitle ? { title: prefillTitle } : undefined);
+        }}
+        onOpenCreateProject={() => {
+          setEditingProject(null);
+          setIsProjectModalOpen(true);
+        }}
+        onChangeViewMode={setViewMode}
+        onToday={handleToday}
+        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+        onLockVault={() => {
+          if (isVaultEncrypted) {
+            onLockNow();
+          } else {
+            onReturnToIntroGate();
+          }
+        }}
+      />
 
       {/* 5. 프로젝트 등록/수정 모달 */}
       <ProjectModal

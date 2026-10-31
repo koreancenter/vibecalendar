@@ -24,6 +24,7 @@ import {
 } from '../shared/timeZoneUtils';
 import {
   ValidatedAgentRequest,
+  ValidatedEnrichLocationsRequest,
   ValidatedGroundingDiscoveryRequest,
   ValidatedLocationResolveRequest,
 } from './security';
@@ -72,7 +73,7 @@ const STATIC_SYSTEM_INSTRUCTION = `당신은 한국어 자연어와 다양한 �
    - 일정 추가/등록 의도가 명확하거나, 첨부된 초대장/포스터/PDF 타임테이블/명함 이미지/CSV·엑셀 표/ICS 캘린더 파일/회의록/음성 메모에서 방문·미팅·행사 일정을 추출했을 때 선택합니다.
    - 첨부된 표(CSV/TSV), ICS 파일, PDF 식순, 회의록에 여러 건의 일정이 포함된 경우 누락 없이 모두 추출하여 createdEvents 배열(최대 20건)에 구조화하여 반환하십시오.
    - 담당자 연락처, 거래처, 견적, 준비물 등의 부가 정보가 함께 언급되거나 문서/명함에서 추출된 경우 해당 일정의 content(상세 메모)와 checklist(사전 준비 항목)에 체계적으로 통합 기록하십시오.
-   - 시간 언급이 없으면 기본 10:00~11:00(점심 식사는 12:00~13:30)으로 설정하십시오.
+   - 시간 언급이 없으면 기본 10:00~11:00(점심 식사는 12:00~13:30)으로 설정하십시오. 2박 3일 세미나·전시회 등 다일 일정은 date(시작일)와 endDate(종료일, YYYY-MM-DD)를 함께 기록하십시오.
    - 사용자가 "한국 시간 10시", "10:00 KST", "자카르타 시간 14시", "발리 현지 18시", "뉴욕 오전 9시"처럼 특정 시간대나 해외 도시의 시각을 지정하면 startTime/endTime은 해당 원천 시각 그대로 기록하고, timeZone 필드에 표준 IANA 시간대(예: "Asia/Seoul", "Asia/Jakarta", "Asia/Makassar", "Asia/Singapore", "Asia/Tokyo", "America/New_York", "America/Los_Angeles", "Europe/London", "Europe/Paris" 등)를 반드시 설정하십시오. 별도 타 지역 언급이 없으면 컨텍스트의 viewerTimeZone을 기준으로 합니다.
    - category는 반드시 "업무", "방문·출장", "식사·모임", "개인", "행사·세미나", "기타" 중 하나여야 합니다.
    - 세션의 프로젝트 목록 중 연관된 프로젝트가 있거나 현재 선택된 프로젝트가 있으면 projectId를 매칭하십시오.
@@ -101,6 +102,7 @@ const EVENT_ITEM_SCHEMA: Schema = {
     id: { type: Type.STRING },
     title: { type: Type.STRING },
     date: { type: Type.STRING, description: 'YYYY-MM-DD' },
+    endDate: { type: Type.STRING, description: '다일 일정 종료일 YYYY-MM-DD (단일 일자면 생략)' },
     startTime: { type: Type.STRING, description: 'HH:mm (24h)' },
     endTime: { type: Type.STRING, description: 'HH:mm (24h)' },
     timeZone: {
@@ -218,9 +220,11 @@ const AGENT_RESPONSE_SCHEMA: Schema = {
           properties: {
             title: { type: Type.STRING },
             date: { type: Type.STRING },
+            endDate: { type: Type.STRING },
             startTime: { type: Type.STRING },
             endTime: { type: Type.STRING },
             timeZone: { type: Type.STRING },
+            isAllDay: { type: Type.BOOLEAN },
             location: { type: Type.STRING },
             locationAddress: { type: Type.STRING },
             locationLat: { type: Type.NUMBER },
@@ -291,6 +295,12 @@ function normalizeEventList(
         typeof ev.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.date)
           ? ev.date
           : defaultDate;
+      const endDate =
+        typeof ev.endDate === 'string' &&
+        /^\d{4}-\d{2}-\d{2}$/.test(ev.endDate) &&
+        ev.endDate > date
+          ? ev.endDate
+          : undefined;
       const title =
         typeof ev.title === 'string' && ev.title.trim() ? ev.title.trim() : '새 일정';
       const { location, locationAddress } = normalizePlaceAndAddress(
@@ -327,6 +337,7 @@ function normalizeEventList(
         id: typeof ev.id === 'string' && ev.id ? ev.id : `evt-${now}-${idx}`,
         title,
         date,
+        endDate,
         startTime: normalizeTime(ev.startTime, '10:00'),
         endTime: normalizeTime(ev.endTime, '11:00'),
         timeZone: Boolean(ev.isAllDay) ? undefined : modelTz || inferredTz,
@@ -378,103 +389,40 @@ function normalizeVenues(rawList: unknown, defaultDate: string): RecommendedVenu
     });
 }
 
-async function enrichLocationsWithGoogleSearch(
-  ai: GoogleGenAI,
-  modelId: string,
-  createdEvents: CalendarEventItem[],
-  updatedEvent: AgentCommandResponse['updatedEvent'],
-  recommendedVenues: RecommendedVenue[]
-): Promise<{
+export interface BatchEnrichedLocationItem {
+  key: string;
+  location?: string;
+  locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
+}
+
+export interface BatchEnrichLocationsResult {
+  items: BatchEnrichedLocationItem[];
   groundingSources: GroundingWebSource[];
   searchQueries: string[];
-}> {
-  const targets: Array<{
-    key: string;
-    queryName: string;
-    apply: (officialName?: string, roadAddress?: string, lat?: unknown, lng?: unknown) => void;
-  }> = [];
+}
 
-  for (const ev of createdEvents) {
-    const needsEnrich =
-      Boolean(ev.location) &&
-      (!ev.locationAddress || !hasValidCoordinates(ev.locationLat, ev.locationLng));
-    if (needsEnrich && !isInternalOrVirtualLocation(ev.location) && targets.length < 6) {
-      const queryText = [ev.location, ev.locationAddress].filter(Boolean).join(' ');
-      targets.push({
-        key: `ev:${ev.id}`,
-        queryName: queryText,
-        apply: (officialName, roadAddress, lat, lng) => {
-          const norm = normalizePlaceAndAddress(
-            officialName || ev.location,
-            roadAddress || ev.locationAddress
-          );
-          if (norm.location) ev.location = norm.location;
-          if (norm.locationAddress) ev.locationAddress = norm.locationAddress;
-          const coords = normalizeCoordinates(lat, lng);
-          if (coords.locationLat !== undefined && coords.locationLng !== undefined) {
-            ev.locationLat = coords.locationLat;
-            ev.locationLng = coords.locationLng;
-          }
-        },
-      });
-    }
+function createMissingGeminiKeyError(): Error {
+  const err = new Error('GEMINI_API_KEY가 서버 환경에 설정되어 있지 않습니다.');
+  (err as Error & { statusCode?: number; code?: string }).statusCode = 503;
+  (err as Error & { statusCode?: number; code?: string }).code = 'GEMINI_KEY_MISSING';
+  return err;
+}
+
+export async function executeBatchEnrichLocationsCommand(
+  reqData: ValidatedEnrichLocationsRequest
+): Promise<BatchEnrichLocationsResult> {
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw createMissingGeminiKeyError();
   }
 
-  if (
-    updatedEvent?.updates?.location &&
-    (!updatedEvent.updates.locationAddress ||
-      !hasValidCoordinates(
-        updatedEvent.updates.locationLat,
-        updatedEvent.updates.locationLng
-      )) &&
-    !isInternalOrVirtualLocation(updatedEvent.updates.location) &&
-    targets.length < 6
-  ) {
-    const rawLoc = updatedEvent.updates.location;
-    const rawAddr = updatedEvent.updates.locationAddress;
-    targets.push({
-      key: `upd:${updatedEvent.id}`,
-      queryName: [rawLoc, rawAddr].filter(Boolean).join(' '),
-      apply: (officialName, roadAddress, lat, lng) => {
-        if (!updatedEvent?.updates) return;
-        const norm = normalizePlaceAndAddress(officialName || rawLoc, roadAddress || rawAddr);
-        if (norm.location) updatedEvent.updates.location = norm.location;
-        if (norm.locationAddress) updatedEvent.updates.locationAddress = norm.locationAddress;
-        const coords = normalizeCoordinates(lat, lng);
-        if (coords.locationLat !== undefined && coords.locationLng !== undefined) {
-          updatedEvent.updates.locationLat = coords.locationLat;
-          updatedEvent.updates.locationLng = coords.locationLng;
-        }
-      },
-    });
-  }
-
-  for (const venue of recommendedVenues) {
-    const needsVenueEnrich =
-      Boolean(venue.name) && (!venue.address || !hasValidCoordinates(venue.lat, venue.lng));
-    if (needsVenueEnrich && !isInternalOrVirtualLocation(venue.name) && targets.length < 6) {
-      targets.push({
-        key: `ven:${venue.id}`,
-        queryName: [venue.name, venue.address].filter(Boolean).join(' '),
-        apply: (officialName, roadAddress, lat, lng) => {
-          const norm = normalizePlaceAndAddress(
-            officialName || venue.name,
-            roadAddress || venue.address
-          );
-          if (norm.location) venue.name = norm.location;
-          if (norm.locationAddress) venue.address = norm.locationAddress;
-          const coords = normalizeCoordinates(lat, lng);
-          if (coords.locationLat !== undefined && coords.locationLng !== undefined) {
-            venue.lat = coords.locationLat;
-            venue.lng = coords.locationLng;
-          }
-        },
-      });
-    }
-  }
-
+  const targets = reqData.items.filter(
+    (it) => Boolean(it.queryName) && !isInternalOrVirtualLocation(it.queryName)
+  );
   if (targets.length === 0) {
-    return { groundingSources: [], searchQueries: [] };
+    return { items: [], groundingSources: [], searchQueries: [] };
   }
 
   try {
@@ -487,7 +435,7 @@ async function enrichLocationsWithGoogleSearch(
     ].join('\n');
 
     const gRes = await ai.models.generateContent({
-      model: modelId || 'gemini-3.8-flash',
+      model: reqData.modelId || 'gemini-3.8-flash',
       contents: lookupPrompt,
       config: {
         tools: [{ googleSearch: {} }],
@@ -497,6 +445,8 @@ async function enrichLocationsWithGoogleSearch(
     const text = gRes.text?.trim() || '';
     const startIdx = text.indexOf('{');
     const endIdx = text.lastIndexOf('}');
+    const enrichedItems: BatchEnrichedLocationItem[] = [];
+
     if (startIdx !== -1 && endIdx > startIdx) {
       const parsedLookup = JSON.parse(text.slice(startIdx, endIdx + 1)) as {
         items?: Array<{
@@ -508,13 +458,22 @@ async function enrichLocationsWithGoogleSearch(
         }>;
       };
       if (Array.isArray(parsedLookup.items)) {
-        const byKey = new Map(targets.map((t) => [t.key, t]));
+        const validKeys = new Set(targets.map((t) => t.key));
         for (const item of parsedLookup.items) {
-          if (item && typeof item.key === 'string') {
-            const found = byKey.get(item.key);
-            if (found) {
-              found.apply(item.officialName, item.roadAddress, item.lat, item.lng);
-            }
+          if (!item || typeof item.key !== 'string' || !validKeys.has(item.key)) continue;
+          const norm = normalizePlaceAndAddress(item.officialName, item.roadAddress);
+          const coords = normalizeCoordinates(item.lat, item.lng);
+          if (
+            norm.locationAddress ||
+            (coords.locationLat !== undefined && coords.locationLng !== undefined)
+          ) {
+            enrichedItems.push({
+              key: item.key,
+              location: norm.location,
+              locationAddress: norm.locationAddress,
+              locationLat: coords.locationLat,
+              locationLng: coords.locationLng,
+            });
           }
         }
       }
@@ -540,9 +499,9 @@ async function enrichLocationsWithGoogleSearch(
           .slice(0, 3)
       : [];
 
-    return { groundingSources, searchQueries };
+    return { items: enrichedItems, groundingSources, searchQueries };
   } catch {
-    return { groundingSources: [], searchQueries: [] };
+    return { items: [], groundingSources: [], searchQueries: [] };
   }
 }
 
@@ -560,9 +519,7 @@ export async function executeResolveLocationCommand(
 ): Promise<ResolvedLocationResult> {
   const ai = getGeminiClient();
   if (!ai) {
-    const err = new Error('AI 위치 탐색을 위한 GEMINI_API_KEY가 서버에 설정되어 있지 않습니다.');
-    (err as Error & { statusCode?: number }).statusCode = 503;
-    throw err;
+    throw createMissingGeminiKeyError();
   }
 
   const queryCombined = [reqData.location, reqData.locationAddress]
@@ -651,9 +608,7 @@ export async function executeGroundedDateDiscoveryCommand(
 ): Promise<AgentCommandResponse> {
   const ai = getGeminiClient();
   if (!ai) {
-    const err = new Error('AI 비서 연결을 위한 GEMINI_API_KEY가 서버에 설정되어 있지 않습니다.');
-    (err as Error & { statusCode?: number }).statusCode = 503;
-    throw err;
+    throw createMissingGeminiKeyError();
   }
   return executeGroundedDateDiscovery(ai, reqData);
 }
@@ -663,9 +618,7 @@ export async function executeGeminiAgentCommand(
 ): Promise<AgentCommandResponse> {
   const ai = getGeminiClient();
   if (!ai) {
-    const err = new Error('AI 비서 연결을 위한 GEMINI_API_KEY가 서버에 설정되어 있지 않습니다.');
-    (err as Error & { statusCode?: number }).statusCode = 503;
-    throw err;
+    throw createMissingGeminiKeyError();
   }
 
   const { prompt, modelId, image, attachments, context } = reqData;
@@ -827,6 +780,12 @@ export async function executeGeminiAgentCommand(
     if (typeof rawUpdates.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawUpdates.date)) {
       updates.date = rawUpdates.date;
     }
+    if (typeof rawUpdates.endDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rawUpdates.endDate)) {
+      updates.endDate = rawUpdates.endDate;
+    }
+    if (typeof rawUpdates.isAllDay === 'boolean') {
+      updates.isAllDay = rawUpdates.isAllDay;
+    }
     if (typeof rawUpdates.startTime === 'string' && /^\d{2}:\d{2}$/.test(rawUpdates.startTime)) {
       updates.startTime = rawUpdates.startTime;
     }
@@ -889,14 +848,6 @@ export async function executeGeminiAgentCommand(
 
   const recommendedVenues = normalizeVenues(parsed.recommendedVenues, targetDate);
 
-  const enrichment = await enrichLocationsWithGoogleSearch(
-    ai,
-    modelId || 'gemini-3.8-flash',
-    createdEvents,
-    updatedEvent,
-    recommendedVenues
-  );
-
   for (const venue of recommendedVenues) {
     if (!venue.address) {
       venue.address = '도로명 주소 미기재';
@@ -937,9 +888,6 @@ export async function executeGeminiAgentCommand(
     freeTimeSlots,
     createdEvents,
     recommendedVenues,
-    groundingSources:
-      enrichment.groundingSources.length > 0 ? enrichment.groundingSources : undefined,
-    searchQueries: enrichment.searchQueries.length > 0 ? enrichment.searchQueries : undefined,
     updatedEvent,
     deletedEventId,
     suggestedPrompts,

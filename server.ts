@@ -13,6 +13,8 @@ import {
   sanitizeGroundingDatesPayload,
   validateResolveLocationRequest,
   sanitizeResolveLocationPayload,
+  validateEnrichLocationsRequest,
+  sanitizeEnrichLocationsPayload,
   validateAndSanitizeOllamaProxyRequest,
   getHostHardwareMetrics,
   toSafeErrorResponse,
@@ -23,6 +25,7 @@ import {
   executeGeminiAgentCommand,
   executeGroundedDateDiscoveryCommand,
   executeResolveLocationCommand,
+  executeBatchEnrichLocationsCommand,
   isGeminiConfigured,
 } from './src/server/geminiAgent';
 
@@ -123,6 +126,35 @@ app.post(
       res.json(result);
     } catch (err: unknown) {
       logSafeServerError('Resolve Location API', err);
+      const safe = toSafeErrorResponse(err, 'location', false);
+      res.status(safe.status).json({ error: safe.error });
+    }
+  }
+);
+
+// 백그라운드 비동기 일괄 장소 주소·좌표 보강 엔드포인트
+app.post(
+  '/api/agent/enrich-locations',
+  apiRateLimiter,
+  textCommandJsonParser,
+  async (req, res) => {
+    try {
+      const validation = validateEnrichLocationsRequest(req.body);
+      if (!validation.ok) {
+        res.status(validation.status).json({ error: validation.error });
+        return;
+      }
+
+      const sanitizedPayload = sanitizeEnrichLocationsPayload(validation.value);
+      if (sanitizedPayload.items.length === 0) {
+        res.json({ items: [], groundingSources: [], searchQueries: [] });
+        return;
+      }
+
+      const result = await executeBatchEnrichLocationsCommand(sanitizedPayload);
+      res.json(result);
+    } catch (err: unknown) {
+      logSafeServerError('Enrich Locations API', err);
       const safe = toSafeErrorResponse(err, 'location', false);
       res.status(safe.status).json({ error: safe.error });
     }

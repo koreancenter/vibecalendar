@@ -21,6 +21,14 @@ interface EventDetailModalProps {
     locationLat?: number,
     locationLng?: number
   ) => void;
+  onUpdateEventFields?: (
+    eventId: string,
+    updates: Partial<CalendarEventItem>,
+    toastLabel?: string
+  ) => void;
+  onAddChecklistItem?: (eventId: string, text: string) => void;
+  onUpdateChecklistItemText?: (eventId: string, itemId: string, text: string) => void;
+  onDeleteChecklistItem?: (eventId: string, itemId: string) => void;
   onShare?: (event: CalendarEventItem) => void;
 }
 
@@ -36,6 +44,10 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   onUpdateProject,
   onUpdateTimeZone,
   onUpdateLocation,
+  onUpdateEventFields,
+  onAddChecklistItem,
+  onUpdateChecklistItemText,
+  onDeleteChecklistItem,
   onShare,
 }) => {
   useEffect(() => {
@@ -69,8 +81,12 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
           onUpdateProject={onUpdateProject}
           onUpdateTimeZone={onUpdateTimeZone}
           onUpdateLocation={onUpdateLocation}
+          onUpdateEventFields={onUpdateEventFields}
           onToggleComplete={onToggleComplete}
           onToggleChecklistItem={onToggleChecklistItem}
+          onAddChecklistItem={onAddChecklistItem}
+          onUpdateChecklistItemText={onUpdateChecklistItemText}
+          onDeleteChecklistItem={onDeleteChecklistItem}
           onShare={onShare}
           onDelete={onDelete}
           onClose={onClose}

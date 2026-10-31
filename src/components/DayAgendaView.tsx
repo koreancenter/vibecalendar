@@ -36,6 +36,15 @@ interface DayAgendaViewProps {
     locationLat?: number,
     locationLng?: number
   ) => void;
+  onUpdateEventFields?: (
+    eventId: string,
+    updates: Partial<CalendarEventItem>,
+    toastLabel?: string
+  ) => void;
+  onAddChecklistItem?: (eventId: string, text: string) => void;
+  onUpdateChecklistItemText?: (eventId: string, itemId: string, text: string) => void;
+  onDeleteChecklistItem?: (eventId: string, itemId: string) => void;
+  onOpenCreateEvent?: (date: string, startTime?: string, endTime?: string) => void;
   onShareEvent?: (event: CalendarEventItem) => void;
   emptyGuideText?: string;
   isWorkspaceEmpty?: boolean;
@@ -58,6 +67,11 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
   onUpdateProject,
   onUpdateTimeZone,
   onUpdateLocation,
+  onUpdateEventFields,
+  onAddChecklistItem,
+  onUpdateChecklistItemText,
+  onDeleteChecklistItem,
+  onOpenCreateEvent,
   onShareEvent,
   emptyGuideText,
   isWorkspaceEmpty = false,
@@ -168,6 +182,7 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
           scrollResetKey={selectedDate}
           onSelectEvent={handleSelectCanvasEvent}
           onMoveEventDate={onMoveEventDate}
+          onQuickCreateSlot={onOpenCreateEvent}
           showEmptyGuide={events.length === 0}
           emptyGuideText={emptyGuideText}
           isWorkspaceEmpty={isWorkspaceEmpty}
@@ -191,6 +206,11 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
         onUpdateProject={onUpdateProject}
         onUpdateTimeZone={onUpdateTimeZone}
         onUpdateLocation={onUpdateLocation}
+        onUpdateEventFields={onUpdateEventFields}
+        onAddChecklistItem={onAddChecklistItem}
+        onUpdateChecklistItemText={onUpdateChecklistItemText}
+        onDeleteChecklistItem={onDeleteChecklistItem}
+        onOpenCreateEvent={onOpenCreateEvent ? (d) => onOpenCreateEvent(d) : undefined}
         onShareEvent={onShareEvent}
         emptyGuideText={emptyGuideText}
       />
@@ -217,6 +237,11 @@ function areDayAgendaViewPropsEqual(
     prev.onUpdateProject === next.onUpdateProject &&
     prev.onUpdateTimeZone === next.onUpdateTimeZone &&
     prev.onUpdateLocation === next.onUpdateLocation &&
+    prev.onUpdateEventFields === next.onUpdateEventFields &&
+    prev.onAddChecklistItem === next.onAddChecklistItem &&
+    prev.onUpdateChecklistItemText === next.onUpdateChecklistItemText &&
+    prev.onDeleteChecklistItem === next.onDeleteChecklistItem &&
+    prev.onOpenCreateEvent === next.onOpenCreateEvent &&
     prev.onShareEvent === next.onShareEvent &&
     prev.onLoadSampleData === next.onLoadSampleData &&
     areShallowArraysEqual(prev.events, next.events) &&

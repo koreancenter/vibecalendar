@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useMemo, useCallback } from 'react';
-import { Calendar, Sparkles } from 'lucide-react';
+import { Calendar, Plus, Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { layoutTimeEvents, PositionedEvent } from '../utils/timeGridLayout';
 import { minutesToTime } from '../shared/scheduleUtils';
@@ -41,6 +41,7 @@ interface TimeGridCanvasProps {
     targetStartTime?: string,
     targetEndTime?: string
   ) => void;
+  onQuickCreateSlot?: (date: string, startTime?: string, endTime?: string) => void;
   onDragHoverDateChange?: (date: string | null) => void;
   showEmptyGuide?: boolean;
   emptyGuideText?: string;
@@ -62,6 +63,7 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
   onSelectDate,
   onSelectEvent,
   onMoveEventDate,
+  onQuickCreateSlot,
   onDragHoverDateChange,
   showEmptyGuide = false,
   emptyGuideText,
@@ -75,7 +77,13 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
   const isComparing = comparedProjectIds.length >= 2;
 
   const columnDates = useMemo(() => columns.map((c) => c.date), [columns]);
-  const columnEvents = useMemo(() => columns.flatMap((col) => col.events), [columns]);
+  const columnEvents = useMemo(
+    () =>
+      Array.from(
+        new Map(columns.flatMap((col) => col.events).map((ev) => [ev.id, ev])).values()
+      ),
+    [columns]
+  );
 
   const { byEventId, getViewModel } = useCalendarEventViewModels({
     events: columnEvents,
@@ -153,17 +161,33 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                   좌측 컨시어지에 일정을 지시하거나, 사용법 학습을 위한 가상 샘플 일정을 불러와 보세요.
                 </p>
               </div>
-              <div className="pt-0.5 flex flex-col items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={onLoadSampleData}
-                  className="h-9 px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.11] text-xs font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                  <span>학습용 샘플 데이터 불러오기</span>
-                </button>
+              <div className="pt-0.5 flex flex-col items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {onQuickCreateSlot && columns[0] && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetDate =
+                          columns.find((c) => c.isSelected)?.date || columns[0].date;
+                        onQuickCreateSlot(targetDate, '10:00', '11:00');
+                      }}
+                      className="h-9 px-4 rounded-xl bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                    >
+                      <Plus className="w-3.5 h-3.5 shrink-0" />
+                      <span>새 일정 직접 등록</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onLoadSampleData}
+                    className="h-9 px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.11] text-xs font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                    <span>학습용 샘플 데이터 불러오기</span>
+                  </button>
+                </div>
                 <span className="text-[10.5px] text-neutral-500">
-                  100% 가상 장소 예시 · 언제든 비우기 가능
+                  빈 시간대 더블클릭으로 즉시 등록 · 샘플은 언제든 비우기 가능
                 </span>
               </div>
             </div>
@@ -234,6 +258,31 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                 onClick={() => {
                   if (justDraggedRef.current) return;
                   onSelectDate?.(col.date);
+                }}
+                onDoubleClick={(e) => {
+                  if (justDraggedRef.current || !onQuickCreateSlot) return;
+                  const targetEl = e.target as HTMLElement | null;
+                  if (
+                    targetEl?.closest(
+                      '.luxury-event-card, .luxury-event-chip, button, [role="button"]'
+                    )
+                  ) {
+                    return;
+                  }
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const offsetY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+                  const rawMinutes = startHour * 60 + (offsetY / pxPerHour) * 60;
+                  const snappedStart = Math.max(
+                    startHour * 60,
+                    Math.min(endHour * 60 - 30, Math.floor(rawMinutes / 15) * 15)
+                  );
+                  const snappedEnd = Math.min(23 * 60 + 59, snappedStart + 60);
+                  onSelectDate?.(col.date);
+                  onQuickCreateSlot(
+                    col.date,
+                    minutesToTime(snappedStart),
+                    minutesToTime(snappedEnd)
+                  );
                 }}
                 style={{ height: `${totalHeight}px` }}
                 className={`relative transition-colors duration-150 ${
@@ -306,22 +355,33 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                           등록된 시간제 일정이 없습니다
                         </p>
                         <p className="text-xs text-neutral-400 leading-relaxed">
-                          좌측 컨시어지 패널에 시작 시간과 정확한 장소를 함께 지시해 보세요.
+                          원하는 시간대를 더블클릭해 바로 등록하거나, 좌측 컨시어지에 지시해 보세요.
                         </p>
                       </div>
-                      {isWorkspaceEmpty && onLoadSampleData && (
-                        <div className="pt-1 flex flex-col items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={onLoadSampleData}
-                            className="h-8.5 px-3.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.11] text-xs font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                            <span>학습용 샘플 데이터 불러오기</span>
-                          </button>
-                          <span className="text-[10.5px] text-neutral-500">
-                            100% 가상 장소 예시 · 언제든 비우기 가능
-                          </span>
+                      {(onQuickCreateSlot || (isWorkspaceEmpty && onLoadSampleData)) && (
+                        <div className="pt-1 flex flex-col items-center gap-2">
+                          <div className="flex flex-wrap items-center justify-center gap-2">
+                            {onQuickCreateSlot && (
+                              <button
+                                type="button"
+                                onClick={() => onQuickCreateSlot(col.date, '10:00', '11:00')}
+                                className="h-8.5 px-3.5 rounded-xl bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                              >
+                                <Plus className="w-3.5 h-3.5 shrink-0" />
+                                <span>새 일정 직접 등록</span>
+                              </button>
+                            )}
+                            {isWorkspaceEmpty && onLoadSampleData && (
+                              <button
+                                type="button"
+                                onClick={onLoadSampleData}
+                                className="h-8.5 px-3.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.11] text-xs font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                              >
+                                <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                                <span>샘플 데이터 불러오기</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -471,6 +531,7 @@ function areTimeGridCanvasPropsEqual(
     prev.onSelectDate === next.onSelectDate &&
     prev.onSelectEvent === next.onSelectEvent &&
     prev.onMoveEventDate === next.onMoveEventDate &&
+    prev.onQuickCreateSlot === next.onQuickCreateSlot &&
     prev.onDragHoverDateChange === next.onDragHoverDateChange &&
     prev.onLoadSampleData === next.onLoadSampleData &&
     areTimeGridColumnsEqual(prev.columns, next.columns) &&

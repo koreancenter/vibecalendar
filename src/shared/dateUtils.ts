@@ -56,6 +56,37 @@ export function addDays(dateStr: string, days: number): string {
 }
 
 /**
+ * 두 YYYY-MM-DD 날짜 사이의 절대 일수 차이 반환
+ */
+export function getDayDistance(dateA: string, dateB: string): number {
+  const dtA = parseLocalDate(dateA);
+  const dtB = parseLocalDate(dateB);
+  return Math.round(Math.abs(dtA.getTime() - dtB.getTime()) / 86_400_000);
+}
+
+/**
+ * 시작일~종료일(다일 일정 포함) 구간의 YYYY-MM-DD 배열 반환 (최대 maxDays일 안전 상한)
+ */
+export function getEventDateSpan(
+  startDateStr: string,
+  endDateStr?: string,
+  maxDays = 31
+): string[] {
+  if (!endDateStr || endDateStr <= startDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(endDateStr)) {
+    return [startDateStr];
+  }
+  const span: string[] = [startDateStr];
+  let cursor = startDateStr;
+  let guard = 1;
+  while (cursor < endDateStr && guard < maxDays) {
+    cursor = addDays(cursor, 1);
+    span.push(cursor);
+    guard += 1;
+  }
+  return span;
+}
+
+/**
  * YYYY-MM-DD에 해당하는 한국어 요일 약어('일'~'토') 반환
  */
 export function getDayOfWeekShort(dateStr: string): string {

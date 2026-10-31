@@ -6,11 +6,12 @@ import {
 import {
   CalendarEventItem,
   CalendarCategory,
+  ChecklistItem,
   AgentCommandResponse,
   RecommendedVenue,
   GroundedDateSuggestion,
 } from '../types';
-import { addDays, getTodayDateString, parseLocalDate } from '../shared/dateUtils';
+import { addDays, getEventDateSpan, getTodayDateString, parseLocalDate } from '../shared/dateUtils';
 import { normalizeCoordinates, normalizePlaceAndAddress } from '../shared/locationUtils';
 import {
   convertLocalSlotToEventZone,
@@ -35,6 +36,24 @@ export interface UseCalendarEventsOptions {
   selectedProjectIds?: string[];
   viewerTimeZone?: string;
   vaultEventsConfig?: VaultEventsSyncConfig;
+}
+
+export interface ManualEventDraft {
+  title: string;
+  date: string;
+  endDate?: string;
+  startTime: string;
+  endTime: string;
+  timeZone?: string;
+  isAllDay: boolean;
+  category: CalendarCategory;
+  projectId?: string;
+  location?: string;
+  locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
+  content?: string;
+  checklist?: ChecklistItem[];
 }
 
 const STORAGE_KEY_EVENTS = 'ai_smart_calendar_events_v4';
@@ -164,7 +183,8 @@ export function useCalendarEvents({
     const matched: Array<{ event: CalendarEventItem; localStartTime: string }> = [];
     for (const e of filteredEvents) {
       const timing = projectEventToViewerTimeZone(e, effectiveViewerZone);
-      if (timing.localDate === selectedDate) {
+      const spannedDates = getEventDateSpan(timing.localDate, e.endDate);
+      if (spannedDates.includes(selectedDate)) {
         matched.push({ event: e, localStartTime: timing.localStartTime });
       }
     }
@@ -351,6 +371,47 @@ export function useCalendarEvents({
 
     setEvents((prev) => prev.map((e) => (e.id === eventId ? updateChecklist(e) : e)));
     setSelectedEvent((prev) => (prev && prev.id === eventId ? updateChecklist(prev) : prev));
+  }, []);
+
+  const handleAddChecklistItem = useCallback((eventId: string, text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const newItem: ChecklistItem = {
+      id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text: trimmed,
+      done: false,
+    };
+    const appendChecklist = (e: CalendarEventItem): CalendarEventItem => ({
+      ...e,
+      checklist: [...(e.checklist || []), newItem],
+    });
+    setEvents((prev) => prev.map((e) => (e.id === eventId ? appendChecklist(e) : e)));
+    setSelectedEvent((prev) => (prev && prev.id === eventId ? appendChecklist(prev) : prev));
+  }, []);
+
+  const handleUpdateChecklistItemText = useCallback(
+    (eventId: string, itemId: string, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const editChecklist = (e: CalendarEventItem): CalendarEventItem => ({
+        ...e,
+        checklist: (e.checklist || []).map((chk) =>
+          chk.id === itemId ? { ...chk, text: trimmed } : chk
+        ),
+      });
+      setEvents((prev) => prev.map((e) => (e.id === eventId ? editChecklist(e) : e)));
+      setSelectedEvent((prev) => (prev && prev.id === eventId ? editChecklist(prev) : prev));
+    },
+    []
+  );
+
+  const handleDeleteChecklistItem = useCallback((eventId: string, itemId: string) => {
+    const removeChecklist = (e: CalendarEventItem): CalendarEventItem => {
+      const next = (e.checklist || []).filter((chk) => chk.id !== itemId);
+      return { ...e, checklist: next.length > 0 ? next : undefined };
+    };
+    setEvents((prev) => prev.map((e) => (e.id === eventId ? removeChecklist(e) : e)));
+    setSelectedEvent((prev) => (prev && prev.id === eventId ? removeChecklist(prev) : prev));
   }, []);
 
   const handleApplyAgentResponse = useCallback(
@@ -655,6 +716,177 @@ export function useCalendarEvents({
     [showToast]
   );
 
+  const handleCreateManualEvent = useCallback(
+    (draft: ManualEventDraft): CalendarEventItem => {
+      const cleanTitle = draft.title.trim() || '새 일정';
+      const { location, locationAddress } = normalizePlaceAndAddress(
+        draft.location,
+        draft.locationAddress
+      );
+      const { locationLat, locationLng } =
+        location ||
+        locationAddress ||
+        (draft.locationLat !== undefined && draft.locationLng !== undefined)
+          ? normalizeCoordinates(draft.locationLat, draft.locationLng)
+          : {};
+
+      const validEndDate =
+        draft.endDate && /^\d{4}-\d{2}-\d{2}$/.test(draft.endDate) && draft.endDate > draft.date
+          ? draft.endDate
+          : undefined;
+
+      const validTz =
+        !draft.isAllDay && draft.timeZone && isValidTimeZone(draft.timeZone)
+          ? draft.timeZone
+          : !draft.isAllDay
+          ? inferTimeZoneFromLocation(location) ||
+            inferTimeZoneFromLocation(locationAddress) ||
+            undefined
+          : undefined;
+
+      const cleanedChecklist =
+        draft.checklist && draft.checklist.length > 0
+          ? draft.checklist
+              .map((c, idx) => ({
+                id: c.id || `mchk-${Date.now()}-${idx}`,
+                text: c.text.trim(),
+                done: Boolean(c.done),
+              }))
+              .filter((c) => c.text.length > 0)
+          : undefined;
+
+      const newEvent: CalendarEventItem = {
+        id: `manual-evt-${Date.now()}`,
+        title: cleanTitle,
+        date: draft.date,
+        endDate: validEndDate,
+        startTime: draft.startTime || '10:00',
+        endTime: draft.endTime || '11:00',
+        timeZone: validTz,
+        isAllDay: Boolean(draft.isAllDay),
+        category: draft.category || '업무',
+        projectId: draft.projectId || undefined,
+        location,
+        locationAddress,
+        locationLat,
+        locationLng,
+        content: draft.content?.trim() ? draft.content.trim() : undefined,
+        isCompleted: false,
+        checklist: cleanedChecklist && cleanedChecklist.length > 0 ? cleanedChecklist : undefined,
+      };
+
+      setEvents((prev) => [newEvent, ...prev]);
+      setSelectedEvent(newEvent);
+
+      const localJumpDate = projectEventToViewerTimeZone(newEvent, effectiveViewerZone).localDate;
+      jumpToDate(localJumpDate);
+
+      showToast(`'${cleanTitle}' 일정이 등록되었습니다.`, () => {
+        setEvents((curr) => curr.filter((e) => e.id !== newEvent.id));
+        setSelectedEvent((curr) => (curr?.id === newEvent.id ? null : curr));
+      });
+
+      return newEvent;
+    },
+    [effectiveViewerZone, jumpToDate, showToast]
+  );
+
+  const handleUpdateEventFields = useCallback(
+    (eventId: string, updates: Partial<CalendarEventItem>, toastLabel?: string) => {
+      const target = events.find((e) => e.id === eventId);
+      if (!target) return;
+
+      const snapshot: CalendarEventItem = { ...target };
+      const merged: CalendarEventItem = { ...target, ...updates };
+
+      if (merged.title !== undefined) {
+        merged.title = merged.title.trim() || target.title;
+      }
+
+      if ('endDate' in updates) {
+        merged.endDate =
+          updates.endDate &&
+          /^\d{4}-\d{2}-\d{2}$/.test(updates.endDate) &&
+          updates.endDate > merged.date
+            ? updates.endDate
+            : undefined;
+      } else if (merged.endDate && merged.endDate <= merged.date) {
+        merged.endDate = undefined;
+      }
+
+      if (merged.isAllDay) {
+        merged.timeZone = undefined;
+      } else if ('timeZone' in updates) {
+        merged.timeZone =
+          updates.timeZone && isValidTimeZone(updates.timeZone) ? updates.timeZone : undefined;
+      }
+
+      if ('content' in updates) {
+        merged.content = updates.content?.trim() ? updates.content.trim() : undefined;
+      }
+
+      if ('location' in updates || 'locationAddress' in updates) {
+        const normLoc = normalizePlaceAndAddress(merged.location, merged.locationAddress);
+        merged.location = normLoc.location;
+        merged.locationAddress = normLoc.locationAddress;
+      }
+
+      setEvents((prev) => prev.map((e) => (e.id === eventId ? merged : e)));
+      setSelectedEvent((prev) => (prev && prev.id === eventId ? merged : prev));
+
+      if (updates.date && updates.date !== target.date) {
+        const localJump = projectEventToViewerTimeZone(merged, effectiveViewerZone).localDate;
+        jumpToDate(localJump);
+      }
+
+      if (toastLabel) {
+        showToast(toastLabel, () => {
+          setEvents((curr) => curr.map((e) => (e.id === eventId ? snapshot : e)));
+          setSelectedEvent((curr) => (curr && curr.id === eventId ? snapshot : curr));
+        });
+      }
+    },
+    [effectiveViewerZone, events, jumpToDate, showToast]
+  );
+
+  const handlePatchEventsLocations = useCallback(
+    (
+      patches: Array<{
+        id: string;
+        location?: string;
+        locationAddress?: string;
+        locationLat?: number;
+        locationLng?: number;
+      }>
+    ) => {
+      if (!patches.length) return;
+      const byId = new Map(patches.map((p) => [p.id, p]));
+      const applyPatch = (ev: CalendarEventItem): CalendarEventItem => {
+        const p = byId.get(ev.id);
+        if (!p) return ev;
+        const norm = normalizePlaceAndAddress(
+          p.location || ev.location,
+          p.locationAddress || ev.locationAddress
+        );
+        const coords = normalizeCoordinates(
+          p.locationLat ?? ev.locationLat,
+          p.locationLng ?? ev.locationLng
+        );
+        return {
+          ...ev,
+          location: norm.location || ev.location,
+          locationAddress: norm.locationAddress || ev.locationAddress,
+          locationLat: coords.locationLat ?? ev.locationLat,
+          locationLng: coords.locationLng ?? ev.locationLng,
+        };
+      };
+
+      setEvents((prev) => prev.map(applyPatch));
+      setSelectedEvent((prev) => (prev && byId.has(prev.id) ? applyPatch(prev) : prev));
+    },
+    []
+  );
+
   const clearProjectAssociation = useCallback((deletedProjectId: string) => {
     setEvents((prev) =>
       prev.map((e) => (e.projectId === deletedProjectId ? { ...e, projectId: undefined } : e))
@@ -688,10 +920,16 @@ export function useCalendarEvents({
     handleUpdateEventTimeZone,
     handleUpdateEventProject,
     handleUpdateEventLocation,
+    handleCreateManualEvent,
+    handleUpdateEventFields,
+    handlePatchEventsLocations,
     clearProjectAssociation,
     handleDeleteEvent,
     handleToggleComplete,
     handleToggleChecklistItem,
+    handleAddChecklistItem,
+    handleUpdateChecklistItemText,
+    handleDeleteChecklistItem,
     handleApplyAgentResponse,
     handleCreateEventFromVenue,
     handleCreateEventFromGroundedSuggestion,
