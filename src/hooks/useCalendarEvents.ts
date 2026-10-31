@@ -37,7 +37,20 @@ import {
   resolveEventTimeZone,
 } from '../shared/timeZoneUtils';
 import { computeSmartScheduleRebalance } from '../shared/autoScheduler';
+import {
+  areEventsSnapshotsEqual,
+  areSingleEventsEqual,
+  cloneEventItem,
+  cloneEventsList,
+  describeEventFieldChanges,
+  EventHistoryEntry,
+} from '../utils/eventHistoryDiff';
 import { areShallowArraysEqual } from './useCalendarEventViewModels';
+import {
+  EventHistoryContextValue,
+  MAX_EVENT_HISTORY_STACK,
+  RecordEventHistoryMeta,
+} from './useEventHistory';
 
 export interface VaultEventsSyncConfig {
   isEncrypted: boolean;
@@ -239,10 +252,24 @@ export function useCalendarEvents({
     return next;
   }, [filteredEvents, selectedDate, effectiveViewerZone]);
 
+  const eventsRef = useRef<CalendarEventItem[]>(events);
+  eventsRef.current = events;
+
+  const [historyStacks, setHistoryStacks] = useState<{
+    past: EventHistoryEntry[];
+    future: EventHistoryEntry[];
+  }>({
+    past: [],
+    future: [],
+  });
+  const historyStacksRef = useRef(historyStacks);
+  historyStacksRef.current = historyStacks;
+
   useEffect(() => {
     return () => {
       prevFilteredEventsRef.current = [];
       prevSelectedDateEventsRef.current = [];
+      historyStacksRef.current = { past: [], future: [] };
     };
   }, []);
 
@@ -288,10 +315,258 @@ export function useCalendarEvents({
     setSelectedDate(dateStr);
   }, []);
 
+  const syncSelectedEventFromList = useCallback((nextEvents: CalendarEventItem[]) => {
+    setSelectedEvent((prev) => {
+      if (!prev) return null;
+      const masterId = resolveMasterEventId(prev.id);
+      const matchedMaster = nextEvents.find((e) => e.id === masterId);
+      if (!matchedMaster) return null;
+
+      if (prev.recurrenceMasterId && matchedMaster.recurrence) {
+        const occDate = prev.occurrenceDate || prev.date;
+        if ((matchedMaster.excludedDates || []).includes(occDate)) {
+          return null;
+        }
+        const completedSet = new Set(
+          matchedMaster.completedDates || (matchedMaster.isCompleted ? [matchedMaster.date] : [])
+        );
+        return {
+          ...cloneEventItem(matchedMaster),
+          id: prev.id,
+          date: occDate,
+          isCompleted: completedSet.has(occDate),
+          recurrenceMasterId: masterId,
+          occurrenceDate: occDate,
+        };
+      }
+      return cloneEventItem(matchedMaster);
+    });
+  }, []);
+
+  const recordEventsTransition = useCallback(
+    (
+      meta: RecordEventHistoryMeta,
+      beforeList: CalendarEventItem[],
+      afterList: CalendarEventItem[]
+    ): boolean => {
+      if (areEventsSnapshotsEqual(beforeList, afterList)) return false;
+      const entry: EventHistoryEntry = {
+        id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: new Date().toISOString(),
+        kind: meta.kind,
+        label: meta.label,
+        detail: meta.detail,
+        targetEventId: meta.targetEventId,
+        targetEventTitle: meta.targetEventTitle,
+        focusDate: meta.focusDate,
+        beforeEvents: cloneEventsList(beforeList),
+        afterEvents: cloneEventsList(afterList),
+      };
+      const nextPast = [...historyStacksRef.current.past, entry].slice(-MAX_EVENT_HISTORY_STACK);
+      const nextStacks = { past: nextPast, future: [] };
+      historyStacksRef.current = nextStacks;
+      setHistoryStacks(nextStacks);
+      return true;
+    },
+    []
+  );
+
+  const undoStep = useCallback((): boolean => {
+    const currentPast = historyStacksRef.current.past;
+    if (currentPast.length === 0) return false;
+    const entry = currentPast[currentPast.length - 1];
+    const restoredEvents = cloneEventsList(entry.beforeEvents);
+    const nextStacks = {
+      past: currentPast.slice(0, -1),
+      future: [...historyStacksRef.current.future, entry].slice(-MAX_EVENT_HISTORY_STACK),
+    };
+    historyStacksRef.current = nextStacks;
+    setHistoryStacks(nextStacks);
+    eventsRef.current = restoredEvents;
+    setEvents(restoredEvents);
+    syncSelectedEventFromList(restoredEvents);
+    if (entry.focusDate) {
+      jumpToDate(entry.focusDate);
+    }
+    showToast(`되돌림 · ${entry.label}`);
+    return true;
+  }, [jumpToDate, showToast, syncSelectedEventFromList]);
+
+  const undoStepRef = useRef(undoStep);
+  undoStepRef.current = undoStep;
+
+  const redoStep = useCallback((): boolean => {
+    const currentFuture = historyStacksRef.current.future;
+    if (currentFuture.length === 0) return false;
+    const entry = currentFuture[currentFuture.length - 1];
+    const reappliedEvents = cloneEventsList(entry.afterEvents);
+    const nextStacks = {
+      past: [...historyStacksRef.current.past, entry].slice(-MAX_EVENT_HISTORY_STACK),
+      future: currentFuture.slice(0, -1),
+    };
+    historyStacksRef.current = nextStacks;
+    setHistoryStacks(nextStacks);
+    eventsRef.current = reappliedEvents;
+    setEvents(reappliedEvents);
+    syncSelectedEventFromList(reappliedEvents);
+    if (entry.focusDate) {
+      jumpToDate(entry.focusDate);
+    }
+    showToast(`다시 실행 · ${entry.label}`);
+    return true;
+  }, [jumpToDate, showToast, syncSelectedEventFromList]);
+
+  const revertToEntry = useCallback(
+    (entryId: string): boolean => {
+      const currentPast = historyStacksRef.current.past;
+      const targetIdx = currentPast.findIndex((e) => e.id === entryId);
+      if (targetIdx === -1) return false;
+      if (targetIdx === currentPast.length - 1) {
+        return undoStep();
+      }
+      const targetEntry = currentPast[targetIdx];
+      const rolledBackCount = currentPast.length - targetIdx;
+      const rolledBackForFuture = currentPast.slice(targetIdx).reverse();
+      const restoredEvents = cloneEventsList(targetEntry.beforeEvents);
+      const nextStacks = {
+        past: currentPast.slice(0, targetIdx),
+        future: [...historyStacksRef.current.future, ...rolledBackForFuture].slice(
+          -MAX_EVENT_HISTORY_STACK
+        ),
+      };
+      historyStacksRef.current = nextStacks;
+      setHistoryStacks(nextStacks);
+      eventsRef.current = restoredEvents;
+      setEvents(restoredEvents);
+      syncSelectedEventFromList(restoredEvents);
+      if (targetEntry.focusDate) {
+        jumpToDate(targetEntry.focusDate);
+      }
+      showToast(`${rolledBackCount}단계 이전 상태로 복원했습니다 · ${targetEntry.label}`);
+      return true;
+    },
+    [jumpToDate, showToast, syncSelectedEventFromList, undoStep]
+  );
+
+  const restoreEventSnapshot = useCallback(
+    (entryId: string, targetMasterId: string): boolean => {
+      const entry = historyStacksRef.current.past.find((e) => e.id === entryId);
+      if (!entry) return false;
+      const beforeTarget = entry.beforeEvents.find((e) => e.id === targetMasterId);
+      if (!beforeTarget) return false;
+
+      const prevSnapshot = eventsRef.current;
+      const currentTarget = prevSnapshot.find((e) => e.id === targetMasterId);
+      if (currentTarget && areSingleEventsEqual(currentTarget, beforeTarget)) {
+        showToast('이미 선택한 시점과 동일한 상태입니다.');
+        return false;
+      }
+
+      const restoredClone = cloneEventItem(beforeTarget);
+      const nextEvents = currentTarget
+        ? prevSnapshot.map((e) => (e.id === targetMasterId ? restoredClone : e))
+        : [restoredClone, ...prevSnapshot];
+      const diffSummary = currentTarget
+        ? describeEventFieldChanges(currentTarget, restoredClone)
+        : '삭제된 일정 복원';
+
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
+      syncSelectedEventFromList(nextEvents);
+      recordEventsTransition(
+        {
+          kind: 'restore',
+          label: `'${restoredClone.title}' 이전 상태 복원`,
+          detail: diffSummary,
+          targetEventId: targetMasterId,
+          targetEventTitle: restoredClone.title,
+          focusDate: restoredClone.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+      showToast(`'${restoredClone.title}' 일정을 선택한 이전 상태로 복원했습니다.`, () => {
+        undoStepRef.current();
+      });
+      return true;
+    },
+    [recordEventsTransition, showToast, syncSelectedEventFromList]
+  );
+
+  const getEntriesForEvent = useCallback(
+    (targetMasterId: string): EventHistoryEntry[] => {
+      if (!targetMasterId) return [];
+      return historyStacks.past
+        .filter((entry) => {
+          if (entry.targetEventId === targetMasterId) return true;
+          const b = entry.beforeEvents.find((e) => e.id === targetMasterId);
+          const a = entry.afterEvents.find((e) => e.id === targetMasterId);
+          if (!b && !a) return false;
+          if (!b || !a) return true;
+          return !areSingleEventsEqual(b, a);
+        })
+        .reverse();
+    },
+    [historyStacks.past]
+  );
+
+  const clearHistory = useCallback(() => {
+    const emptyStacks = { past: [], future: [] };
+    historyStacksRef.current = emptyStacks;
+    setHistoryStacks(emptyStacks);
+    showToast('일정 수정 히스토리를 비웠습니다.');
+  }, [showToast]);
+
+  const applyEventsWithHistory = useCallback(
+    (
+      computeNext:
+        | CalendarEventItem[]
+        | ((prev: CalendarEventItem[]) => CalendarEventItem[]),
+      meta: RecordEventHistoryMeta
+    ): boolean => {
+      const prevSnapshot = eventsRef.current;
+      const nextEvents =
+        typeof computeNext === 'function' ? computeNext(prevSnapshot) : computeNext;
+      if (areEventsSnapshotsEqual(prevSnapshot, nextEvents)) return false;
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
+      syncSelectedEventFromList(nextEvents);
+      recordEventsTransition(meta, prevSnapshot, nextEvents);
+      return true;
+    },
+    [recordEventsTransition, syncSelectedEventFromList]
+  );
+
+  const eventHistory = useMemo<EventHistoryContextValue>(
+    () => ({
+      past: historyStacks.past,
+      future: historyStacks.future,
+      canUndo: historyStacks.past.length > 0,
+      canRedo: historyStacks.future.length > 0,
+      undoStep,
+      redoStep,
+      revertToEntry,
+      restoreEventSnapshot,
+      getEntriesForEvent,
+      clearHistory,
+    }),
+    [
+      clearHistory,
+      getEntriesForEvent,
+      historyStacks.future,
+      historyStacks.past,
+      redoStep,
+      restoreEventSnapshot,
+      revertToEntry,
+      undoStep,
+    ]
+  );
+
   const handleMoveEventDate = useCallback(
     (eventId: string, targetDate: string, targetStartTime?: string, targetEndTime?: string) => {
+      const prevSnapshot = eventsRef.current;
       const { masterId, occurrenceDate } = parseOccurrenceIdentity(eventId);
-      const master = events.find((e) => e.id === masterId);
+      const master = prevSnapshot.find((e) => e.id === masterId);
       if (!master) return;
 
       // 반복 일정 회차를 드래그 이동하면 해당 회차만 개별 일정으로 자동 분리(Detach)
@@ -345,7 +620,6 @@ export function useCalendarEvents({
           return;
         }
 
-        const prevMasterSnapshot: CalendarEventItem = { ...master };
         const nextExcluded = Array.from(new Set([...(master.excludedDates || []), occStartDate]));
         const wasCompleted = (master.completedDates || []).includes(occStartDate);
         const detachedEvent: CalendarEventItem = {
@@ -363,12 +637,14 @@ export function useCalendarEvents({
           occurrenceDate: undefined,
         };
 
-        setEvents((prev) => [
+        const nextEvents = [
           detachedEvent,
-          ...prev.map((e) =>
+          ...prevSnapshot.map((e) =>
             e.id === masterId ? { ...e, excludedDates: nextExcluded } : e
           ),
-        ]);
+        ];
+        eventsRef.current = nextEvents;
+        setEvents(nextEvents);
         setSelectedEvent((prev) =>
           prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
             ? detachedEvent
@@ -376,23 +652,31 @@ export function useCalendarEvents({
         );
         jumpToDate(targetDate);
 
+        recordEventsTransition(
+          {
+            kind: 'move',
+            label: `'${master.title}' 회차 분리 이동`,
+            detail: `${occStartDate.slice(5)} → ${nextDate.slice(5)} ${
+              occInstance.isAllDay ? '종일' : `${nextStartTime}~${nextEndTime}`
+            }`,
+            targetEventId: masterId,
+            targetEventTitle: master.title,
+            focusDate: oldTiming.localDate,
+          },
+          prevSnapshot,
+          nextEvents
+        );
+
         showToast(
           `'${master.title}'의 ${occStartDate} 회차가 ${nextDate} 개별 일정으로 분리 이동되었습니다.`,
           () => {
-            setEvents((curr) =>
-              curr
-                .filter((e) => e.id !== detachedEvent.id)
-                .map((e) => (e.id === masterId ? prevMasterSnapshot : e))
-            );
-            setSelectedEvent((curr) => (curr?.id === detachedEvent.id ? null : curr));
-            jumpToDate(oldTiming.localDate);
+            undoStepRef.current();
           }
         );
         return;
       }
 
       const target = master;
-      const oldDate = target.date;
       const oldStartTime = target.startTime;
       const oldEndTime = target.endTime;
       const oldTiming = projectEventToViewerTimeZone(target, effectiveViewerZone);
@@ -432,19 +716,34 @@ export function useCalendarEvents({
         return;
       }
 
-      setEvents((prev) =>
-        prev.map((e) =>
-          e.id === target.id
-            ? { ...e, date: nextDate, startTime: nextStartTime, endTime: nextEndTime }
-            : e
-        )
-      );
+      const updatedTarget: CalendarEventItem = {
+        ...target,
+        date: nextDate,
+        startTime: nextStartTime,
+        endTime: nextEndTime,
+      };
+      const nextEvents = prevSnapshot.map((e) => (e.id === target.id ? updatedTarget : e));
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && prev.id === target.id
           ? { ...prev, date: nextDate, startTime: nextStartTime, endTime: nextEndTime }
           : prev
       );
       jumpToDate(targetDate);
+
+      recordEventsTransition(
+        {
+          kind: 'move',
+          label: `'${target.title}' 일시 이동`,
+          detail: describeEventFieldChanges(target, updatedTarget),
+          targetEventId: target.id,
+          targetEventTitle: target.title,
+          focusDate: oldTiming.localDate,
+        },
+        prevSnapshot,
+        nextEvents
+      );
 
       const zoneSuffix =
         !target.isAllDay && sourceZone !== effectiveViewerZone
@@ -456,28 +755,17 @@ export function useCalendarEvents({
           : `'${target.title}' 일정이 ${targetDate}로 이동되었습니다.`;
 
       showToast(msg, () => {
-        setEvents((prev) =>
-          prev.map((e) =>
-            e.id === target.id
-              ? { ...e, date: oldDate, startTime: oldStartTime, endTime: oldEndTime }
-              : e
-          )
-        );
-        setSelectedEvent((prev) =>
-          prev && prev.id === target.id
-            ? { ...prev, date: oldDate, startTime: oldStartTime, endTime: oldEndTime }
-            : prev
-        );
-        jumpToDate(oldTiming.localDate);
+        undoStepRef.current();
       });
     },
-    [events, effectiveViewerZone, jumpToDate, showToast]
+    [effectiveViewerZone, jumpToDate, recordEventsTransition, showToast]
   );
 
   const handleDeleteEvent = useCallback(
     (eventId: string, scope: 'single' | 'all' = 'all') => {
+      const prevSnapshot = eventsRef.current;
       const { masterId, occurrenceDate } = parseOccurrenceIdentity(eventId);
-      const target = events.find((e) => e.id === masterId);
+      const target = prevSnapshot.find((e) => e.id === masterId);
       if (!target) return;
 
       if (scope === 'single' && target.recurrence) {
@@ -488,45 +776,74 @@ export function useCalendarEvents({
             : null) ||
           target.date;
 
-        const prevSnapshot: CalendarEventItem = { ...target };
         const nextExcluded = Array.from(new Set([...(target.excludedDates || []), occDate]));
-
-        setEvents((prev) =>
-          prev.map((e) => (e.id === masterId ? { ...e, excludedDates: nextExcluded } : e))
+        const nextEvents = prevSnapshot.map((e) =>
+          e.id === masterId ? { ...e, excludedDates: nextExcluded } : e
         );
+        eventsRef.current = nextEvents;
+        setEvents(nextEvents);
         setSelectedEvent((prev) =>
           prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
             ? null
             : prev
         );
 
+        recordEventsTransition(
+          {
+            kind: 'delete',
+            label: `'${target.title}' 회차 제외`,
+            detail: `${occDate} 회차 삭제`,
+            targetEventId: masterId,
+            targetEventTitle: target.title,
+            focusDate: occDate,
+          },
+          prevSnapshot,
+          nextEvents
+        );
+
         showToast(`'${target.title}'의 ${occDate} 회차가 제외되었습니다.`, () => {
-          setEvents((current) =>
-            current.map((e) => (e.id === masterId ? prevSnapshot : e))
-          );
+          undoStepRef.current();
         });
         return;
       }
 
-      setEvents((prev) => prev.filter((e) => e.id !== masterId));
+      const nextEvents = prevSnapshot.filter((e) => e.id !== masterId);
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && resolveMasterEventId(prev.id) === masterId ? null : prev
+      );
+
+      recordEventsTransition(
+        {
+          kind: 'delete',
+          label: `'${target.title}' 일정 삭제`,
+          detail: `${target.date.slice(5)} ${
+            target.isAllDay ? '종일' : `${target.startTime}~${target.endTime}`
+          }`,
+          targetEventId: masterId,
+          targetEventTitle: target.title,
+          focusDate: target.date,
+        },
+        prevSnapshot,
+        nextEvents
       );
 
       showToast(
         `'${target.title}'${target.recurrence ? ' 전체 반복 일정이' : ' 일정이'} 삭제되었습니다.`,
         () => {
-          setEvents((current) => [target, ...current]);
+          undoStepRef.current();
         }
       );
     },
-    [events, selectedEvent, showToast]
+    [recordEventsTransition, selectedEvent, showToast]
   );
 
   const handleToggleComplete = useCallback(
     (eventId: string) => {
+      const prevSnapshot = eventsRef.current;
       const { masterId, occurrenceDate } = parseOccurrenceIdentity(eventId);
-      const master = events.find((e) => e.id === masterId);
+      const master = prevSnapshot.find((e) => e.id === masterId);
       if (!master) return;
 
       if (master.recurrence) {
@@ -548,18 +865,17 @@ export function useCalendarEvents({
         }
         const nextCompletedDates = Array.from(completedSet);
 
-        setEvents((prev) =>
-          prev.map((e) =>
-            e.id === masterId
-              ? {
-                  ...e,
-                  isCompleted: occDate === e.date ? nextCompleted : e.isCompleted,
-                  completedDates:
-                    nextCompletedDates.length > 0 ? nextCompletedDates : undefined,
-                }
-              : e
-          )
+        const nextEvents = prevSnapshot.map((e) =>
+          e.id === masterId
+            ? {
+                ...e,
+                isCompleted: occDate === e.date ? nextCompleted : e.isCompleted,
+                completedDates: nextCompletedDates.length > 0 ? nextCompletedDates : undefined,
+              }
+            : e
         );
+        eventsRef.current = nextEvents;
+        setEvents(nextEvents);
         setSelectedEvent((prev) => {
           if (!prev) return prev;
           const prevMasterId = resolveMasterEventId(prev.id);
@@ -568,104 +884,226 @@ export function useCalendarEvents({
             return {
               ...prev,
               isCompleted: nextCompleted,
-              completedDates:
-                nextCompletedDates.length > 0 ? nextCompletedDates : undefined,
+              completedDates: nextCompletedDates.length > 0 ? nextCompletedDates : undefined,
             };
           }
           return prev;
         });
+
+        recordEventsTransition(
+          {
+            kind: 'complete',
+            label: `'${master.title}' 완료 상태 변경`,
+            detail: `${occDate.slice(5)} ${nextCompleted ? '완료 처리' : '미완료 전환'}`,
+            targetEventId: masterId,
+            targetEventTitle: master.title,
+            focusDate: occDate,
+          },
+          prevSnapshot,
+          nextEvents
+        );
         return;
       }
 
-      setEvents((prev) =>
-        prev.map((e) => (e.id === masterId ? { ...e, isCompleted: !e.isCompleted } : e))
+      const nextDone = !master.isCompleted;
+      const nextEvents = prevSnapshot.map((e) =>
+        e.id === masterId ? { ...e, isCompleted: nextDone } : e
       );
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && resolveMasterEventId(prev.id) === masterId
-          ? { ...prev, isCompleted: !prev.isCompleted }
+          ? { ...prev, isCompleted: nextDone }
           : prev
       );
+
+      recordEventsTransition(
+        {
+          kind: 'complete',
+          label: `'${master.title}' 완료 상태 변경`,
+          detail: nextDone ? '완료 처리' : '미완료로 전환',
+          targetEventId: masterId,
+          targetEventTitle: master.title,
+          focusDate: master.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
     },
-    [events, selectedEvent]
+    [recordEventsTransition, selectedEvent]
   );
 
-  const handleToggleChecklistItem = useCallback((eventId: string, itemId: string) => {
-    const masterId = resolveMasterEventId(eventId);
-    const updateChecklist = (e: CalendarEventItem): CalendarEventItem => {
-      const updatedChecklist = (e.checklist || []).map((chk) =>
-        chk.id === itemId ? { ...chk, done: !chk.done } : chk
+  const handleToggleChecklistItem = useCallback(
+    (eventId: string, itemId: string) => {
+      const prevSnapshot = eventsRef.current;
+      const masterId = resolveMasterEventId(eventId);
+      const target = prevSnapshot.find((e) => e.id === masterId);
+      if (!target) return;
+
+      const toggledItem = (target.checklist || []).find((chk) => chk.id === itemId);
+      if (!toggledItem) return;
+
+      const updateChecklist = (e: CalendarEventItem): CalendarEventItem => ({
+        ...e,
+        checklist: (e.checklist || []).map((chk) =>
+          chk.id === itemId ? { ...chk, done: !chk.done } : chk
+        ),
+      });
+
+      const nextEvents = prevSnapshot.map((e) => (e.id === masterId ? updateChecklist(e) : e));
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
+      setSelectedEvent((prev) =>
+        prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+          ? updateChecklist(prev)
+          : prev
       );
-      return { ...e, checklist: updatedChecklist };
-    };
 
-    setEvents((prev) => prev.map((e) => (e.id === masterId ? updateChecklist(e) : e)));
-    setSelectedEvent((prev) =>
-      prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
-        ? updateChecklist(prev)
-        : prev
-    );
-  }, []);
+      recordEventsTransition(
+        {
+          kind: 'checklist',
+          label: `'${target.title}' 체크리스트 변경`,
+          detail: `'${toggledItem.text}' ${!toggledItem.done ? '완료' : '미완료'}`,
+          targetEventId: masterId,
+          targetEventTitle: target.title,
+          focusDate: target.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+    },
+    [recordEventsTransition]
+  );
 
-  const handleAddChecklistItem = useCallback((eventId: string, text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const masterId = resolveMasterEventId(eventId);
-    const newItem: ChecklistItem = {
-      id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      text: trimmed,
-      done: false,
-    };
-    const appendChecklist = (e: CalendarEventItem): CalendarEventItem => ({
-      ...e,
-      checklist: [...(e.checklist || []), newItem],
-    });
-    setEvents((prev) => prev.map((e) => (e.id === masterId ? appendChecklist(e) : e)));
-    setSelectedEvent((prev) =>
-      prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
-        ? appendChecklist(prev)
-        : prev
-    );
-  }, []);
+  const handleAddChecklistItem = useCallback(
+    (eventId: string, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const prevSnapshot = eventsRef.current;
+      const masterId = resolveMasterEventId(eventId);
+      const target = prevSnapshot.find((e) => e.id === masterId);
+      if (!target) return;
+
+      const newItem: ChecklistItem = {
+        id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        text: trimmed,
+        done: false,
+      };
+      const appendChecklist = (e: CalendarEventItem): CalendarEventItem => ({
+        ...e,
+        checklist: [...(e.checklist || []), newItem],
+      });
+
+      const nextEvents = prevSnapshot.map((e) => (e.id === masterId ? appendChecklist(e) : e));
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
+      setSelectedEvent((prev) =>
+        prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+          ? appendChecklist(prev)
+          : prev
+      );
+
+      recordEventsTransition(
+        {
+          kind: 'checklist',
+          label: `'${target.title}' 체크리스트 추가`,
+          detail: `항목 '${trimmed}'`,
+          targetEventId: masterId,
+          targetEventTitle: target.title,
+          focusDate: target.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+    },
+    [recordEventsTransition]
+  );
 
   const handleUpdateChecklistItemText = useCallback(
     (eventId: string, itemId: string, text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
+      const prevSnapshot = eventsRef.current;
       const masterId = resolveMasterEventId(eventId);
+      const target = prevSnapshot.find((e) => e.id === masterId);
+      if (!target) return;
+
       const editChecklist = (e: CalendarEventItem): CalendarEventItem => ({
         ...e,
         checklist: (e.checklist || []).map((chk) =>
           chk.id === itemId ? { ...chk, text: trimmed } : chk
         ),
       });
-      setEvents((prev) => prev.map((e) => (e.id === masterId ? editChecklist(e) : e)));
+
+      const nextEvents = prevSnapshot.map((e) => (e.id === masterId ? editChecklist(e) : e));
+      if (areEventsSnapshotsEqual(prevSnapshot, nextEvents)) return;
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
           ? editChecklist(prev)
           : prev
       );
+
+      recordEventsTransition(
+        {
+          kind: 'checklist',
+          label: `'${target.title}' 체크리스트 수정`,
+          detail: `항목 '${trimmed}'`,
+          targetEventId: masterId,
+          targetEventTitle: target.title,
+          focusDate: target.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
     },
-    []
+    [recordEventsTransition]
   );
 
-  const handleDeleteChecklistItem = useCallback((eventId: string, itemId: string) => {
-    const masterId = resolveMasterEventId(eventId);
-    const removeChecklist = (e: CalendarEventItem): CalendarEventItem => {
-      const next = (e.checklist || []).filter((chk) => chk.id !== itemId);
-      return { ...e, checklist: next.length > 0 ? next : undefined };
-    };
-    setEvents((prev) => prev.map((e) => (e.id === masterId ? removeChecklist(e) : e)));
-    setSelectedEvent((prev) =>
-      prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
-        ? removeChecklist(prev)
-        : prev
-    );
-  }, []);
+  const handleDeleteChecklistItem = useCallback(
+    (eventId: string, itemId: string) => {
+      const prevSnapshot = eventsRef.current;
+      const masterId = resolveMasterEventId(eventId);
+      const target = prevSnapshot.find((e) => e.id === masterId);
+      if (!target) return;
+      const removedItem = (target.checklist || []).find((chk) => chk.id === itemId);
+      if (!removedItem) return;
+
+      const removeChecklist = (e: CalendarEventItem): CalendarEventItem => {
+        const next = (e.checklist || []).filter((chk) => chk.id !== itemId);
+        return { ...e, checklist: next.length > 0 ? next : undefined };
+      };
+
+      const nextEvents = prevSnapshot.map((e) => (e.id === masterId ? removeChecklist(e) : e));
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
+      setSelectedEvent((prev) =>
+        prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+          ? removeChecklist(prev)
+          : prev
+      );
+
+      recordEventsTransition(
+        {
+          kind: 'checklist',
+          label: `'${target.title}' 체크리스트 삭제`,
+          detail: `항목 '${removedItem.text}' 제거`,
+          targetEventId: masterId,
+          targetEventTitle: target.title,
+          focusDate: target.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+    },
+    [recordEventsTransition]
+  );
 
   const handleApplyAgentResponse = useCallback(
     (res: AgentCommandResponse) => {
       let newlyCreated: CalendarEventItem[] = [];
-      const prevEventsSnapshot = events;
+      const prevEventsSnapshot = eventsRef.current;
 
       if (res.actionType === 'QUERY_EVENTS') {
         if (res.targetDate) {
@@ -690,6 +1128,8 @@ export function useCalendarEvents({
           : [];
       const deleteMasterSet = new Set(deleteIdsRaw.map((id) => resolveMasterEventId(id)));
 
+      let workingEvents = [...prevEventsSnapshot];
+
       if (res.createdEvents && res.createdEvents.length > 0) {
         const withProj = res.createdEvents.map((ev) => {
           const { location, locationAddress } = normalizePlaceAndAddress(
@@ -711,11 +1151,9 @@ export function useCalendarEvents({
           };
         });
         newlyCreated = withProj;
-        setEvents((prev) => {
-          const existingIds = new Set(prev.map((e) => e.id));
-          const toAdd = withProj.filter((e) => !existingIds.has(e.id));
-          return [...toAdd, ...prev];
-        });
+        const existingIds = new Set(workingEvents.map((e) => e.id));
+        const toAdd = withProj.filter((e) => !existingIds.has(e.id));
+        workingEvents = [...toAdd, ...workingEvents];
         setSelectedEvent(withProj[0]);
         const firstLocalDate = projectEventToViewerTimeZone(
           withProj[0],
@@ -724,8 +1162,8 @@ export function useCalendarEvents({
         jumpToDate(firstLocalDate);
       }
 
+      const patchMap = new Map<string, Partial<CalendarEventItem>>();
       if (updatePatches.length > 0) {
-        const patchMap = new Map<string, Partial<CalendarEventItem>>();
         for (const u of updatePatches) {
           if (!u.id) continue;
           const targetMasterId = resolveMasterEventId(u.id);
@@ -756,12 +1194,10 @@ export function useCalendarEvents({
         }
 
         if (patchMap.size > 0) {
-          setEvents((prev) =>
-            prev.map((e) => {
-              const patch = patchMap.get(e.id);
-              return patch ? { ...e, ...patch } : e;
-            })
-          );
+          workingEvents = workingEvents.map((e) => {
+            const patch = patchMap.get(e.id);
+            return patch ? { ...e, ...patch } : e;
+          });
           setSelectedEvent((prev) => {
             if (!prev) return prev;
             const patch = patchMap.get(resolveMasterEventId(prev.id));
@@ -771,7 +1207,7 @@ export function useCalendarEvents({
       }
 
       if (deleteMasterSet.size > 0) {
-        setEvents((prev) => prev.filter((e) => !deleteMasterSet.has(e.id)));
+        workingEvents = workingEvents.filter((e) => !deleteMasterSet.has(e.id));
         setSelectedEvent((prev) =>
           prev && deleteMasterSet.has(resolveMasterEventId(prev.id)) ? null : prev
         );
@@ -781,25 +1217,88 @@ export function useCalendarEvents({
         jumpToDate(res.targetDate);
       }
 
-      const didMutate =
-        newlyCreated.length > 0 || updatePatches.length > 0 || deleteMasterSet.size > 0;
+      const didMutate = !areEventsSnapshotsEqual(prevEventsSnapshot, workingEvents);
+      if (didMutate) {
+        eventsRef.current = workingEvents;
+        setEvents(workingEvents);
+
+        let historyLabel = 'AI 일정 변경';
+        let historyDetail: string | undefined;
+        let singleTargetId: string | undefined;
+        let singleTargetTitle: string | undefined;
+
+        if (newlyCreated.length === 1 && patchMap.size === 0 && deleteMasterSet.size === 0) {
+          historyLabel = `'${newlyCreated[0].title}' AI 등록`;
+          historyDetail = `${newlyCreated[0].date.slice(5)} ${
+            newlyCreated[0].isAllDay
+              ? '종일'
+              : `${newlyCreated[0].startTime}~${newlyCreated[0].endTime}`
+          }`;
+          singleTargetId = newlyCreated[0].id;
+          singleTargetTitle = newlyCreated[0].title;
+        } else if (newlyCreated.length > 1) {
+          historyLabel = `AI 일정 일괄 등록 (${newlyCreated.length}건)`;
+          historyDetail = newlyCreated[0].title;
+        } else if (patchMap.size === 1 && deleteMasterSet.size === 0) {
+          const [onlyId] = Array.from(patchMap.keys());
+          const beforeEv = prevEventsSnapshot.find((e) => e.id === onlyId);
+          const afterEv = workingEvents.find((e) => e.id === onlyId);
+          if (beforeEv && afterEv) {
+            historyLabel = `'${afterEv.title}' AI 수정`;
+            historyDetail = describeEventFieldChanges(beforeEv, afterEv);
+            singleTargetId = onlyId;
+            singleTargetTitle = afterEv.title;
+          }
+        } else if (patchMap.size > 1) {
+          historyLabel = `AI 일정 일괄 수정 (${patchMap.size}건)`;
+          historyDetail = updatePatches[0]?.diffSummary;
+        } else if (deleteMasterSet.size > 0) {
+          const deletedTitles = prevEventsSnapshot
+            .filter((e) => deleteMasterSet.has(e.id))
+            .map((e) => e.title);
+          historyLabel =
+            deletedTitles.length === 1
+              ? `'${deletedTitles[0]}' AI 삭제`
+              : `AI 일정 삭제 (${deleteMasterSet.size}건)`;
+        }
+
+        recordEventsTransition(
+          {
+            kind: 'ai',
+            label: historyLabel,
+            detail: historyDetail,
+            targetEventId: singleTargetId,
+            targetEventTitle: singleTargetTitle,
+            focusDate: res.targetDate || selectedDate,
+          },
+          prevEventsSnapshot,
+          workingEvents
+        );
+      }
 
       showToast(
         res.replyText || 'AI 요청이 반영되었습니다.',
         didMutate
           ? () => {
-              setEvents(prevEventsSnapshot);
-              setSelectedEvent(null);
+              undoStepRef.current();
             }
           : undefined
       );
       return newlyCreated;
     },
-    [effectiveViewerZone, events, jumpToDate, primaryProjectId, selectedDate, showToast]
+    [
+      effectiveViewerZone,
+      jumpToDate,
+      primaryProjectId,
+      recordEventsTransition,
+      selectedDate,
+      showToast,
+    ]
   );
 
   const handleCreateEventFromVenue = useCallback(
     (venue: RecommendedVenue, defaultDate?: string) => {
+      const prevSnapshot = eventsRef.current;
       const targetDate = venue.targetDate || defaultDate || selectedDate;
       const { location: cleanLoc, locationAddress: cleanAddr } = normalizePlaceAndAddress(
         venue.name,
@@ -834,19 +1333,38 @@ export function useCalendarEvents({
         ],
       };
 
-      setEvents((prev) => [newEvent, ...prev]);
+      const nextEvents = [newEvent, ...prevSnapshot];
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent(newEvent);
 
       const localJumpDate = projectEventToViewerTimeZone(newEvent, effectiveViewerZone).localDate;
       jumpToDate(localJumpDate);
-      showToast(`'${exactVenueName}' 일정이 ${localJumpDate} 캘린더에 등록되었습니다.`);
+
+      recordEventsTransition(
+        {
+          kind: 'create',
+          label: `'${exactVenueName}' 장소 일정 등록`,
+          detail: `${localJumpDate.slice(5)} 12:00~13:30`,
+          targetEventId: newEvent.id,
+          targetEventTitle: exactVenueName,
+          focusDate: localJumpDate,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+
+      showToast(`'${exactVenueName}' 일정이 ${localJumpDate} 캘린더에 등록되었습니다.`, () => {
+        undoStepRef.current();
+      });
       return newEvent;
     },
-    [effectiveViewerZone, jumpToDate, primaryProjectId, selectedDate, showToast]
+    [effectiveViewerZone, jumpToDate, primaryProjectId, recordEventsTransition, selectedDate, showToast]
   );
 
   const handleCreateEventFromGroundedSuggestion = useCallback(
     (suggestion: GroundedDateSuggestion) => {
+      const prevSnapshot = eventsRef.current;
       const isHoliday = suggestion.kind === 'holiday';
       const isIndustry = suggestion.kind === 'industry_event';
       const { location: cleanLoc, locationAddress: cleanAddr } = normalizePlaceAndAddress(
@@ -892,26 +1410,39 @@ export function useCalendarEvents({
             : undefined,
       };
 
-      setEvents((prev) => [newEvent, ...prev]);
+      const nextEvents = [newEvent, ...prevSnapshot];
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent(newEvent);
       jumpToDate(suggestion.date);
 
-      showToast(
-        `'${suggestion.title}' 일정이 ${suggestion.date} 캘린더에 반영되었습니다.`,
-        () => {
-          setEvents((curr) => curr.filter((e) => e.id !== newEvent.id));
-        }
+      recordEventsTransition(
+        {
+          kind: 'create',
+          label: `'${suggestion.title}' 추천 일정 등록`,
+          detail: `${suggestion.date.slice(5)} ${newEvent.isAllDay ? '종일' : `${newEvent.startTime}~${newEvent.endTime}`}`,
+          targetEventId: newEvent.id,
+          targetEventTitle: suggestion.title,
+          focusDate: suggestion.date,
+        },
+        prevSnapshot,
+        nextEvents
       );
+
+      showToast(`'${suggestion.title}' 일정이 ${suggestion.date} 캘린더에 반영되었습니다.`, () => {
+        undoStepRef.current();
+      });
 
       return newEvent;
     },
-    [jumpToDate, primaryProjectId, showToast]
+    [jumpToDate, primaryProjectId, recordEventsTransition, showToast]
   );
 
   const handleUpdateTimeSlot = useCallback(
     (eventId: string, localStartTime: string, localEndTime: string) => {
+      const prevSnapshot = eventsRef.current;
       const masterId = resolveMasterEventId(eventId);
-      const target = events.find((e) => e.id === masterId);
+      const target = prevSnapshot.find((e) => e.id === masterId);
       if (!target) return;
 
       const timing = projectEventToViewerTimeZone(target, effectiveViewerZone);
@@ -923,18 +1454,17 @@ export function useCalendarEvents({
         timing.sourceTimeZone
       );
 
-      setEvents((prev) =>
-        prev.map((e) =>
-          e.id === masterId
-            ? {
-                ...e,
-                date: converted.date,
-                startTime: converted.startTime,
-                endTime: converted.endTime,
-              }
-            : e
-        )
-      );
+      const updated: CalendarEventItem = {
+        ...target,
+        date: converted.date,
+        startTime: converted.startTime,
+        endTime: converted.endTime,
+      };
+      if (areSingleEventsEqual(target, updated)) return;
+
+      const nextEvents = prevSnapshot.map((e) => (e.id === masterId ? updated : e));
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
           ? {
@@ -945,21 +1475,45 @@ export function useCalendarEvents({
             }
           : prev
       );
+
+      recordEventsTransition(
+        {
+          kind: 'move',
+          label: `'${target.title}' 시간 변경`,
+          detail: describeEventFieldChanges(target, updated),
+          targetEventId: masterId,
+          targetEventTitle: target.title,
+          focusDate: timing.localDate,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+
       const codeSuffix = !timing.isSameZone ? ` ${timing.sourceMeta.shortCode}` : '';
       showToast(
-        `일정 시간이 ${converted.startTime} ~ ${converted.endTime}${codeSuffix}로 변경되었습니다.`
+        `일정 시간이 ${converted.startTime} ~ ${converted.endTime}${codeSuffix}로 변경되었습니다.`,
+        () => {
+          undoStepRef.current();
+        }
       );
     },
-    [events, effectiveViewerZone, showToast]
+    [effectiveViewerZone, recordEventsTransition, showToast]
   );
 
   const handleUpdateEventTimeZone = useCallback(
     (eventId: string, nextTimeZone: string | undefined) => {
+      const prevSnapshot = eventsRef.current;
       const masterId = resolveMasterEventId(eventId);
+      const target = prevSnapshot.find((e) => e.id === masterId);
+      if (!target) return;
+
       const validTz = nextTimeZone && isValidTimeZone(nextTimeZone) ? nextTimeZone : undefined;
-      setEvents((prev) =>
-        prev.map((e) => (e.id === masterId ? { ...e, timeZone: validTz } : e))
-      );
+      if (target.timeZone === validTz) return;
+
+      const updated: CalendarEventItem = { ...target, timeZone: validTz };
+      const nextEvents = prevSnapshot.map((e) => (e.id === masterId ? updated : e));
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
           ? { ...prev, timeZone: validTz }
@@ -967,25 +1521,61 @@ export function useCalendarEvents({
       );
 
       const meta = getTimeZoneMeta(validTz || effectiveViewerZone);
-      showToast(`일정 기준 시간대가 ${meta.shortCode} (${meta.cityKo})로 설정되었습니다.`);
+      recordEventsTransition(
+        {
+          kind: 'update',
+          label: `'${target.title}' 시간대 변경`,
+          detail: `${meta.cityKo} (${meta.shortCode})`,
+          targetEventId: masterId,
+          targetEventTitle: target.title,
+          focusDate: target.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+
+      showToast(`일정 기준 시간대가 ${meta.shortCode} (${meta.cityKo})로 설정되었습니다.`, () => {
+        undoStepRef.current();
+      });
     },
-    [effectiveViewerZone, showToast]
+    [effectiveViewerZone, recordEventsTransition, showToast]
   );
 
   const handleUpdateEventProject = useCallback(
     (eventId: string, projectId: string | undefined) => {
+      const prevSnapshot = eventsRef.current;
       const masterId = resolveMasterEventId(eventId);
-      setEvents((prev) =>
-        prev.map((e) => (e.id === masterId ? { ...e, projectId } : e))
-      );
+      const target = prevSnapshot.find((e) => e.id === masterId);
+      if (!target || target.projectId === projectId) return;
+
+      const updated: CalendarEventItem = { ...target, projectId };
+      const nextEvents = prevSnapshot.map((e) => (e.id === masterId ? updated : e));
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
           ? { ...prev, projectId }
           : prev
       );
-      showToast('일정의 소속 프로젝트가 업데이트되었습니다.');
+
+      recordEventsTransition(
+        {
+          kind: 'update',
+          label: `'${target.title}' 소속 프로젝트 변경`,
+          detail: projectId ? '프로젝트 연결' : '프로젝트 연결 해제',
+          targetEventId: masterId,
+          targetEventTitle: target.title,
+          focusDate: target.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+
+      showToast('일정의 소속 프로젝트가 업데이트되었습니다.', () => {
+        undoStepRef.current();
+      });
     },
-    [showToast]
+    [recordEventsTransition, showToast]
   );
 
   const handleUpdateEventLocation = useCallback(
@@ -996,35 +1586,62 @@ export function useCalendarEvents({
       rawLat?: number,
       rawLng?: number
     ) => {
+      const prevSnapshot = eventsRef.current;
       const masterId = resolveMasterEventId(eventId);
+      const target = prevSnapshot.find((e) => e.id === masterId);
+      if (!target) return;
+
       const { location, locationAddress } = normalizePlaceAndAddress(rawLocation, rawAddress);
       const { locationLat, locationLng } =
         location || locationAddress || (rawLat !== undefined && rawLng !== undefined)
           ? normalizeCoordinates(rawLat, rawLng)
           : {};
-      setEvents((prev) =>
-        prev.map((e) =>
-          e.id === masterId
-            ? { ...e, location, locationAddress, locationLat, locationLng }
-            : e
-        )
-      );
+      const updated: CalendarEventItem = {
+        ...target,
+        location,
+        locationAddress,
+        locationLat,
+        locationLng,
+      };
+      if (areSingleEventsEqual(target, updated)) return;
+
+      const nextEvents = prevSnapshot.map((e) => (e.id === masterId ? updated : e));
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
           ? { ...prev, location, locationAddress, locationLat, locationLng }
           : prev
       );
+
+      recordEventsTransition(
+        {
+          kind: 'update',
+          label: `'${target.title}' 장소 수정`,
+          detail: describeEventFieldChanges(target, updated),
+          targetEventId: masterId,
+          targetEventTitle: target.title,
+          focusDate: target.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+
       showToast(
         location || locationAddress || (locationLat !== undefined && locationLng !== undefined)
           ? '일정 장소 · 상세 주소 · 위경도 정보가 업데이트되었습니다.'
-          : '일정 장소 정보가 비워졌습니다.'
+          : '일정 장소 정보가 비워졌습니다.',
+        () => {
+          undoStepRef.current();
+        }
       );
     },
-    [showToast]
+    [recordEventsTransition, showToast]
   );
 
   const handleCreateManualEvent = useCallback(
     (draft: ManualEventDraft): CalendarEventItem => {
+      const prevSnapshot = eventsRef.current;
       const cleanTitle = draft.title.trim() || '새 일정';
       const { location, locationAddress } = normalizePlaceAndAddress(
         draft.location,
@@ -1083,29 +1700,45 @@ export function useCalendarEvents({
         recurrence: normalizeRecurrenceRule(draft.recurrence),
       };
 
-      setEvents((prev) => [newEvent, ...prev]);
+      const nextEvents = [newEvent, ...prevSnapshot];
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent(newEvent);
 
       const localJumpDate = projectEventToViewerTimeZone(newEvent, effectiveViewerZone).localDate;
       jumpToDate(localJumpDate);
 
+      recordEventsTransition(
+        {
+          kind: 'create',
+          label: `'${cleanTitle}' 새 일정 등록`,
+          detail: `${newEvent.date.slice(5)} ${
+            newEvent.isAllDay ? '종일' : `${newEvent.startTime}~${newEvent.endTime}`
+          }`,
+          targetEventId: newEvent.id,
+          targetEventTitle: cleanTitle,
+          focusDate: localJumpDate,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+
       showToast(`'${cleanTitle}' 일정이 등록되었습니다.`, () => {
-        setEvents((curr) => curr.filter((e) => e.id !== newEvent.id));
-        setSelectedEvent((curr) => (curr?.id === newEvent.id ? null : curr));
+        undoStepRef.current();
       });
 
       return newEvent;
     },
-    [effectiveViewerZone, jumpToDate, showToast]
+    [effectiveViewerZone, jumpToDate, recordEventsTransition, showToast]
   );
 
   const handleUpdateEventFields = useCallback(
     (eventId: string, updates: Partial<CalendarEventItem>, toastLabel?: string) => {
+      const prevSnapshot = eventsRef.current;
       const { masterId, occurrenceDate, isVirtualOccurrence } = parseOccurrenceIdentity(eventId);
-      const target = events.find((e) => e.id === masterId);
+      const target = prevSnapshot.find((e) => e.id === masterId);
       if (!target) return;
 
-      const snapshot: CalendarEventItem = { ...target };
       const sanitizedUpdates: Partial<CalendarEventItem> = { ...updates };
 
       // 가상 회차에서 제목·시간·반복주기만 편집할 때 마스터 시작일(target.date)이 덮어써지지 않도록 보존
@@ -1159,7 +1792,11 @@ export function useCalendarEvents({
         }
       }
 
-      setEvents((prev) => prev.map((e) => (e.id === masterId ? merged : e)));
+      if (areSingleEventsEqual(target, merged)) return;
+
+      const nextEvents = prevSnapshot.map((e) => (e.id === masterId ? merged : e));
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) => {
         if (!prev) return prev;
         if (prev.id === masterId) return merged;
@@ -1180,16 +1817,26 @@ export function useCalendarEvents({
         jumpToDate(localJump);
       }
 
+      recordEventsTransition(
+        {
+          kind: 'update',
+          label: `'${merged.title}' 일정 수정`,
+          detail: describeEventFieldChanges(target, merged),
+          targetEventId: masterId,
+          targetEventTitle: merged.title,
+          focusDate: merged.date,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+
       if (toastLabel) {
         showToast(toastLabel, () => {
-          setEvents((curr) => curr.map((e) => (e.id === masterId ? snapshot : e)));
-          setSelectedEvent((curr) =>
-            curr && resolveMasterEventId(curr.id) === masterId ? snapshot : curr
-          );
+          undoStepRef.current();
         });
       }
     },
-    [effectiveViewerZone, events, jumpToDate, showToast]
+    [effectiveViewerZone, jumpToDate, recordEventsTransition, showToast]
   );
 
   const handleImportEvents = useCallback(
@@ -1198,8 +1845,10 @@ export function useCalendarEvents({
         showToast(summaryMessage);
         return;
       }
-      const importedIds = new Set(importedEvents.map((e) => e.id));
-      setEvents((prev) => [...importedEvents, ...prev]);
+      const prevSnapshot = eventsRef.current;
+      const nextEvents = [...importedEvents, ...prevSnapshot];
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent(importedEvents[0]);
       const firstLocalDate = projectEventToViewerTimeZone(
         importedEvents[0],
@@ -1207,12 +1856,22 @@ export function useCalendarEvents({
       ).localDate;
       jumpToDate(firstLocalDate);
 
+      recordEventsTransition(
+        {
+          kind: 'import',
+          label: `일정 가져오기 (${importedEvents.length}건)`,
+          detail: importedEvents[0].title,
+          focusDate: firstLocalDate,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+
       showToast(summaryMessage, () => {
-        setEvents((curr) => curr.filter((e) => !importedIds.has(e.id)));
-        setSelectedEvent((curr) => (curr && importedIds.has(curr.id) ? null : curr));
+        undoStepRef.current();
       });
     },
-    [effectiveViewerZone, jumpToDate, showToast]
+    [effectiveViewerZone, jumpToDate, recordEventsTransition, showToast]
   );
 
   const handlePatchEventsLocations = useCallback(
@@ -1247,25 +1906,60 @@ export function useCalendarEvents({
         };
       };
 
-      setEvents((prev) => prev.map(applyPatch));
+      const nextEvents = eventsRef.current.map(applyPatch);
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && byId.has(resolveMasterEventId(prev.id)) ? applyPatch(prev) : prev
       );
+
+      // 백그라운드 위경도 자동 보강은 직전 AI 생성/수정 스택의 afterEvents에 무소음 병합해 1단계 되돌리기 보존
+      const currentPast = historyStacksRef.current.past;
+      if (currentPast.length > 0) {
+        const top = currentPast[currentPast.length - 1];
+        const updatedTop: EventHistoryEntry = {
+          ...top,
+          afterEvents: top.afterEvents.map(applyPatch),
+        };
+        const nextStacks = {
+          ...historyStacksRef.current,
+          past: [...currentPast.slice(0, -1), updatedTop],
+        };
+        historyStacksRef.current = nextStacks;
+        setHistoryStacks(nextStacks);
+      }
     },
     []
   );
 
-  const clearProjectAssociation = useCallback((deletedProjectId: string) => {
-    setEvents((prev) =>
-      prev.map((e) => (e.projectId === deletedProjectId ? { ...e, projectId: undefined } : e))
-    );
-    setSelectedEvent((prev) =>
-      prev && prev.projectId === deletedProjectId ? { ...prev, projectId: undefined } : prev
-    );
-  }, []);
+  const clearProjectAssociation = useCallback(
+    (deletedProjectId: string) => {
+      const prevSnapshot = eventsRef.current;
+      const nextEvents = prevSnapshot.map((e) =>
+        e.projectId === deletedProjectId ? { ...e, projectId: undefined } : e
+      );
+      if (areEventsSnapshotsEqual(prevSnapshot, nextEvents)) return;
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
+      setSelectedEvent((prev) =>
+        prev && prev.projectId === deletedProjectId ? { ...prev, projectId: undefined } : prev
+      );
+      recordEventsTransition(
+        {
+          kind: 'update',
+          label: '삭제된 프로젝트 연결 해제',
+          detail: '일정 프로젝트 참조 초기화',
+        },
+        prevSnapshot,
+        nextEvents
+      );
+    },
+    [recordEventsTransition]
+  );
 
   const handleAutoRebalanceSchedule = useCallback(
     (scopeDate?: string) => {
+      const prevSnapshot = eventsRef.current;
       const activeProjectFilterIds =
         selectedProjectIds && selectedProjectIds.length > 0
           ? selectedProjectIds
@@ -1273,7 +1967,7 @@ export function useCalendarEvents({
           ? [selectedProjectId]
           : undefined;
 
-      const result = computeSmartScheduleRebalance(events, {
+      const result = computeSmartScheduleRebalance(prevSnapshot, {
         viewerTimeZone: effectiveViewerZone,
         todayDateStr: getTodayDateString(),
         scopeDate,
@@ -1288,19 +1982,20 @@ export function useCalendarEvents({
 
       const patchMap = new Map(result.patches.map((p) => [p.id, p]));
 
-      setEvents((prev) =>
-        prev.map((ev) => {
-          const patch = patchMap.get(ev.id);
-          if (!patch) return ev;
-          return {
-            ...ev,
-            date: patch.after.date,
-            endDate: patch.after.endDate,
-            startTime: patch.after.startTime,
-            endTime: patch.after.endTime,
-          };
-        })
-      );
+      const nextEvents = prevSnapshot.map((ev) => {
+        const patch = patchMap.get(ev.id);
+        if (!patch) return ev;
+        return {
+          ...ev,
+          date: patch.after.date,
+          endDate: patch.after.endDate,
+          startTime: patch.after.startTime,
+          endTime: patch.after.endTime,
+        };
+      });
+
+      eventsRef.current = nextEvents;
+      setEvents(nextEvents);
 
       setSelectedEvent((prev) => {
         if (!prev) return prev;
@@ -1315,7 +2010,8 @@ export function useCalendarEvents({
         };
       });
 
-      const firstPatched = events.find((e) => patchMap.has(e.id));
+      const firstPatched = prevSnapshot.find((e) => patchMap.has(e.id));
+      let resolvedJumpDate = scopeDate;
       if (scopeDate) {
         jumpToDate(scopeDate);
       } else if (firstPatched) {
@@ -1324,40 +2020,35 @@ export function useCalendarEvents({
           { ...firstPatched, ...p.after },
           effectiveViewerZone
         );
+        resolvedJumpDate = projected.localDate;
         jumpToDate(projected.localDate);
       }
 
+      recordEventsTransition(
+        {
+          kind: 'rebalance',
+          label: `공정 자동 재배치 (${result.patches.length}건)`,
+          detail: firstPatched ? `'${firstPatched.title}' 외 일정 슬롯 조정` : undefined,
+          focusDate: resolvedJumpDate,
+        },
+        prevSnapshot,
+        nextEvents
+      );
+
       showToast(result.summaryMessage, () => {
-        setEvents((curr) =>
-          curr.map((ev) => {
-            const patch = patchMap.get(ev.id);
-            if (!patch) return ev;
-            return {
-              ...ev,
-              date: patch.before.date,
-              endDate: patch.before.endDate,
-              startTime: patch.before.startTime,
-              endTime: patch.before.endTime,
-            };
-          })
-        );
-        setSelectedEvent((curr) => {
-          if (!curr) return curr;
-          const patch = patchMap.get(resolveMasterEventId(curr.id));
-          if (!patch) return curr;
-          return {
-            ...curr,
-            date: patch.before.date,
-            endDate: patch.before.endDate,
-            startTime: patch.before.startTime,
-            endTime: patch.before.endTime,
-          };
-        });
+        undoStepRef.current();
       });
 
       return result;
     },
-    [effectiveViewerZone, events, jumpToDate, selectedProjectId, selectedProjectIds, showToast]
+    [
+      effectiveViewerZone,
+      jumpToDate,
+      recordEventsTransition,
+      selectedProjectId,
+      selectedProjectIds,
+      showToast,
+    ]
   );
 
   return {
@@ -1399,5 +2090,7 @@ export function useCalendarEvents({
     handleCreateEventFromVenue,
     handleCreateEventFromGroundedSuggestion,
     handleAutoRebalanceSchedule,
+    applyEventsWithHistory,
+    eventHistory,
   };
 }

@@ -7,18 +7,22 @@ import {
   Download,
   FolderKanban,
   Globe2,
+  History,
   ListChecks,
   Lock,
   MapPin,
   PanelLeft,
   Plus,
+  Redo2,
   Search,
   Sparkles,
+  Undo2,
   Upload,
   Wand2,
   X,
 } from 'lucide-react';
 import { CalendarEventItem, CalendarViewMode, ProjectItem } from '../types';
+import { useEventHistoryOptional } from '../hooks/useEventHistory';
 import { ReminderLeadMinutes } from '../hooks/useEventReminders';
 import { resolveEventLuxuryTheme } from '../utils/eventTheme';
 
@@ -49,6 +53,7 @@ interface CommandPaletteModalProps {
   onChangeReminderLeadMinutes?: (lead: ReminderLeadMinutes) => void;
   canInstallPwa?: boolean;
   onInstallPwa?: () => void;
+  onOpenHistoryPopover?: () => void;
 }
 
 interface PaletteItem {
@@ -98,7 +103,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onChangeReminderLeadMinutes,
   canInstallPwa = false,
   onInstallPwa,
+  onOpenHistoryPopover,
 }) => {
+  const historyApi = useEventHistoryOptional();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [hoveredTooltip, setHoveredTooltip] = useState<HoveredTooltipState | null>(null);
@@ -154,6 +161,63 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onOpenCreateEvent();
         },
       },
+      ...(historyApi?.canUndo
+        ? [
+            {
+              id: 'act-history-undo',
+              section: 'action' as const,
+              title: '직전 일정 변경 되돌리기',
+              subtitle: `${
+                historyApi.past[historyApi.past.length - 1]?.label || '최근 변경'
+              } · 스택 ${historyApi.past.length}단계`,
+              shortcut: '⌘Z',
+              keywords: '실행 취소 되돌리기 히스토리 복원 undo revert history',
+              icon: <Undo2 className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                historyApi.undoStep();
+              },
+            },
+          ]
+        : []),
+      ...(historyApi?.canRedo
+        ? [
+            {
+              id: 'act-history-redo',
+              section: 'action' as const,
+              title: '되돌린 일정 변경 다시 실행',
+              subtitle: `${
+                historyApi.future[historyApi.future.length - 1]?.label || '다시 실행'
+              } · 대기 ${historyApi.future.length}단계`,
+              shortcut: '⌘⇧Z',
+              keywords: '다시 실행 복구 히스토리 redo history',
+              icon: <Redo2 className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                historyApi.redoStep();
+              },
+            },
+          ]
+        : []),
+      ...(onOpenHistoryPopover
+        ? [
+            {
+              id: 'act-open-history',
+              section: 'action' as const,
+              title: '일정 수정 히스토리 열기',
+              subtitle: historyApi?.past.length
+                ? `기록된 변경 ${historyApi.past.length}단계 확인 및 특정 시점으로 롤백`
+                : '단계별 변경 스택 확인 및 선택 복원',
+              shortcut: 'H',
+              keywords: '수정 히스토리 내역 로그 스택 되돌리기 복원 history log stack',
+              icon: <History className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onOpenHistoryPopover();
+              },
+            },
+          ]
+        : []),
       {
         id: 'act-today',
         section: 'action',
@@ -497,6 +561,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     onChangeReminderLeadMinutes,
     canInstallPwa,
     onInstallPwa,
+    historyApi,
+    onOpenHistoryPopover,
   ]);
 
   useEffect(() => {

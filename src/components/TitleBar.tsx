@@ -26,6 +26,7 @@ interface TitleBarProps {
   selectedProjectIds?: string[];
   selectedCategory?: CalendarCategory | '전체';
   timeZoneSlot?: React.ReactNode;
+  historySlot?: React.ReactNode;
   vaultSlot?: React.ReactNode;
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
@@ -51,6 +52,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   selectedProjectIds = [],
   selectedCategory = '전체',
   timeZoneSlot,
+  historySlot,
   vaultSlot,
   isSidebarOpen,
   onToggleSidebar,
@@ -221,6 +223,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               </button>
             </TopBarTooltip>
           )}
+
+          {historySlot}
 
           <ExportMenuDropdown
             currentYear={currentYear}

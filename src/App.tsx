@@ -23,8 +23,10 @@ import {
   LegalAndColophonDrawer,
   LegalDrawerTab,
 } from './components/vault/LegalAndColophonDrawer';
+import { EventHistoryPopover } from './components/EventHistoryPopover';
 import { useToast } from './hooks/useToast';
 import { useCalendarEvents, VaultEventsSyncConfig } from './hooks/useCalendarEvents';
+import { EventHistoryProvider } from './hooks/useEventHistory';
 import { useProjects, VaultProjectsSyncConfig } from './hooks/useProjects';
 import {
   CalendarEventViewModelsProvider,
@@ -273,6 +275,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     handleCreateEventFromVenue,
     handleCreateEventFromGroundedSuggestion,
     handleAutoRebalanceSchedule,
+    applyEventsWithHistory,
+    eventHistory,
   } = useCalendarEvents({
     showToast,
     selectedProjectId,
@@ -346,7 +350,16 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         if (createdProject) {
           setProjects((curr) => [...curr, createdProject!]);
         }
-        setEvents((curr) => [...curr, importedEvent]);
+        const didRecord = applyEventsWithHistory((curr) => [...curr, importedEvent], {
+          kind: 'import',
+          label: `브리핑 패스 일정 '${importedEvent.title}' 반영`,
+          detail: `${importedEvent.date.slice(5)} ${
+            importedEvent.isAllDay ? '종일' : `${importedEvent.startTime}~${importedEvent.endTime}`
+          }`,
+          targetEventId: importedEvent.id,
+          targetEventTitle: importedEvent.title,
+          focusDate: importedEvent.date,
+        });
         setSelectedEvent(importedEvent);
         jumpToDate(importedEvent.date);
 
@@ -357,8 +370,12 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           `브리핑 패스 일정 '${importedEvent.title}'${slotNote}을(를) 내 워크스페이스에 반영했습니다.`,
           () => {
             setProjects(prevProjects);
-            setEvents(prevEvents);
             setSelectedProjectIds(prevSelectedIds);
+            if (didRecord) {
+              eventHistory.undoStep();
+            } else {
+              setEvents(prevEvents);
+            }
           }
         );
         return;
@@ -403,8 +420,14 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         if (!existingProj) {
           setProjects((curr) => [...curr, targetProject]);
         }
+        let didRecord = false;
         if (importedEvents.length > 0) {
-          setEvents((curr) => [...curr, ...importedEvents]);
+          didRecord = applyEventsWithHistory((curr) => [...curr, ...importedEvents], {
+            kind: 'import',
+            label: `공유 프로젝트 '${pr.name}' 일정 반영 (${importedEvents.length}건)`,
+            detail: importedEvents[0] ? `'${importedEvents[0].title}' 외` : undefined,
+            focusDate: importedEvents[0]?.date || pr.startDate,
+          });
         }
         setSelectedProjectId(targetProject.id);
         setSelectedCategory('전체');
@@ -420,13 +443,19 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           `공유 프로젝트 '${pr.name}' 및 런시트 일정 ${importedEvents.length}건을 내 워크스페이스에 반영했습니다.`,
           () => {
             setProjects(prevProjects);
-            setEvents(prevEvents);
             setSelectedProjectIds(prevSelectedIds);
+            if (didRecord) {
+              eventHistory.undoStep();
+            } else {
+              setEvents(prevEvents);
+            }
           }
         );
       }
     },
     [
+      applyEventsWithHistory,
+      eventHistory,
       events,
       jumpToDate,
       projects,
@@ -482,20 +511,34 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
       const userOnly = curr.filter((p) => !isSampleProjectItem(p));
       return [...dataset.projects, ...userOnly];
     });
-    setEvents((curr) => {
-      const userOnly = curr.filter((e) => !isSampleEventItem(e));
-      return [...dataset.events, ...userOnly];
-    });
+    const didRecord = applyEventsWithHistory(
+      (curr) => {
+        const userOnly = curr.filter((e) => !isSampleEventItem(e));
+        return [...dataset.events, ...userOnly];
+      },
+      {
+        kind: 'import',
+        label: `샘플 일정 불러오기 (${dataset.events.length}건)`,
+        detail: '가상 장소 기반 샘플 일정 반영',
+        focusDate: dataset.focusDate,
+      }
+    );
     setSelectedProjectId('all');
     setSelectedCategory('전체');
     jumpToDate(dataset.focusDate);
 
     showToast('가상 장소 기반 샘플 데이터를 불러왔습니다.', () => {
       setProjects(prevProjects);
-      setEvents(prevEvents);
       setSelectedProjectIds(prevSelectedIds);
+      if (didRecord) {
+        eventHistory.undoStep();
+      } else {
+        setEvents(prevEvents);
+      }
     });
   }, [
+    applyEventsWithHistory,
+    eventHistory,
     setProjects,
     setEvents,
     setSelectedProjectId,
@@ -509,17 +552,28 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     const prevProjects = projects;
     const prevEvents = events;
     const prevSelectedIds = selectedProjectIds;
+    const sampleCount = prevEvents.filter(isSampleEventItem).length;
 
     setProjects((curr) => curr.filter((p) => !isSampleProjectItem(p)));
-    setEvents((curr) => curr.filter((e) => !isSampleEventItem(e)));
+    const didRecord = applyEventsWithHistory((curr) => curr.filter((e) => !isSampleEventItem(e)), {
+      kind: 'delete',
+      label: '샘플 일정 일괄 비우기',
+      detail: sampleCount > 0 ? `샘플 일정 ${sampleCount}건 제거` : undefined,
+    });
     setSelectedEvent((curr) => (curr && isSampleEventItem(curr) ? null : curr));
 
     showToast('샘플 데이터를 모두 비웠습니다.', () => {
       setProjects(prevProjects);
-      setEvents(prevEvents);
       setSelectedProjectIds(prevSelectedIds);
+      if (didRecord) {
+        eventHistory.undoStep();
+      } else {
+        setEvents(prevEvents);
+      }
     });
   }, [
+    applyEventsWithHistory,
+    eventHistory,
     projects,
     events,
     selectedProjectIds,
@@ -541,6 +595,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [composerSeed, setComposerSeed] = useState<EventComposerSeed | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [historyOpenTick, setHistoryOpenTick] = useState(0);
   const [externalPromptRequest, setExternalPromptRequest] = useState<{
     id: number;
     prompt: string;
@@ -788,7 +843,12 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         if (restored.projects.length > 0) {
           setProjects(restored.projects);
         }
-        setEvents(restored.events);
+        const didRecord = applyEventsWithHistory(restored.events, {
+          kind: 'import',
+          label: `백업 파일 복원 (${restored.events.length}건)`,
+          detail: `'${file.name}' 워크스페이스 복원`,
+          focusDate: restored.events[0]?.date,
+        });
         setSelectedProjectId('all');
         setSelectedCategory('전체');
         setSelectedEvent(restored.events[0] || null);
@@ -800,8 +860,12 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           `백업 파일에서 프로젝트 ${restored.projects.length}개 · 일정 ${restored.events.length}건을 복원했습니다.`,
           () => {
             setProjects(prevProjects);
-            setEvents(prevEvents);
             setSelectedProjectIds(prevSelectedIds);
+            if (didRecord) {
+              eventHistory.undoStep();
+            } else {
+              setEvents(prevEvents);
+            }
           }
         );
       } catch (err: unknown) {
@@ -813,6 +877,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
       }
     },
     [
+      applyEventsWithHistory,
+      eventHistory,
       events,
       jumpToDate,
       projects,
@@ -937,7 +1003,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     [showToast]
   );
 
-  // 글로벌 단축키: Cmd/Ctrl+K (통합 검색·명령 팔레트), Cmd/Ctrl+L (볼트 잠금), /, N, C, T, M, W, D
+  // 글로벌 단축키: Cmd/Ctrl+K (통합 검색·명령 팔레트), Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z (수정 히스토리), Cmd/Ctrl+L (볼트 잠금), /, N, C, T, M, W, D, O, H
   useEffect(() => {
     const isEditableElement = (el: EventTarget | null): boolean => {
       if (!(el instanceof HTMLElement)) return false;
@@ -964,6 +1030,29 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           onReturnToIntroGate();
         }
         return;
+      }
+
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.isComposing &&
+        !isEditableElement(e.target) &&
+        !isEditableElement(document.activeElement)
+      ) {
+        if (lowerKey === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            eventHistory.redoStep();
+          } else {
+            eventHistory.undoStep();
+          }
+          return;
+        }
+        if (!e.shiftKey && lowerKey === 'y') {
+          e.preventDefault();
+          eventHistory.redoStep();
+          return;
+        }
       }
 
       if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
@@ -1003,6 +1092,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
       } else if (lowerKey === 'o') {
         e.preventDefault();
         setViewMode('ops');
+      } else if (lowerKey === 'h') {
+        e.preventDefault();
+        setHistoryOpenTick(Date.now());
       }
     };
 
@@ -1011,6 +1103,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   }, [
     composerSeed,
     deleteModalState.isOpen,
+    eventHistory,
     handleOpenCreateEvent,
     handleToday,
     isCommandPaletteOpen,
@@ -1028,7 +1121,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
 
   return (
     <CalendarEventViewModelsProvider value={workspaceViewModels}>
-      <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0a0c10] text-neutral-200 font-sans antialiased">
+      <EventHistoryProvider value={eventHistory}>
+        <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0a0c10] text-neutral-200 font-sans antialiased">
       <input
         ref={paletteIcsInputRef}
         type="file"
@@ -1064,6 +1158,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         projects={projects}
         selectedProjectIds={selectedProjectIds}
         selectedCategory={selectedCategory}
+        historySlot={<EventHistoryPopover externalOpenRequest={historyOpenTick} />}
         timeZoneSlot={
           <TimeZoneControl
             now={tzPrefs.now}
@@ -1485,6 +1580,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
             }
           });
         }}
+        onOpenHistoryPopover={() => setHistoryOpenTick(Date.now())}
       />
 
       {/* 5. 프로젝트 등록/수정 모달 */}
@@ -1578,7 +1674,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           )}
         </div>
       )}
-      </div>
+        </div>
+      </EventHistoryProvider>
     </CalendarEventViewModelsProvider>
   );
 };

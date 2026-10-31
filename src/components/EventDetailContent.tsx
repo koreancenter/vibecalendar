@@ -21,6 +21,8 @@ import {
   Pencil,
   Check,
   Repeat,
+  History,
+  RotateCcw,
 } from 'lucide-react';
 import {
   CalendarCategory,
@@ -41,7 +43,16 @@ import {
   normalizeCoordinates,
   parseCoordinatePairFromString,
 } from '../shared/locationUtils';
-import { formatRecurrenceLabel, RECURRENCE_OPTIONS } from '../shared/recurrenceUtils';
+import {
+  formatRecurrenceLabel,
+  RECURRENCE_OPTIONS,
+  resolveMasterEventId,
+} from '../shared/recurrenceUtils';
+import { useEventHistoryOptional } from '../hooks/useEventHistory';
+import {
+  describeEventFieldChanges,
+  formatHistoryTimestamp,
+} from '../utils/eventHistoryDiff';
 import { resolveEventLuxuryTheme } from '../utils/eventTheme';
 import { generateIcsContent, downloadIcsFile } from '../utils/icsExport';
 import { resolveLocationDetails } from '../services/agentApi';
@@ -136,6 +147,21 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
   const [newCheckItemText, setNewCheckItemText] = useState('');
   const [editingCheckId, setEditingCheckId] = useState<string | null>(null);
   const [editingCheckText, setEditingCheckText] = useState('');
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+
+  const historyApi = useEventHistoryOptional();
+  const masterEventId = useMemo(() => resolveMasterEventId(event.id), [event.id]);
+  const eventHistoryEntries = useMemo(
+    () => (historyApi ? historyApi.getEntriesForEvent(masterEventId) : []),
+    [historyApi, masterEventId]
+  );
+  const restorableEntriesCount = useMemo(
+    () =>
+      eventHistoryEntries.filter((entry) =>
+        entry.beforeEvents.some((ev) => ev.id === masterEventId)
+      ).length,
+    [eventHistoryEntries, masterEventId]
+  );
 
   useEffect(() => {
     setIsEditingLocation(false);
@@ -187,6 +213,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
     setNewCheckItemText('');
     setEditingCheckId(null);
     setEditingCheckText('');
+    setIsHistoryExpanded(false);
   }, [event.id]);
 
   const safeViewerZone = useMemo(
@@ -493,6 +520,33 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
         </div>
 
         <div className="flex items-center gap-0.5 shrink-0">
+          {historyApi && (
+            <button
+              type="button"
+              onClick={() => setIsHistoryExpanded((prev) => !prev)}
+              aria-expanded={isHistoryExpanded}
+              className={`relative p-1.5 rounded-lg transition-colors cursor-pointer ${
+                isHistoryExpanded
+                  ? 'bg-white/[0.10] text-white'
+                  : restorableEntriesCount > 0
+                  ? 'text-neutral-300 hover:text-white hover:bg-white/[0.08]'
+                  : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.08]'
+              }`}
+              title={
+                restorableEntriesCount > 0
+                  ? `이 일정의 수정 히스토리 (${restorableEntriesCount}건)`
+                  : '이 일정의 수정 히스토리'
+              }
+            >
+              <History className="w-4 h-4" />
+              {restorableEntriesCount > 0 && !isHistoryExpanded && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1.5 right-1.5 w-1 h-1 rounded-full bg-white/75"
+                />
+              )}
+            </button>
+          )}
           {onShare && (
             <button
               type="button"
@@ -532,6 +586,86 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
 
       {/* 본문 스크롤 영역 */}
       <div className="flex-1 p-5 overflow-y-auto space-y-5 select-text">
+        {/* 선택된 일정 전용 단계별 수정 히스토리 패널 */}
+        {isHistoryExpanded && historyApi && (
+          <div className="rounded-xl bg-[#161a24] border border-white/[0.09] overflow-hidden select-none">
+            <div className="px-3.5 py-2 border-b border-white/[0.06] flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs">
+                <History className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                <span className="font-medium text-neutral-100">수정 히스토리</span>
+                {eventHistoryEntries.length > 0 && (
+                  <>
+                    <span aria-hidden="true" className="text-neutral-600">
+                      ·
+                    </span>
+                    <span className="font-mono text-[11px] text-neutral-400 tabular-nums">
+                      {eventHistoryEntries.length}건
+                    </span>
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsHistoryExpanded(false)}
+                className="text-[11px] text-neutral-500 hover:text-neutral-200 transition-colors cursor-pointer"
+              >
+                접기
+              </button>
+            </div>
+
+            {eventHistoryEntries.length === 0 ? (
+              <div className="px-3.5 py-4 text-center text-xs text-neutral-500">
+                현재 세션에서 기록된 변경 내역이 없습니다
+              </div>
+            ) : (
+              <div className="max-h-48 overflow-y-auto p-1.5 space-y-0.5">
+                {eventHistoryEntries.map((entry) => {
+                  const beforeEv = entry.beforeEvents.find((ev) => ev.id === masterEventId);
+                  const afterEv = entry.afterEvents.find((ev) => ev.id === masterEventId);
+                  const perEventDiff =
+                    beforeEv && afterEv
+                      ? describeEventFieldChanges(beforeEv, afterEv)
+                      : entry.detail;
+
+                  return (
+                    <div
+                      key={entry.id}
+                      className="px-2.5 py-1.5 rounded-lg hover:bg-white/[0.04] flex items-center justify-between gap-2.5 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-neutral-200 truncate">
+                          {perEventDiff || entry.label}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-neutral-500 font-mono tabular-nums truncate">
+                          <span>{formatHistoryTimestamp(entry.timestamp)}</span>
+                          <span aria-hidden="true" className="text-neutral-600">
+                            ·
+                          </span>
+                          <span className="font-sans truncate">{entry.label}</span>
+                        </div>
+                      </div>
+
+                      {beforeEv ? (
+                        <button
+                          type="button"
+                          onClick={() => historyApi.restoreEventSnapshot(entry.id, masterEventId)}
+                          className="h-6 px-2 rounded-md bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[10.5px] text-neutral-200 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5 shrink-0" />
+                          <span>이전 상태 복원</span>
+                        </button>
+                      ) : (
+                        <span className="text-[10.5px] text-neutral-500 whitespace-nowrap shrink-0">
+                          최초 등록
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         {/* 제목 & 완료 토글 + 인라인 일시·시간대 편집 */}
         {isEditingCore ? (
           <form
