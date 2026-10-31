@@ -1,7 +1,7 @@
 import { CalendarCategory } from '../types';
 
 export interface EmptyGuideContext {
-  scope: 'month' | 'week' | 'day';
+  scope: 'month' | 'week' | 'day' | 'ops';
   selectedProjectId: string | 'all';
   comparedProjectCount: number;
   selectedCategory: CalendarCategory | '전체';
@@ -9,7 +9,7 @@ export interface EmptyGuideContext {
 }
 
 /**
- * 데이터가 없는 프로젝트 또는 날짜·주간·월간 선택 시 화면 중앙에 표시할 미니멀 가이드 문구 생성
+ * 데이터가 없는 프로젝트 또는 날짜·주간·월간·공정 선택 시 화면 중앙에 표시할 미니멀 가이드 문구 생성
  */
 export function getEmptyCalendarGuideText(ctx: EmptyGuideContext): string {
   const {
@@ -28,6 +28,9 @@ export function getEmptyCalendarGuideText(ctx: EmptyGuideContext): string {
     if (totalFilteredCount === 0) {
       return '현재 선택한 프로젝트의 일정이 없습니다';
     }
+    if (scope === 'ops') {
+      return '현재 선택한 프로젝트의 등록된 준비 공정이 없습니다';
+    }
     if (scope === 'month') {
       return '현재 선택한 프로젝트는 이 달에 일정이 없습니다';
     }
@@ -40,6 +43,9 @@ export function getEmptyCalendarGuideText(ctx: EmptyGuideContext): string {
   if (isCompareMode) {
     if (totalFilteredCount === 0) {
       return '현재 선택한 비교 프로젝트의 일정이 없습니다';
+    }
+    if (scope === 'ops') {
+      return '비교 대상 프로젝트에 등록된 준비 공정이 없습니다';
     }
     if (scope === 'month') {
       return '선택한 달에는 비교 대상 프로젝트의 일정이 없습니다';
@@ -60,6 +66,9 @@ export function getEmptyCalendarGuideText(ctx: EmptyGuideContext): string {
     return `현재 선택한 분류('${selectedCategory}')의 일정이 없습니다`;
   }
 
+  if (scope === 'ops') {
+    return '현재 등록된 행사 준비 공정이 없습니다';
+  }
   if (scope === 'day') {
     return '현재 선택한 날짜의 일정이 없습니다';
   }

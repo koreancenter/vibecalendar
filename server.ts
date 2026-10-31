@@ -23,6 +23,7 @@ import {
 } from './src/server/security';
 import {
   executeGeminiAgentCommand,
+  executeGeminiAgentCommandStream,
   executeGroundedDateDiscoveryCommand,
   executeResolveLocationCommand,
   executeBatchEnrichLocationsCommand,
@@ -75,6 +76,64 @@ app.post(
       logSafeServerError('Agent Command API', err);
       const safe = toSafeErrorResponse(err, 'command', true);
       res.status(safe.status).json({ error: safe.error });
+    }
+  }
+);
+
+// 실시간 SSE 스트리밍 일정 에이전트 엔드포인트
+app.post(
+  '/api/agent/command-stream',
+  apiRateLimiter,
+  inlineMediaJsonParser,
+  enforceInlineMediaOrTextPayloadLimit,
+  async (req, res) => {
+    const validation = validateAgentCommandRequest(req.body);
+    if (!validation.ok) {
+      res.status(validation.status).json({ error: validation.error });
+      return;
+    }
+
+    const sanitizedPayload = sanitizeAgentCommandPayload(validation.value);
+    if (
+      !sanitizedPayload.prompt &&
+      !sanitizedPayload.image &&
+      sanitizedPayload.attachments.length === 0
+    ) {
+      res.status(400).json({ error: '자연어 지시나 분석할 파일을 전달해 주세요.' });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    let clientClosed = false;
+    req.on('close', () => {
+      clientClosed = true;
+    });
+
+    const writeSse = (event: string, data: unknown) => {
+      if (clientClosed || res.writableEnded) return;
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const result = await executeGeminiAgentCommandStream(sanitizedPayload, (upd) => {
+        writeSse(upd.type, upd);
+      });
+      writeSse('done', result);
+      if (!res.writableEnded) {
+        res.end();
+      }
+    } catch (err: unknown) {
+      logSafeServerError('Agent Stream API', err);
+      const safe = toSafeErrorResponse(err, 'command', true);
+      writeSse('error', { error: safe.error, status: safe.status });
+      if (!res.writableEnded) {
+        res.end();
+      }
     }
   }
 );

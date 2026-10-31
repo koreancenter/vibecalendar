@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { CalendarCategory, CalendarEventItem, ChecklistItem } from '../types';
 import { getDayDistance, getTodayDateString, parseNaturalDateFromText } from '../shared/dateUtils';
 import { normalizeCoordinates, normalizePlaceAndAddress } from '../shared/locationUtils';
+import { normalizeRecurrenceRule } from '../shared/recurrenceUtils';
 import { isValidTimeZone } from '../shared/timeZoneUtils';
 
 export const INLINE_MEDIA_PAYLOAD_LIMIT = '18mb';
@@ -225,6 +226,7 @@ export function securityHeaders(
     'Content-Security-Policy',
     [
       "default-src 'self'",
+      "manifest-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
       "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
       "font-src 'self' https://cdn.jsdelivr.net data:",
@@ -396,6 +398,12 @@ const ChecklistItemInputSchema = z.object({
   done: z.boolean().optional().default(false),
 });
 
+const RecurrenceRuleInputSchema = z.object({
+  frequency: z.enum(['daily', 'weekly', 'biweekly', 'monthly', 'yearly']),
+  until: z.string().max(30).nullish(),
+  count: z.number().int().min(1).max(365).nullish(),
+});
+
 export const CalendarEventInputSchema = z.object({
   id: z.string().min(1).max(160),
   title: z.string().min(1).max(400),
@@ -414,6 +422,7 @@ export const CalendarEventInputSchema = z.object({
   content: z.string().max(8_000).nullish(),
   isCompleted: z.boolean().nullish(),
   checklist: z.array(ChecklistItemInputSchema).max(60).nullish(),
+  recurrence: RecurrenceRuleInputSchema.nullish(),
   isSample: z.boolean().nullish(),
 });
 
@@ -826,6 +835,7 @@ function sanitizeEventSummary(raw: ParsedCalendarEventInput | null | undefined):
     content: sanitizeMultilineText(raw.content, 500, true) || undefined,
     isCompleted: Boolean(raw.isCompleted),
     checklist,
+    recurrence: normalizeRecurrenceRule(raw.recurrence),
   };
 }
 

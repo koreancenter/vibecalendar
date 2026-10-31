@@ -1,6 +1,9 @@
 import React, { useCallback, useMemo } from 'react';
+import { Wand2 } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { formatKoreanDateWithDay, getTodayDateString } from '../shared/dateUtils';
+import { hasEventConflict } from '../shared/scheduleUtils';
+import { getTimeZoneMeta, toViewerProjectedEvent } from '../shared/timeZoneUtils';
 import {
   areShallowArraysEqual,
   useCalendarEventViewModels,
@@ -14,6 +17,8 @@ interface DayAgendaViewProps {
   events: CalendarEventItem[];
   selectedEvent: CalendarEventItem | null;
   viewerTimeZone: string;
+  secondaryTimeZone?: string | null;
+  onAutoRebalanceDate?: (date: string) => void;
   onSelectEvent: (event: CalendarEventItem | null) => void;
   onDeleteEvent: (id: string) => void;
   onToggleComplete: (id: string) => void;
@@ -56,6 +61,8 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
   events,
   selectedEvent,
   viewerTimeZone,
+  secondaryTimeZone = null,
+  onAutoRebalanceDate,
   onSelectEvent,
   onDeleteEvent,
   onToggleComplete,
@@ -92,6 +99,18 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
 
   const allDayEvents = useMemo(() => events.filter((e) => e.isAllDay), [events]);
   const timedEvents = useMemo(() => events.filter((e) => !e.isAllDay), [events]);
+
+  const conflictCount = useMemo(() => {
+    const projected = timedEvents.map((ev) => toViewerProjectedEvent(ev, viewerTimeZone));
+    return projected.filter((ev) => !ev.isCompleted && hasEventConflict(ev, projected)).length;
+  }, [timedEvents, viewerTimeZone]);
+
+  const dualAxisLegend = useMemo(() => {
+    if (!secondaryTimeZone || secondaryTimeZone === viewerTimeZone) return null;
+    const sec = getTimeZoneMeta(secondaryTimeZone);
+    const pri = getTimeZoneMeta(viewerTimeZone);
+    return `${sec.cityKo} ${sec.shortCode} · ${pri.cityKo} ${pri.shortCode}`;
+  }, [secondaryTimeZone, viewerTimeZone]);
 
   const handleSelectCanvasEvent = useCallback(
     (ev: CalendarEventItem) => {
@@ -138,9 +157,33 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
             </span>
           </div>
 
-          <span className="text-[10.5px] text-white/36 tabular-nums tracking-tight hidden md:inline">
-            15분 단위 드래그 조절
-          </span>
+          <div className="flex items-center gap-2.5 shrink-0">
+            {dualAxisLegend && (
+              <span className="text-[10.5px] font-mono text-sky-300/75 tabular-nums hidden lg:inline whitespace-nowrap">
+                {dualAxisLegend}
+              </span>
+            )}
+            {onAutoRebalanceDate && (conflictCount > 0 || isToday) && (
+              <button
+                type="button"
+                onClick={() => onAutoRebalanceDate(selectedDate)}
+                title="겹치는 시간제 일정 및 미완료 지연 일정을 빈 업무 시간대로 자동 재배치합니다"
+                className={`h-7 px-2.5 rounded-md inline-flex items-center gap-1.5 text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  conflictCount > 0
+                    ? 'border border-amber-400/35 bg-amber-400/[0.08] text-amber-200 hover:bg-amber-400/[0.15]'
+                    : 'border border-white/[0.08] bg-white/[0.03] text-neutral-300 hover:bg-white/[0.07] hover:text-white'
+                }`}
+              >
+                <Wand2 className="w-3 h-3 shrink-0" />
+                <span>
+                  {conflictCount > 0 ? `충돌 ${conflictCount}건 자동 재배치` : '공정 자동 재배치'}
+                </span>
+              </button>
+            )}
+            <span className="text-[10.5px] text-white/36 tabular-nums tracking-tight hidden xl:inline whitespace-nowrap">
+              15분 단위 드래그 조절
+            </span>
+          </div>
         </div>
 
         {/* 종일 일정 고정 바 */}
@@ -173,6 +216,7 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
           columns={columns}
           variant="day"
           viewerTimeZone={viewerTimeZone}
+          secondaryTimeZone={secondaryTimeZone}
           startHour={7}
           endHour={23}
           pxPerHour={76}
@@ -226,6 +270,8 @@ function areDayAgendaViewPropsEqual(
     prev.selectedDate === next.selectedDate &&
     prev.selectedEvent === next.selectedEvent &&
     prev.viewerTimeZone === next.viewerTimeZone &&
+    prev.secondaryTimeZone === next.secondaryTimeZone &&
+    prev.onAutoRebalanceDate === next.onAutoRebalanceDate &&
     prev.emptyGuideText === next.emptyGuideText &&
     prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
     prev.onSelectEvent === next.onSelectEvent &&

@@ -11,6 +11,13 @@ import { detectBrowserTimeZone, getTimeZoneMeta, isValidTimeZone, resolveEventTi
 
 export type ShareCardTheme = 'obsidian' | 'editorial';
 
+export interface SharedProposedSlot {
+  date: string;
+  startTime: string;
+  endTime: string;
+  label?: string;
+}
+
 export interface SharedEventPassData {
   id: string;
   title: string;
@@ -28,6 +35,7 @@ export interface SharedEventPassData {
   locationLng?: number;
   content?: string;
   checklist?: ChecklistItem[];
+  proposedSlots?: SharedProposedSlot[];
 }
 
 export interface SharedProjectPassData {
@@ -67,6 +75,7 @@ interface CompactWireEvent {
   lg?: number; // locationLng
   m?: string; // content (memo)
   cl?: Array<[string, 0 | 1]>; // checklist [text, done]
+  ps?: Array<[string, string, string, string?]>; // proposedSlots [date, start, end, label?]
 }
 
 interface CompactWirePayload {
@@ -134,6 +143,15 @@ function toWireEvent(ev: SharedEventPassData): CompactWireEvent {
   if (ev.checklist && ev.checklist.length > 0) {
     wire.cl = ev.checklist.map((item) => [item.text, item.done ? 1 : 0]);
   }
+  if (ev.proposedSlots && ev.proposedSlots.length > 0) {
+    wire.ps = ev.proposedSlots
+      .slice(0, 4)
+      .map((slot) =>
+        slot.label
+          ? [slot.date, slot.startTime, slot.endTime, slot.label]
+          : [slot.date, slot.startTime, slot.endTime]
+      );
+  }
   return wire;
 }
 
@@ -162,6 +180,14 @@ function fromWireEvent(wire: CompactWireEvent, index: number): SharedEventPassDa
           id: `chk-${index}-${idx}`,
           text: String(text || ''),
           done: done === 1,
+        }))
+      : undefined,
+    proposedSlots: Array.isArray(wire.ps)
+      ? wire.ps.slice(0, 4).map(([d, s, e, lbl]) => ({
+          date: String(d || wire.d || '2026-01-01'),
+          startTime: String(s || '10:00'),
+          endTime: String(e || '11:00'),
+          label: lbl ? String(lbl) : undefined,
         }))
       : undefined,
   };
@@ -341,6 +367,7 @@ export function buildSingleEventSharePayload(params: {
   senderNote?: string;
   includeMemo: boolean;
   includeChecklist: boolean;
+  proposedSlots?: SharedProposedSlot[];
 }): SharedPassPayload {
   const {
     event,
@@ -350,6 +377,7 @@ export function buildSingleEventSharePayload(params: {
     senderNote,
     includeMemo,
     includeChecklist,
+    proposedSlots,
   } = params;
 
   const resolvedTz = resolveEventTimeZone(event, viewerTimeZone);
@@ -381,6 +409,10 @@ export function buildSingleEventSharePayload(params: {
       checklist:
         includeChecklist && event.checklist && event.checklist.length > 0
           ? event.checklist.map((item) => ({ ...item }))
+          : undefined,
+      proposedSlots:
+        proposedSlots && proposedSlots.length > 0
+          ? proposedSlots.slice(0, 4).map((slot) => ({ ...slot }))
           : undefined,
     },
   };
@@ -528,6 +560,14 @@ export function formatPassPlainText(payload: SharedPassPayload, shareUrl?: strin
       for (const item of ev.checklist) {
         lines.push(`- [${item.done ? 'v' : ' '}] ${item.text}`);
       }
+    }
+    if (ev.proposedSlots && ev.proposedSlots.length > 0) {
+      lines.push('');
+      lines.push(`후보 시간 제안 (${tzMeta.shortCode} 기준):`);
+      ev.proposedSlots.forEach((slot, idx) => {
+        const suffix = slot.label ? ` (${slot.label})` : '';
+        lines.push(`- 후보 ${idx + 1}: ${slot.date} ${slot.startTime} – ${slot.endTime}${suffix}`);
+      });
     }
   } else if (payload.kind === 'project' && payload.project) {
     const pr = payload.project;

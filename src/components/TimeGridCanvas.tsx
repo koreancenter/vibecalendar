@@ -3,7 +3,10 @@ import { Calendar, Plus, Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { layoutTimeEvents, PositionedEvent } from '../utils/timeGridLayout';
 import { minutesToTime } from '../shared/scheduleUtils';
-import { formatClockInTimeZone } from '../shared/timeZoneUtils';
+import {
+  convertEventTimeBetweenZones,
+  formatClockInTimeZone,
+} from '../shared/timeZoneUtils';
 import { useCalendarDragAndDrop } from '../hooks/useCalendarDragAndDrop';
 import {
   areShallowArraysEqual,
@@ -26,6 +29,7 @@ interface TimeGridCanvasProps {
   columns: TimeGridColumn[];
   variant: 'week' | 'day';
   viewerTimeZone: string;
+  secondaryTimeZone?: string | null;
   startHour?: number;
   endHour?: number;
   pxPerHour?: number;
@@ -53,6 +57,7 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
   columns,
   variant,
   viewerTimeZone,
+  secondaryTimeZone = null,
   startHour = 7,
   endHour = 23,
   pxPerHour = 64,
@@ -203,30 +208,68 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto overflow-x-hidden relative flex bg-[#0c0e14]"
       >
-        {/* 좌측 현재 위치 기준 단일 시간 축 (Pretendard 정폭 숫자) */}
+        {/* 좌측 시간 축 (단일 또는 글로벌 보조 시간대 듀얼 축, 정폭 숫자) */}
         <div
           className={`${
-            isDayMode ? 'w-16 sm:w-20' : 'w-14 sm:w-16'
+            secondaryTimeZone && secondaryTimeZone !== viewerTimeZone
+              ? isDayMode
+                ? 'w-28 sm:w-32'
+                : 'w-24 sm:w-28'
+              : isDayMode
+              ? 'w-16 sm:w-20'
+              : 'w-14 sm:w-16'
           } border-r border-white/[0.06] shrink-0 bg-[#0e1017]/85 select-none`}
         >
           <div style={{ height: `${totalHeight}px` }} className="relative">
             {hours.map((h, i) => {
               const top = i * pxPerHour;
-              const displayHour =
-                h < 12 ? `오전 ${h}시` : h === 12 ? '낮 12시' : `오후 ${h - 12}시`;
+              const hasDualAxis = Boolean(
+                secondaryTimeZone && secondaryTimeZone !== viewerTimeZone
+              );
+              const displayHour = hasDualAxis
+                ? `${String(h).padStart(2, '0')}:00`
+                : h < 12
+                ? `오전 ${h}시`
+                : h === 12
+                ? '낮 12시'
+                : `오후 ${h - 12}시`;
+
+              const secondaryHourLabel =
+                hasDualAxis && secondaryTimeZone
+                  ? convertEventTimeBetweenZones(
+                      columns[0]?.date || '2026-01-01',
+                      `${String(h).padStart(2, '0')}:00`,
+                      `${String(h).padStart(2, '0')}:30`,
+                      viewerTimeZone,
+                      secondaryTimeZone
+                    ).startTime
+                  : null;
 
               return (
                 <div
                   key={h}
                   style={{ top: `${top}px` }}
                   className={`absolute left-0 right-0 -translate-y-1/2 ${
-                    isDayMode ? 'pr-3.5' : 'pr-2.5'
-                  } text-right pointer-events-none`}
+                    hasDualAxis
+                      ? 'px-2 flex items-center justify-between gap-1.5'
+                      : `${isDayMode ? 'pr-3.5' : 'pr-2.5'} text-right`
+                  } pointer-events-none`}
                 >
+                  {hasDualAxis && secondaryHourLabel && (
+                    <span
+                      className={`${
+                        isDayMode ? 'text-[10.5px]' : 'text-[10px]'
+                      } font-mono tabular-nums text-sky-300/55 leading-tight`}
+                    >
+                      {secondaryHourLabel}
+                    </span>
+                  )}
                   <span
                     className={`${
                       isDayMode ? 'text-[11px]' : 'text-[10.5px]'
-                    } text-white/36 font-[360] block tabular-nums tracking-[0.02em] leading-tight`}
+                    } ${
+                      hasDualAxis ? 'font-mono text-white/50' : 'text-white/36 font-[360] block'
+                    } tabular-nums tracking-[0.02em] leading-tight`}
                   >
                     {displayHour}
                   </span>
@@ -520,6 +563,7 @@ function areTimeGridCanvasPropsEqual(
   return (
     prev.variant === next.variant &&
     prev.viewerTimeZone === next.viewerTimeZone &&
+    prev.secondaryTimeZone === next.secondaryTimeZone &&
     prev.startHour === next.startHour &&
     prev.endHour === next.endHour &&
     prev.pxPerHour === next.pxPerHour &&

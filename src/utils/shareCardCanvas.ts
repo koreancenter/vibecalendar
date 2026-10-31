@@ -235,6 +235,11 @@ export async function renderSharePassToBlob(
       bodyHeight += 26 + shownCount * 24 + 12;
     }
 
+    if (ev.proposedSlots && ev.proposedSlots.length > 0) {
+      const shownSlots = Math.min(ev.proposedSlots.length, 4);
+      bodyHeight += 24 + shownSlots * 22 + 12;
+    }
+
     bodyHeight += 54; // 하단 푸터
   } else if (payload.kind === 'project' && payload.project) {
     const pr = payload.project;
@@ -441,6 +446,27 @@ export async function renderSharePassToBlob(
         ctx.fillText(single, contentX + 30, cursorY);
         cursorY += 23;
       }
+      cursorY += 8;
+    }
+
+    // 후보 시간 제안 (선택 시)
+    if (ev.proposedSlots && ev.proposedSlots.length > 0) {
+      ctx.font = `500 11px ${SANS_STACK}`;
+      ctx.fillStyle = palette.textMuted;
+      ctx.fillText(`후보 시간 제안 · ${ev.proposedSlots.length}개 옵션`, contentX, cursorY);
+      cursorY += 20;
+
+      ev.proposedSlots.slice(0, 4).forEach((slot, idx) => {
+        ctx.font = `500 12px ${MONO_STACK}`;
+        ctx.fillStyle = palette.textSecondary;
+        const suffix = slot.label ? ` · ${slot.label}` : '';
+        ctx.fillText(
+          `#${idx + 1}  ${slot.date}  ${slot.startTime} – ${slot.endTime} ${tzMeta.shortCode}${suffix}`,
+          contentX,
+          cursorY
+        );
+        cursorY += 22;
+      });
       cursorY += 8;
     }
   } else if (payload.kind === 'project' && payload.project) {

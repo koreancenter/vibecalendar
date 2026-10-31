@@ -4,16 +4,20 @@ import {
   AgentCommandResponse,
   CalendarCategory,
   CalendarEventItem,
+  EventUpdatePatch,
   GroundingWebSource,
   RecommendedVenue,
 } from '../types';
 import { parseNaturalDateFromText } from '../shared/dateUtils';
 import {
-  hasValidCoordinates,
   isInternalOrVirtualLocation,
   normalizeCoordinates,
   normalizePlaceAndAddress,
 } from '../shared/locationUtils';
+import {
+  inferRecurrenceRuleFromPrompt,
+  normalizeRecurrenceRule,
+} from '../shared/recurrenceUtils';
 import { calculateFreeTimeSlots } from '../shared/scheduleUtils';
 import {
   inferTimeZoneFromLocation,
@@ -69,8 +73,10 @@ const STATIC_SYSTEM_INSTRUCTION = `당신은 한국어 자연어와 다양한 �
    - 질의 의도일 때는 절대로 createdEvents에 새 일정을 생성하지 마십시오.
    - 대상 일자의 기존 일정을 queriedEvents에 담고, 시간대 요약 브리핑을 replyText로 작성하십시오.
 
-2. "CREATE_EVENT" (신규 일정 등록 - 단일 및 다중 일괄 추출 지원):
+2. "CREATE_EVENT" (신규 일정 등록 - 단일·다중 일괄 추출·반복 일정·D-Day 역산 마일스톤 생성 지원):
    - 일정 추가/등록 의도가 명확하거나, 첨부된 초대장/포스터/PDF 타임테이블/명함 이미지/CSV·엑셀 표/ICS 캘린더 파일/회의록/음성 메모에서 방문·미팅·행사 일정을 추출했을 때 선택합니다.
+   - "D-Day 역산 공정 생성", "행사 준비 마일스톤 설계" 요청 시 목표 본행사 일자(D-Day)를 기준으로 D-30(기획·대관 확정), D-21(연사·프로그램·파트너 확정), D-14(홍보·제작물 발주), D-7(리허설·체크리스트 총점검), D-1(현장 반입·셋업), D-Day(본행사 운영), D+3(정산·사후 보고) 등 실무 중심의 역산 공정 일정을 각각 구체적인 checklist와 함께 createdEvents 배열(최대 20건)로 일괄 생성하십시오.
+   - "매주 월요일 오전 10시 주간 공정 회의", "격주 금요일 점검", "매일 09:30 스탠드업", "매월 1일 정산", "12월 31일까지 매주 반복"처럼 반복 주기 언급이 있으면 startTime/date는 첫 시작 회차 기준으로 설정하고, recurrence 객체에 frequency("daily" | "weekly" | "biweekly" | "monthly" | "yearly")와 선택적 until("YYYY-MM-DD") 또는 count(반복 횟수)를 설정하십시오.
    - 첨부된 표(CSV/TSV), ICS 파일, PDF 식순, 회의록에 여러 건의 일정이 포함된 경우 누락 없이 모두 추출하여 createdEvents 배열(최대 20건)에 구조화하여 반환하십시오.
    - 담당자 연락처, 거래처, 견적, 준비물 등의 부가 정보가 함께 언급되거나 문서/명함에서 추출된 경우 해당 일정의 content(상세 메모)와 checklist(사전 준비 항목)에 체계적으로 통합 기록하십시오.
    - 시간 언급이 없으면 기본 10:00~11:00(점심 식사는 12:00~13:30)으로 설정하십시오. 2박 3일 세미나·전시회 등 다일 일정은 date(시작일)와 endDate(종료일, YYYY-MM-DD)를 함께 기록하십시오.
@@ -78,12 +84,13 @@ const STATIC_SYSTEM_INSTRUCTION = `당신은 한국어 자연어와 다양한 �
    - category는 반드시 "업무", "방문·출장", "식사·모임", "개인", "행사·세미나", "기타" 중 하나여야 합니다.
    - 세션의 프로젝트 목록 중 연관된 프로젝트가 있거나 현재 선택된 프로젝트가 있으면 projectId를 매칭하십시오.
 
-3. "UPDATE_EVENT" (기존 일정 수정):
-   - "방금 말한 그 일정 15시로 바꿔줘", "한국 시간 10시로 변경", "1시간 뒤로 미뤄줘", "장소를 강남역으로 변경" 등 후속 변경이나 특정 일정 수정 요청 시, 컨텍스트의 lastReferencedEvent 또는 chatHistory, existingEvents에서 대상 일정 ID를 정확히 찾아 updatedEvent에 변경 필드를 반환하십시오. 시간대 변경이 포함되면 updates.timeZone에 IANA 시간대를 함께 반환하십시오.
+3. "UPDATE_EVENT" (기존 일정 단일 또는 다중 일괄 수정):
+   - "방금 말한 그 일정 15시로 바꿔줘", "이번 주 리허설 일정을 모두 1시간 뒤로 미뤄줘", "내일 회의들을 다음 주 월요일로 연기해줘" 등 단일 또는 복수 일정 변경 요청 시 선택합니다.
+   - 단일 일정 수정은 updatedEvent(또는 updatedEvents 첫 항목)에, 2건 이상 다중 일정 일괄 수정은 updatedEvents 배열(최대 20건)에 각 대상 일정의 정확한 ID와 변경 필드(updates)를 담아 반환하십시오. 반복 주기 변경 시 updates.recurrence를 포함할 수 있습니다.
    - 구체적인 변경값 없이 "방금 일정 수정해줘"라고만 한 경우 updates를 빈 객체로 두고 어떤 항목을 바꿀지 replyText로 안내하십시오.
 
-4. "DELETE_EVENT" (기존 일정 삭제):
-   - 특정 일정 또는 직전 언급 일정의 취소/삭제 요청 시 대상 일정의 ID를 deletedEventId에 반환하십시오.
+4. "DELETE_EVENT" (기존 일정 단일 또는 다중 일괄 삭제):
+   - 특정 일정 1건 삭제 시 deletedEventId에 ID를 반환하고, "오늘 취소된 회의 3건 모두 삭제해줘"처럼 복수 일정 일괄 삭제 요청 시 deletedEventIds 배열(최대 20건)에 대상 ID들을 모두 담아 반환하십시오.
 
 5. "RECOMMEND_VENUE" (장소·식당 추천):
    - 인원수, 지역, 목적(오찬, 세미나, 회식 등)에 맞는 실제적이고 구체적인 추천 장소 2~3곳을 recommendedVenues에 반환하십시오.
@@ -144,8 +151,58 @@ const EVENT_ITEM_SCHEMA: Schema = {
         required: ['text'],
       },
     },
+    recurrence: {
+      type: Type.OBJECT,
+      nullable: true,
+      properties: {
+        frequency: {
+          type: Type.STRING,
+          description: 'daily | weekly | biweekly | monthly | yearly',
+        },
+        until: { type: Type.STRING, description: '반복 종료일 YYYY-MM-DD (선택)' },
+        count: { type: Type.INTEGER, description: '총 반복 횟수 상한 (선택)' },
+      },
+    },
   },
   required: ['title', 'date', 'startTime', 'endTime', 'category'],
+};
+
+const UPDATE_PATCH_ITEM_SCHEMA: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    id: { type: Type.STRING },
+    targetTitle: { type: Type.STRING },
+    diffSummary: { type: Type.STRING },
+    updates: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        date: { type: Type.STRING },
+        endDate: { type: Type.STRING },
+        startTime: { type: Type.STRING },
+        endTime: { type: Type.STRING },
+        timeZone: { type: Type.STRING },
+        isAllDay: { type: Type.BOOLEAN },
+        location: { type: Type.STRING },
+        locationAddress: { type: Type.STRING },
+        locationLat: { type: Type.NUMBER },
+        locationLng: { type: Type.NUMBER },
+        content: { type: Type.STRING },
+        category: { type: Type.STRING },
+        isCompleted: { type: Type.BOOLEAN },
+        recurrence: {
+          type: Type.OBJECT,
+          nullable: true,
+          properties: {
+            frequency: { type: Type.STRING },
+            until: { type: Type.STRING },
+            count: { type: Type.INTEGER },
+          },
+        },
+      },
+    },
+  },
+  required: ['id'],
 };
 
 const AGENT_RESPONSE_SCHEMA: Schema = {
@@ -209,33 +266,18 @@ const AGENT_RESPONSE_SCHEMA: Schema = {
       },
     },
     updatedEvent: {
-      type: Type.OBJECT,
+      ...UPDATE_PATCH_ITEM_SCHEMA,
       nullable: true,
-      properties: {
-        id: { type: Type.STRING },
-        targetTitle: { type: Type.STRING },
-        diffSummary: { type: Type.STRING },
-        updates: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            date: { type: Type.STRING },
-            endDate: { type: Type.STRING },
-            startTime: { type: Type.STRING },
-            endTime: { type: Type.STRING },
-            timeZone: { type: Type.STRING },
-            isAllDay: { type: Type.BOOLEAN },
-            location: { type: Type.STRING },
-            locationAddress: { type: Type.STRING },
-            locationLat: { type: Type.NUMBER },
-            locationLng: { type: Type.NUMBER },
-            content: { type: Type.STRING },
-            category: { type: Type.STRING },
-          },
-        },
-      },
+    },
+    updatedEvents: {
+      type: Type.ARRAY,
+      items: UPDATE_PATCH_ITEM_SCHEMA,
     },
     deletedEventId: { type: Type.STRING, nullable: true },
+    deletedEventIds: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+    },
     suggestedPrompts: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
@@ -286,9 +328,13 @@ function normalizeEventList(
   if (!Array.isArray(rawList)) return [];
   const now = Date.now();
   const explicitPromptTz = parseExplicitTimeZoneFromText(promptText);
+  const rawArr = rawList.filter((item): item is Record<string, unknown> =>
+    Boolean(item && typeof item === 'object')
+  );
+  const promptRecurrenceFallback =
+    rawArr.length === 1 ? inferRecurrenceRuleFromPrompt(promptText) : undefined;
 
-  return rawList
-    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+  return rawArr
     .slice(0, 20)
     .map((ev, idx) => {
       const date =
@@ -333,6 +379,8 @@ function normalizeEventList(
             }))
         : undefined;
 
+      const recurrence = normalizeRecurrenceRule(ev.recurrence) || promptRecurrenceFallback;
+
       return {
         id: typeof ev.id === 'string' && ev.id ? ev.id : `evt-${now}-${idx}`,
         title,
@@ -353,6 +401,7 @@ function normalizeEventList(
         content: typeof ev.content === 'string' && ev.content.trim() ? ev.content.trim() : undefined,
         isCompleted: false,
         checklist,
+        recurrence,
       };
     });
 }
@@ -613,34 +662,53 @@ export async function executeGroundedDateDiscoveryCommand(
   return executeGroundedDateDiscovery(ai, reqData);
 }
 
-export async function executeGeminiAgentCommand(
-  reqData: ValidatedAgentRequest
-): Promise<AgentCommandResponse> {
-  const ai = getGeminiClient();
-  if (!ai) {
-    throw createMissingGeminiKeyError();
-  }
+function extractPartialJsonStringField(buffer: string, fieldName: string): string {
+  const keyToken = `"${fieldName}"`;
+  const keyIdx = buffer.indexOf(keyToken);
+  if (keyIdx === -1) return '';
 
-  const { prompt, modelId, image, attachments, context } = reqData;
+  let cursor = keyIdx + keyToken.length;
+  while (cursor < buffer.length && /\s/.test(buffer[cursor])) cursor++;
+  if (buffer[cursor] !== ':') return '';
+  cursor++;
+  while (cursor < buffer.length && /\s/.test(buffer[cursor])) cursor++;
+  if (buffer[cursor] !== '"') return '';
+  cursor++;
 
-  // 첨부 파일 없는 신규 행사 기획·공휴일·업계 일정 질의는 Google Search 그라운딩으로 실시간 검증
-  if (!image && attachments.length === 0 && shouldUseSearchGroundingForPlanning(prompt)) {
-    const activeProj =
-      context.selectedProjectId !== 'all'
-        ? context.projects.find((p) => p.id === context.selectedProjectId)
-        : undefined;
-    const inferredRangeMonths = extractPlanningRangeMonths(prompt, context.selectedDate);
-    return executeGroundedDateDiscovery(ai, {
-      topic: prompt,
-      rangeMonths: inferredRangeMonths,
-      modelId: modelId || 'gemini-3.8-flash',
-      currentYear: context.currentYear,
-      selectedDate: context.selectedDate,
-      activeProjectName: activeProj?.name || context.activeProjectName,
-      activeProjectClient: activeProj?.clientOrOrg,
-      existingEvents: context.existingEvents,
-    });
+  let out = '';
+  while (cursor < buffer.length) {
+    const ch = buffer[cursor];
+    if (ch === '"') {
+      return out;
+    }
+    if (ch === '\\') {
+      if (cursor + 1 >= buffer.length) break;
+      const next = buffer[cursor + 1];
+      if (next === 'n') out += '\n';
+      else if (next === 'r') out += '';
+      else if (next === 't') out += '\t';
+      else if (next === '"' || next === '\\' || next === '/') out += next;
+      else if (next === 'u' && cursor + 5 < buffer.length) {
+        const hex = buffer.slice(cursor + 2, cursor + 6);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          out += String.fromCharCode(parseInt(hex, 16));
+          cursor += 6;
+          continue;
+        }
+      } else {
+        out += next;
+      }
+      cursor += 2;
+      continue;
+    }
+    out += ch;
+    cursor++;
   }
+  return out;
+}
+
+function buildAgentPromptParts(reqData: ValidatedAgentRequest) {
+  const { prompt, image, attachments, context } = reqData;
 
   const contextPayload = {
     currentYear: context.currentYear,
@@ -704,17 +772,15 @@ export async function executeGeminiAgentCommand(
     text: `[사용자 요청]\n${prompt || defaultAttachmentPrompt}`,
   });
 
-  const response = await ai.models.generateContent({
-    model: modelId || 'gemini-3.8-flash',
-    contents: { parts },
-    config: {
-      systemInstruction: STATIC_SYSTEM_INSTRUCTION,
-      responseMimeType: 'application/json',
-      responseSchema: AGENT_RESPONSE_SCHEMA,
-    },
-  });
+  return parts;
+}
 
-  const rawText = response.text?.trim();
+function parseRawGeminiAgentResponse(
+  rawTextInput: string | undefined,
+  reqData: ValidatedAgentRequest
+): AgentCommandResponse {
+  const { prompt, context } = reqData;
+  const rawText = rawTextInput?.trim();
   if (!rawText) {
     throw new Error('AI 모델로부터 응답을 받지 못했습니다.');
   }
@@ -763,13 +829,11 @@ export async function executeGeminiAgentCommand(
     ? calculateFreeTimeSlots(mapEventsToViewerZone(queriedEvents, context.viewerTimeZone))
     : [];
 
-  let updatedEvent: AgentCommandResponse['updatedEvent'] = null;
-  if (
-    parsed.updatedEvent &&
-    typeof parsed.updatedEvent === 'object' &&
-    typeof (parsed.updatedEvent as Record<string, unknown>).id === 'string'
-  ) {
-    const u = parsed.updatedEvent as Record<string, unknown>;
+  const normalizeSingleUpdatePatch = (rawObj: unknown): EventUpdatePatch | null => {
+    if (!rawObj || typeof rawObj !== 'object') return null;
+    const u = rawObj as Record<string, unknown>;
+    if (typeof u.id !== 'string' || !u.id.trim()) return null;
+
     const rawUpdates =
       u.updates && typeof u.updates === 'object' ? (u.updates as Record<string, unknown>) : {};
     const updates: Partial<CalendarEventItem> = {};
@@ -785,6 +849,9 @@ export async function executeGeminiAgentCommand(
     }
     if (typeof rawUpdates.isAllDay === 'boolean') {
       updates.isAllDay = rawUpdates.isAllDay;
+    }
+    if (typeof rawUpdates.isCompleted === 'boolean') {
+      updates.isCompleted = rawUpdates.isCompleted;
     }
     if (typeof rawUpdates.startTime === 'string' && /^\d{2}:\d{2}$/.test(rawUpdates.startTime)) {
       updates.startTime = rawUpdates.startTime;
@@ -823,22 +890,61 @@ export async function executeGeminiAgentCommand(
     if (typeof rawUpdates.content === 'string') {
       updates.content = rawUpdates.content.trim();
     }
-    if (typeof rawUpdates.category === 'string' && VALID_CATEGORIES.has(rawUpdates.category as CalendarCategory)) {
+    if (
+      typeof rawUpdates.category === 'string' &&
+      VALID_CATEGORIES.has(rawUpdates.category as CalendarCategory)
+    ) {
       updates.category = rawUpdates.category as CalendarCategory;
     }
+    if ('recurrence' in rawUpdates) {
+      updates.recurrence = normalizeRecurrenceRule(rawUpdates.recurrence);
+    }
 
-    updatedEvent = {
-      id: String(u.id),
-      targetTitle: typeof u.targetTitle === 'string' ? u.targetTitle : '선택 일정',
-      diffSummary: typeof u.diffSummary === 'string' ? u.diffSummary : '일정 정보가 수정되었습니다.',
+    return {
+      id: u.id.trim(),
+      targetTitle:
+        typeof u.targetTitle === 'string' && u.targetTitle.trim()
+          ? u.targetTitle.trim()
+          : '선택 일정',
+      diffSummary:
+        typeof u.diffSummary === 'string' && u.diffSummary.trim()
+          ? u.diffSummary.trim()
+          : '일정 정보가 수정되었습니다.',
       updates,
     };
-  }
+  };
 
-  const deletedEventId =
-    actionType === 'DELETE_EVENT' && typeof parsed.deletedEventId === 'string' && parsed.deletedEventId
-      ? parsed.deletedEventId
-      : null;
+  const updatedEventsMap = new Map<string, EventUpdatePatch>();
+  const singleUpdated = normalizeSingleUpdatePatch(parsed.updatedEvent);
+  if (singleUpdated) {
+    updatedEventsMap.set(singleUpdated.id, singleUpdated);
+  }
+  if (Array.isArray(parsed.updatedEvents)) {
+    for (const item of parsed.updatedEvents.slice(0, 20)) {
+      const normPatch = normalizeSingleUpdatePatch(item);
+      if (normPatch) {
+        updatedEventsMap.set(normPatch.id, normPatch);
+      }
+    }
+  }
+  const updatedEvents = Array.from(updatedEventsMap.values());
+  const updatedEvent = updatedEvents[0] || null;
+
+  const deletedIdSet = new Set<string>();
+  if (actionType === 'DELETE_EVENT') {
+    if (typeof parsed.deletedEventId === 'string' && parsed.deletedEventId.trim()) {
+      deletedIdSet.add(parsed.deletedEventId.trim());
+    }
+    if (Array.isArray(parsed.deletedEventIds)) {
+      for (const rawId of parsed.deletedEventIds.slice(0, 20)) {
+        if (typeof rawId === 'string' && rawId.trim()) {
+          deletedIdSet.add(rawId.trim());
+        }
+      }
+    }
+  }
+  const deletedEventIds = Array.from(deletedIdSet);
+  const deletedEventId = deletedEventIds[0] || null;
 
   const suggestedPrompts = Array.isArray(parsed.suggestedPrompts)
     ? parsed.suggestedPrompts
@@ -867,29 +973,163 @@ export async function executeGeminiAgentCommand(
         ? parsed.replyText.trim()
         : '요청하신 작업을 반영했습니다.',
     targetDate,
-    thoughtTrace: rawTrace && typeof rawTrace.summary === 'string'
-      ? {
-          summary: rawTrace.summary,
-          intent: typeof rawTrace.intent === 'string' ? rawTrace.intent : undefined,
-          steps: Array.isArray(rawTrace.steps)
-            ? rawTrace.steps
-                .filter((st): st is Record<string, unknown> => Boolean(st && typeof st === 'object'))
-                .slice(0, 5)
-                .map((st, idx) => ({
-                  step: typeof st.step === 'number' ? st.step : idx + 1,
-                  title: typeof st.title === 'string' ? st.title : '처리 단계',
-                  status: 'completed' as const,
-                  details: typeof st.details === 'string' ? st.details : undefined,
-                }))
-            : undefined,
-        }
-      : null,
+    thoughtTrace:
+      rawTrace && typeof rawTrace.summary === 'string'
+        ? {
+            summary: rawTrace.summary,
+            intent: typeof rawTrace.intent === 'string' ? rawTrace.intent : undefined,
+            steps: Array.isArray(rawTrace.steps)
+              ? rawTrace.steps
+                  .filter((st): st is Record<string, unknown> =>
+                    Boolean(st && typeof st === 'object')
+                  )
+                  .slice(0, 5)
+                  .map((st, idx) => ({
+                    step: typeof st.step === 'number' ? st.step : idx + 1,
+                    title: typeof st.title === 'string' ? st.title : '처리 단계',
+                    status: 'completed' as const,
+                    details: typeof st.details === 'string' ? st.details : undefined,
+                  }))
+              : undefined,
+          }
+        : null,
     queriedEvents,
     freeTimeSlots,
     createdEvents,
     recommendedVenues,
     updatedEvent,
+    updatedEvents: updatedEvents.length > 0 ? updatedEvents : undefined,
     deletedEventId,
+    deletedEventIds: deletedEventIds.length > 0 ? deletedEventIds : undefined,
     suggestedPrompts,
   };
+}
+
+export async function executeGeminiAgentCommand(
+  reqData: ValidatedAgentRequest
+): Promise<AgentCommandResponse> {
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw createMissingGeminiKeyError();
+  }
+
+  const { prompt, modelId, image, attachments, context } = reqData;
+
+  if (!image && attachments.length === 0 && shouldUseSearchGroundingForPlanning(prompt)) {
+    const activeProj =
+      context.selectedProjectId !== 'all'
+        ? context.projects.find((p) => p.id === context.selectedProjectId)
+        : undefined;
+    const inferredRangeMonths = extractPlanningRangeMonths(prompt, context.selectedDate);
+    return executeGroundedDateDiscovery(ai, {
+      topic: prompt,
+      rangeMonths: inferredRangeMonths,
+      modelId: modelId || 'gemini-3.8-flash',
+      currentYear: context.currentYear,
+      selectedDate: context.selectedDate,
+      activeProjectName: activeProj?.name || context.activeProjectName,
+      activeProjectClient: activeProj?.clientOrOrg,
+      existingEvents: context.existingEvents,
+    });
+  }
+
+  const parts = buildAgentPromptParts(reqData);
+
+  const response = await ai.models.generateContent({
+    model: modelId || 'gemini-3.8-flash',
+    contents: { parts },
+    config: {
+      systemInstruction: STATIC_SYSTEM_INSTRUCTION,
+      responseMimeType: 'application/json',
+      responseSchema: AGENT_RESPONSE_SCHEMA,
+    },
+  });
+
+  return parseRawGeminiAgentResponse(response.text, reqData);
+}
+
+export interface AgentStreamProgressEvent {
+  type: 'stage' | 'partial';
+  stageText?: string;
+  partialReplyText?: string;
+  thoughtSummary?: string;
+}
+
+export async function executeGeminiAgentCommandStream(
+  reqData: ValidatedAgentRequest,
+  onStreamUpdate: (event: AgentStreamProgressEvent) => void
+): Promise<AgentCommandResponse> {
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw createMissingGeminiKeyError();
+  }
+
+  const { prompt, modelId, image, attachments, context } = reqData;
+
+  if (!image && attachments.length === 0 && shouldUseSearchGroundingForPlanning(prompt)) {
+    onStreamUpdate({
+      type: 'stage',
+      stageText: '실시간 공휴일·업계 주요 일정을 웹 검색으로 검증하고 있습니다...',
+    });
+    const activeProj =
+      context.selectedProjectId !== 'all'
+        ? context.projects.find((p) => p.id === context.selectedProjectId)
+        : undefined;
+    const inferredRangeMonths = extractPlanningRangeMonths(prompt, context.selectedDate);
+    return executeGroundedDateDiscovery(ai, {
+      topic: prompt,
+      rangeMonths: inferredRangeMonths,
+      modelId: modelId || 'gemini-3.8-flash',
+      currentYear: context.currentYear,
+      selectedDate: context.selectedDate,
+      activeProjectName: activeProj?.name || context.activeProjectName,
+      activeProjectClient: activeProj?.clientOrOrg,
+      existingEvents: context.existingEvents,
+    });
+  }
+
+  const parts = buildAgentPromptParts(reqData);
+
+  onStreamUpdate({
+    type: 'stage',
+    stageText:
+      attachments.length > 0 || image
+        ? '첨부 자료와 행사 문맥을 실시간 판독하고 있습니다...'
+        : '일정 문맥과 시간대 충돌 여부를 분석하고 있습니다...',
+  });
+
+  const streamResponse = await ai.models.generateContentStream({
+    model: modelId || 'gemini-3.8-flash',
+    contents: { parts },
+    config: {
+      systemInstruction: STATIC_SYSTEM_INSTRUCTION,
+      responseMimeType: 'application/json',
+      responseSchema: AGENT_RESPONSE_SCHEMA,
+    },
+  });
+
+  let accumulated = '';
+  let lastReplySent = '';
+  let lastSummarySent = '';
+
+  for await (const chunk of streamResponse) {
+    const delta = chunk.text || '';
+    if (!delta) continue;
+    accumulated += delta;
+
+    const partialReply = extractPartialJsonStringField(accumulated, 'replyText');
+    const thoughtSummary = extractPartialJsonStringField(accumulated, 'summary');
+
+    if (partialReply !== lastReplySent || thoughtSummary !== lastSummarySent) {
+      lastReplySent = partialReply;
+      lastSummarySent = thoughtSummary;
+      onStreamUpdate({
+        type: 'partial',
+        partialReplyText: partialReply || undefined,
+        thoughtSummary: thoughtSummary || undefined,
+      });
+    }
+  }
+
+  return parseRawGeminiAgentResponse(accumulated, reqData);
 }

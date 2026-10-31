@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { getEventDateSpan, getWeekDays, WeekDayItem } from '../shared/dateUtils';
+import { expandRecurringEventsForRange } from '../shared/recurrenceUtils';
 import {
   areShallowArraysEqual,
   useCalendarEventViewModels,
@@ -15,6 +16,8 @@ interface WeekGridViewProps {
   selectedEvent: CalendarEventItem | null;
   viewerTimeZone: string;
   viewerShortCode?: string;
+  secondaryTimeZone?: string | null;
+  secondaryShortCode?: string | null;
   onSelectDate: (date: string) => void;
   onSelectEvent: (event: CalendarEventItem) => void;
   onMoveEventDate: (
@@ -37,6 +40,8 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
   selectedEvent,
   viewerTimeZone,
   viewerShortCode,
+  secondaryTimeZone = null,
+  secondaryShortCode = null,
   onSelectDate,
   onSelectEvent,
   onMoveEventDate,
@@ -66,8 +71,16 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
     requireActiveCellDrag: true,
   });
 
+  const expandedEvents = useMemo(
+    () =>
+      weekDays.length === 7
+        ? expandRecurringEventsForRange(events, weekDays[0].date, weekDays[6].date)
+        : events,
+    [events, weekDays]
+  );
+
   const { byEventId, getViewModel } = useCalendarEventViewModels({
-    events,
+    events: expandedEvents,
     projects,
     viewerTimeZone,
   });
@@ -77,7 +90,7 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
     for (const d of weekDays) {
       map.set(d.date, []);
     }
-    for (const ev of events) {
+    for (const ev of expandedEvents) {
       const localDate = (byEventId.get(ev.id) ?? getViewModel(ev)).timing.localDate;
       const spanDates = getEventDateSpan(localDate, ev.endDate);
       for (const dStr of spanDates) {
@@ -88,7 +101,7 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
       }
     }
     return map;
-  }, [events, weekDays, byEventId, getViewModel]);
+  }, [expandedEvents, weekDays, byEventId, getViewModel]);
 
   const allDayEventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEventItem[]>();
@@ -129,10 +142,27 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
     <div className="flex-1 flex flex-col h-full overflow-hidden select-none bg-[#0c0e14]">
       {/* 1. 주간 요일 헤더 */}
       <div className="h-10 flex bg-[#101218] border-b border-white/[0.06] shrink-0 z-10 items-stretch">
-        <div className="w-14 sm:w-16 border-r border-white/[0.06] flex items-center justify-center shrink-0 px-1">
-          <span className="text-[10.5px] text-white/38 tabular-nums tracking-tight truncate">
-            {viewerShortCode || '시간'}
-          </span>
+        <div
+          className={`${
+            secondaryTimeZone && secondaryTimeZone !== viewerTimeZone
+              ? 'w-24 sm:w-28 justify-between px-2'
+              : 'w-14 sm:w-16 justify-center px-1'
+          } border-r border-white/[0.06] flex items-center shrink-0`}
+        >
+          {secondaryTimeZone && secondaryTimeZone !== viewerTimeZone ? (
+            <>
+              <span className="text-[10px] font-mono text-sky-300/70 tabular-nums tracking-tight truncate">
+                {secondaryShortCode || 'AUX'}
+              </span>
+              <span className="text-[10px] font-mono text-white/50 tabular-nums tracking-tight truncate">
+                {viewerShortCode || 'LOC'}
+              </span>
+            </>
+          ) : (
+            <span className="text-[10.5px] text-white/38 tabular-nums tracking-tight truncate">
+              {viewerShortCode || '시간'}
+            </span>
+          )}
         </div>
 
         <div className="flex-1 grid grid-cols-7 divide-x divide-white/[0.06]">
@@ -196,7 +226,13 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
       {/* 2. 종일 일정 영역 */}
       {hasAnyAllDay && (
         <div className="flex bg-[#11141d] border-b border-white/[0.07] shrink-0 text-xs z-10">
-          <div className="w-14 sm:w-16 border-r border-white/[0.07] p-1.5 text-center text-[10px] font-medium text-neutral-500 flex items-center justify-center shrink-0">
+          <div
+            className={`${
+              secondaryTimeZone && secondaryTimeZone !== viewerTimeZone
+                ? 'w-24 sm:w-28'
+                : 'w-14 sm:w-16'
+            } border-r border-white/[0.07] p-1.5 text-center text-[10px] font-medium text-neutral-500 flex items-center justify-center shrink-0`}
+          >
             종일
           </div>
           <div className="flex-1 grid grid-cols-7 divide-x divide-white/[0.06]">
@@ -263,6 +299,7 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
         columns={columns}
         variant="week"
         viewerTimeZone={viewerTimeZone}
+        secondaryTimeZone={secondaryTimeZone}
         startHour={7}
         endHour={23}
         pxPerHour={64}
@@ -292,6 +329,8 @@ function areWeekGridViewPropsEqual(
     prev.selectedEvent === next.selectedEvent &&
     prev.viewerTimeZone === next.viewerTimeZone &&
     prev.viewerShortCode === next.viewerShortCode &&
+    prev.secondaryTimeZone === next.secondaryTimeZone &&
+    prev.secondaryShortCode === next.secondaryShortCode &&
     prev.emptyGuideText === next.emptyGuideText &&
     prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
     prev.onSelectDate === next.onSelectDate &&

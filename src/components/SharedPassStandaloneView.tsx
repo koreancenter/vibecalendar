@@ -4,9 +4,11 @@ import {
   CalendarPlus,
   Check,
   CheckSquare,
+  Clock,
   Copy,
   Download,
   ExternalLink,
+  FolderInput,
   MapPin,
   Square,
 } from 'lucide-react';
@@ -34,12 +36,14 @@ import {
 interface SharedPassStandaloneViewProps {
   payload: SharedPassPayload;
   isPreviewMode?: boolean;
+  onImportToWorkspace?: (payload: SharedPassPayload, selectedSlotIndex?: number) => void;
   onExit: () => void;
 }
 
 export const SharedPassStandaloneView: React.FC<SharedPassStandaloneViewProps> = ({
   payload,
   isPreviewMode = false,
+  onImportToWorkspace,
   onExit,
 }) => {
   const [theme, setTheme] = useState<ShareCardTheme>(payload.theme || 'obsidian');
@@ -65,6 +69,8 @@ export const SharedPassStandaloneView: React.FC<SharedPassStandaloneViewProps> =
     return map;
   });
   const [copiedText, setCopiedText] = useState(false);
+  const [copiedSlotReply, setCopiedSlotReply] = useState(false);
+  const [selectedProposalIdx, setSelectedProposalIdx] = useState<number>(0);
   const [downloadingPng, setDownloadingPng] = useState(false);
 
   const receiverTimeZone = useMemo(() => detectBrowserTimeZone(), []);
@@ -82,9 +88,37 @@ export const SharedPassStandaloneView: React.FC<SharedPassStandaloneViewProps> =
   }, [payload]);
 
   const handleSaveSingleIcs = (ev: SharedEventPassData) => {
-    const item = sharedEventToCalendarItem(ev);
-    const ics = generateIcsContent([item], ev.title);
-    downloadIcsFile(`${ev.date}_${ev.title}.ics`, ics);
+    const chosenSlot =
+      ev.proposedSlots && ev.proposedSlots.length > 0
+        ? ev.proposedSlots[selectedProposalIdx] || ev.proposedSlots[0]
+        : null;
+    const effectiveEv: SharedEventPassData = chosenSlot
+      ? {
+          ...ev,
+          date: chosenSlot.date,
+          endDate: undefined,
+          startTime: chosenSlot.startTime,
+          endTime: chosenSlot.endTime,
+        }
+      : ev;
+    const item = sharedEventToCalendarItem(effectiveEv);
+    const ics = generateIcsContent([item], effectiveEv.title);
+    downloadIcsFile(`${effectiveEv.date}_${effectiveEv.title}.ics`, ics);
+  };
+
+  const handleCopySelectedSlotReply = async (ev: SharedEventPassData) => {
+    if (!ev.proposedSlots || ev.proposedSlots.length === 0) return;
+    const idx = Math.min(selectedProposalIdx, ev.proposedSlots.length - 1);
+    const slot = ev.proposedSlots[idx];
+    const tzMeta = getTimeZoneMeta(ev.timeZone);
+    const reply = `[일정 확정 회신] '${ev.title}' 일정은 후보 ${idx + 1} (${slot.date} ${slot.startTime}–${slot.endTime} ${tzMeta.shortCode}) 시간대로 참석 가능합니다.`;
+    try {
+      await navigator.clipboard.writeText(reply);
+      setCopiedSlotReply(true);
+      window.setTimeout(() => setCopiedSlotReply(false), 1800);
+    } catch {
+      // ignore clipboard failure
+    }
   };
 
   const handleSaveProjectIcs = () => {
@@ -475,24 +509,145 @@ export const SharedPassStandaloneView: React.FC<SharedPassStandaloneViewProps> =
                   </div>
                 )}
 
+                {/* 후보 시간 제안 인터랙티브 선택기 */}
+                {ev.proposedSlots && ev.proposedSlots.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`text-xs font-medium flex items-center gap-1.5 ${
+                          isEditorial ? 'text-slate-600' : 'text-neutral-300'
+                        }`}
+                      >
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        <span>후보 시간 제안 선택 ({ev.proposedSlots.length}개 옵션)</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopySelectedSlotReply(ev)}
+                        className={`h-7 px-2.5 rounded-lg text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                          isEditorial
+                            ? 'bg-slate-900 text-white hover:bg-slate-800'
+                            : 'bg-sky-500/15 border border-sky-400/30 text-sky-200 hover:bg-sky-500/25'
+                        }`}
+                      >
+                        {copiedSlotReply ? (
+                          <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                        ) : (
+                          <Copy className="w-3 h-3 shrink-0" />
+                        )}
+                        <span>{copiedSlotReply ? '확정 회신 복사됨' : '선택 시간 확정 회신 복사'}</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {ev.proposedSlots.map((slot, idx) => {
+                        const isSelected = selectedProposalIdx === idx;
+                        const slotItem = sharedEventToCalendarItem({
+                          ...ev,
+                          date: slot.date,
+                          endDate: undefined,
+                          startTime: slot.startTime,
+                          endTime: slot.endTime,
+                        });
+                        const slotTiming = projectEventToViewerTimeZone(
+                          slotItem,
+                          receiverTimeZone
+                        );
+
+                        return (
+                          <button
+                            key={`${slot.date}-${slot.startTime}-${idx}`}
+                            type="button"
+                            onClick={() => setSelectedProposalIdx(idx)}
+                            className={`p-3 rounded-xl border text-left transition-colors cursor-pointer ${
+                              isSelected
+                                ? isEditorial
+                                  ? 'border-slate-900 bg-slate-900/[0.04]'
+                                  : 'border-sky-400/50 bg-sky-400/[0.08]'
+                                : isEditorial
+                                ? 'border-slate-200 hover:bg-slate-50'
+                                : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span
+                                className={`text-[11px] font-medium ${
+                                  isSelected
+                                    ? isEditorial
+                                      ? 'text-slate-900'
+                                      : 'text-sky-300'
+                                    : isEditorial
+                                    ? 'text-slate-500'
+                                    : 'text-neutral-400'
+                                }`}
+                              >
+                                후보 {idx + 1}
+                                {slot.label ? ` · ${slot.label}` : ''}
+                              </span>
+                              {isSelected && (
+                                <Check
+                                  className={`w-3.5 h-3.5 shrink-0 ${
+                                    isEditorial ? 'text-slate-900' : 'text-sky-400'
+                                  }`}
+                                />
+                              )}
+                            </div>
+                            <div className="mt-1 font-mono tabular-nums text-xs font-semibold">
+                              {formatKoreanDateWithDay(slot.date, true)} · {slot.startTime} –{' '}
+                              {slot.endTime} {tzMeta.shortCode}
+                            </div>
+                            {slotTiming.hasOffsetDiff && (
+                              <div
+                                className={`mt-0.5 font-mono tabular-nums text-[11px] ${
+                                  isEditorial ? 'text-slate-500' : 'text-neutral-400'
+                                }`}
+                              >
+                                내 위치 기준: {slotTiming.localDate} {slotTiming.localStartTime} –{' '}
+                                {slotTiming.localEndTime}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* 하단 수신자 유틸리티 액션 */}
                 <div
                   className={`pt-5 border-t flex flex-wrap items-center justify-between gap-2 ${
                     isEditorial ? 'border-slate-200/90' : 'border-white/[0.08]'
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => handleSaveSingleIcs(ev)}
-                    className={`h-10 px-4 rounded-xl text-xs font-semibold inline-flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                      isEditorial
-                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-900'
-                        : 'bg-white/[0.08] hover:bg-white/[0.14] text-white'
-                    }`}
-                  >
-                    <CalendarPlus className="w-4 h-4 shrink-0" />
-                    <span>내 휴대폰 캘린더에 저장 (.ics)</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {onImportToWorkspace && !isPreviewMode && (
+                      <button
+                        type="button"
+                        onClick={() => onImportToWorkspace(payload, selectedProposalIdx)}
+                        className={`h-10 px-4 rounded-xl text-xs font-semibold inline-flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                          isEditorial
+                            ? 'bg-slate-900 hover:bg-slate-800 text-white'
+                            : 'bg-white hover:bg-neutral-200 text-neutral-950'
+                        }`}
+                      >
+                        <FolderInput className="w-4 h-4 shrink-0" />
+                        <span>내 워크스페이스에 반영</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleSaveSingleIcs(ev)}
+                      className={`h-10 px-4 rounded-xl text-xs font-semibold inline-flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                        isEditorial
+                          ? 'bg-slate-100 hover:bg-slate-200 text-slate-900'
+                          : 'bg-white/[0.08] hover:bg-white/[0.14] text-white'
+                      }`}
+                    >
+                      <CalendarPlus className="w-4 h-4 shrink-0" />
+                      <span>.ics 저장</span>
+                    </button>
+                  </div>
 
                   <div className="flex items-center gap-2">
                     <button
@@ -616,19 +771,37 @@ export const SharedPassStandaloneView: React.FC<SharedPassStandaloneViewProps> =
                   isEditorial ? 'border-slate-200/90' : 'border-white/[0.08]'
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={handleSaveProjectIcs}
-                  disabled={payload.project.events.length === 0}
-                  className={`h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50 ${
-                    isEditorial
-                      ? 'bg-slate-900 text-white hover:bg-slate-800'
-                      : 'bg-white text-neutral-950 hover:bg-neutral-200'
-                  }`}
-                >
-                  <CalendarPlus className="w-3.5 h-3.5 shrink-0" />
-                  <span>전체 일정 캘린더 저장 (.ics)</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {onImportToWorkspace && !isPreviewMode && (
+                    <button
+                      type="button"
+                      onClick={() => onImportToWorkspace(payload)}
+                      disabled={payload.project.events.length === 0}
+                      className={`h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50 ${
+                        isEditorial
+                          ? 'bg-slate-900 text-white hover:bg-slate-800'
+                          : 'bg-white text-neutral-950 hover:bg-neutral-200'
+                      }`}
+                    >
+                      <FolderInput className="w-3.5 h-3.5 shrink-0" />
+                      <span>프로젝트·런시트 내 워크스페이스에 반영</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleSaveProjectIcs}
+                    disabled={payload.project.events.length === 0}
+                    className={`h-9 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-50 ${
+                      isEditorial
+                        ? 'bg-slate-100 text-slate-900 hover:bg-slate-200'
+                        : 'bg-white/[0.08] text-white hover:bg-white/[0.14]'
+                    }`}
+                  >
+                    <CalendarPlus className="w-3.5 h-3.5 shrink-0" />
+                    <span>.ics 저장</span>
+                  </button>
+                </div>
 
                 <div className="flex items-center gap-2">
                   <button

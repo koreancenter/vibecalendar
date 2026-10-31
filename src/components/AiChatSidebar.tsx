@@ -84,6 +84,8 @@ interface AiChatSidebarProps {
   projects?: ProjectItem[];
   selectedProjectId?: string | 'all';
   selectedProjectIds?: string[];
+  externalPromptRequest?: { id: number; prompt: string; autoSend?: boolean } | null;
+  onConsumeExternalPrompt?: () => void;
 }
 
 export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
@@ -102,6 +104,8 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
   projects = [],
   selectedProjectId = 'all',
   selectedProjectIds = [],
+  externalPromptRequest = null,
+  onConsumeExternalPrompt,
 }) => {
   const effectiveViewerZone =
     viewerTimeZone && isValidTimeZone(viewerTimeZone)
@@ -119,6 +123,10 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
 
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingStageText, setLoadingStageText] = useState(
+    '요청 의도와 프로젝트 문맥을 분석하고 있습니다...'
+  );
+  const [streamingReplyText, setStreamingReplyText] = useState('');
   const [addedVenueIds, setAddedVenueIds] = useState<Set<string>>(new Set());
   const [addedGroundedIds, setAddedGroundedIds] = useState<Set<string>>(new Set());
   const [lastReferencedEvent, setLastReferencedEvent] = useState<CalendarEventItem | null>(null);
@@ -188,6 +196,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const promptInputRef = useRef<PromptMarkdownInputRef>(null);
   const dragDepthRef = useRef(0);
+  const lastHandledExternalIdRef = useRef<number | null>(null);
 
   const {
     isListening,
@@ -383,7 +392,34 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
     setPrompt('');
     setAttachments([]);
     promptInputRef.current?.clear();
+
+    const stages =
+      currentAttachments.length > 0
+        ? [
+            '첨부 자료의 텍스트·표·일정 데이터를 판독하고 있습니다...',
+            '일정 구조화 및 시간대 충돌 여부를 검증하고 있습니다...',
+            '캘린더 반영 카드를 구성하고 있습니다...',
+          ]
+        : shouldUseSearchGroundingForPlanning(text)
+        ? [
+            '실시간 공휴일·업계 주요 일정을 검색하고 있습니다...',
+            '기존 캘린더 일정과 겹치지 않는 후보일을 대조하고 있습니다...',
+            '개최 후보일 브리핑 카드를 정리하고 있습니다...',
+          ]
+        : [
+            '요청 의도와 프로젝트 문맥을 분석하고 있습니다...',
+            '일정 시간대 및 충돌 여부를 점검하고 있습니다...',
+            '캘린더 반영 결과를 정리하고 있습니다...',
+          ];
+    setLoadingStageText(stages[0]);
+    setStreamingReplyText('');
     setLoading(true);
+
+    let stageIdx = 0;
+    const stageTimer = window.setInterval(() => {
+      stageIdx = Math.min(stages.length - 1, stageIdx + 1);
+      setLoadingStageText(stages[stageIdx]);
+    }, 2200);
 
     try {
       const apiAttachments = currentAttachments.map((att) => ({
@@ -425,6 +461,16 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
           cloudAvailable: geminiEnabled !== false,
           onCloudGroundingRoute: () => {
             showToast('실시간 공휴일·웹 검색 검증을 위해 Cloud 검색 그라운딩으로 조회합니다.');
+          },
+          onStreamUpdate: ({ stageText, partialReplyText, thoughtSummary }) => {
+            if (stageText) {
+              setLoadingStageText(stageText);
+            } else if (thoughtSummary && !partialReplyText) {
+              setLoadingStageText(thoughtSummary);
+            }
+            if (partialReplyText) {
+              setStreamingReplyText(partialReplyText);
+            }
           },
         }
       );
@@ -490,23 +536,32 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
       }
 
       let currentActiveEvent: CalendarEventItem | null = lastReferencedEvent;
+      const primaryUpdatePatch =
+        enhancedResponse.updatedEvents?.[0] || enhancedResponse.updatedEvent;
+      const deletedSet = new Set(
+        enhancedResponse.deletedEventIds && enhancedResponse.deletedEventIds.length > 0
+          ? enhancedResponse.deletedEventIds
+          : enhancedResponse.deletedEventId
+          ? [enhancedResponse.deletedEventId]
+          : []
+      );
 
       if (enhancedResponse.createdEvents && enhancedResponse.createdEvents.length > 0) {
         currentActiveEvent = enhancedResponse.createdEvents[0];
         setLastReferencedEvent(currentActiveEvent);
-      } else if (enhancedResponse.updatedEvent?.id) {
-        const updatedId = enhancedResponse.updatedEvent.id;
+      } else if (primaryUpdatePatch?.id) {
+        const updatedId = primaryUpdatePatch.id;
         const found = existingEvents.find((e) => e.id === updatedId) || lastReferencedEvent;
         if (found) {
           const merged: CalendarEventItem = {
             ...found,
-            ...enhancedResponse.updatedEvent.updates,
+            ...primaryUpdatePatch.updates,
           };
           currentActiveEvent = merged;
           setLastReferencedEvent(merged);
         }
-      } else if (enhancedResponse.deletedEventId) {
-        if (lastReferencedEvent?.id === enhancedResponse.deletedEventId) {
+      } else if (deletedSet.size > 0) {
+        if (lastReferencedEvent && deletedSet.has(lastReferencedEvent.id)) {
           currentActiveEvent = null;
           setLastReferencedEvent(null);
         }
@@ -548,22 +603,27 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
           }
         }
 
-        if (
-          enhancedResponse.updatedEvent?.id &&
-          enhancedResponse.updatedEvent.updates?.location &&
-          !isInternalOrVirtualLocation(enhancedResponse.updatedEvent.updates.location) &&
-          (!enhancedResponse.updatedEvent.updates.locationAddress ||
-            enhancedResponse.updatedEvent.updates.locationLat === undefined)
-        ) {
-          batchTargets.push({
-            key: `updated:${enhancedResponse.updatedEvent.id}`,
-            queryName: [
-              enhancedResponse.updatedEvent.updates.location,
-              enhancedResponse.updatedEvent.updates.locationAddress,
-            ]
-              .filter(Boolean)
-              .join(' '),
-          });
+        const updateCandidates =
+          enhancedResponse.updatedEvents && enhancedResponse.updatedEvents.length > 0
+            ? enhancedResponse.updatedEvents
+            : enhancedResponse.updatedEvent
+            ? [enhancedResponse.updatedEvent]
+            : [];
+
+        for (const upd of updateCandidates) {
+          if (
+            upd.id &&
+            upd.updates?.location &&
+            !isInternalOrVirtualLocation(upd.updates.location) &&
+            (!upd.updates.locationAddress || upd.updates.locationLat === undefined)
+          ) {
+            batchTargets.push({
+              key: `updated:${upd.id}`,
+              queryName: [upd.updates.location, upd.updates.locationAddress]
+                .filter(Boolean)
+                .join(' '),
+            });
+          }
         }
 
         if (enhancedResponse.recommendedVenues) {
@@ -700,9 +760,25 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
+      window.clearInterval(stageTimer);
+      setStreamingReplyText('');
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!externalPromptRequest || loading) return;
+    if (lastHandledExternalIdRef.current === externalPromptRequest.id) return;
+    lastHandledExternalIdRef.current = externalPromptRequest.id;
+    onConsumeExternalPrompt?.();
+
+    if (externalPromptRequest.autoSend !== false) {
+      void handleSendMessage(externalPromptRequest.prompt);
+    } else {
+      setPrompt(externalPromptRequest.prompt);
+      setTimeout(() => promptInputRef.current?.focus(), 60);
+    }
+  }, [externalPromptRequest, loading]);
 
   const handleAddVenueToCalendar = (venue: RecommendedVenue) => {
     onCreateEventFromVenue(venue);
@@ -1048,9 +1124,16 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
 
         {loading && (
           <div className="flex items-start">
-            <div className="p-3 rounded-2xl bg-[#181b24] border border-white/[0.08] text-xs text-neutral-300 flex items-center gap-2">
-              <Loader2 className="w-4 h-4 text-neutral-200 animate-spin" />
-              <span>첨부 컨텍스트와 일정을 정밀 분석하고 있습니다...</span>
+            <div className="max-w-[92%] p-3 rounded-2xl bg-[#181b24] border border-white/[0.08] text-xs text-neutral-200 space-y-2">
+              <div className="flex items-center gap-2 text-neutral-400">
+                <Loader2 className="w-3.5 h-3.5 text-neutral-200 animate-spin shrink-0" />
+                <span className="text-[11px]">{loadingStageText}</span>
+              </div>
+              {streamingReplyText && (
+                <div className="pt-1.5 border-t border-white/[0.06] text-xs text-neutral-100 leading-relaxed whitespace-pre-wrap break-words">
+                  {streamingReplyText}
+                </div>
+              )}
             </div>
           </div>
         )}

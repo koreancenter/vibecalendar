@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Globe,
   ExternalLink,
+  Repeat,
 } from 'lucide-react';
 import {
   AgentCommandResponse,
@@ -29,6 +30,7 @@ import {
   projectEventToViewerTimeZone,
 } from '../../shared/timeZoneUtils';
 import { formatCombinedLocation } from '../../shared/locationUtils';
+import { formatRecurrenceLabel } from '../../shared/recurrenceUtils';
 
 interface AgentResponseCardsProps {
   response: AgentCommandResponse;
@@ -60,6 +62,20 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
     viewerTimeZone && isValidTimeZone(viewerTimeZone)
       ? viewerTimeZone
       : detectBrowserTimeZone();
+
+  const updatedList =
+    resp.updatedEvents && resp.updatedEvents.length > 0
+      ? resp.updatedEvents
+      : resp.updatedEvent
+      ? [resp.updatedEvent]
+      : [];
+
+  const deletedIds =
+    resp.deletedEventIds && resp.deletedEventIds.length > 0
+      ? resp.deletedEventIds
+      : resp.deletedEventId
+      ? [resp.deletedEventId]
+      : [];
 
   return (
     <div className="w-full space-y-2 mt-1">
@@ -153,75 +169,101 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
         </div>
       )}
 
-      {/* 2. 일정 수정 반영 카드 (UPDATE_EVENT) */}
-      {(resp.actionType === 'UPDATE_EVENT' || resp.updatedEvent) && resp.updatedEvent && (
+      {/* 2. 일정 수정 반영 카드 (UPDATE_EVENT - 단건 및 다중 일괄 수정 지원) */}
+      {(resp.actionType === 'UPDATE_EVENT' || updatedList.length > 0) && updatedList.length > 0 && (
         <div className="bg-[#181b24] border border-amber-500/25 rounded-xl p-3 space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-300">
               <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />
               <span>
-                {!Object.keys(resp.updatedEvent.updates || {}).length
+                {updatedList.length === 1 && !Object.keys(updatedList[0].updates || {}).length
                   ? '일정 문맥 식별'
                   : '일정 수정 반영 완료'}
               </span>
             </div>
-            <span className="text-[10px] text-amber-300/80 font-mono">수정됨</span>
+            <span className="text-[10px] text-amber-300/80 font-mono tabular-nums">
+              {updatedList.length > 1 ? `${updatedList.length}건 수정됨` : '수정됨'}
+            </span>
           </div>
-          <div className="bg-[#202430] p-2.5 rounded-lg border border-white/[0.06] space-y-1">
-            <div className="text-xs font-semibold text-white">
-              {resp.updatedEvent.targetTitle || '일정'}
-            </div>
-            {(resp.updatedEvent.updates?.startTime || resp.updatedEvent.updates?.timeZone) && (
-              <div className="flex items-center gap-2 text-[11px] text-amber-300 font-mono tabular-nums">
-                <Clock className="w-3 h-3 text-amber-400" />
-                <span>
-                  {resp.updatedEvent.updates.startTime
-                    ? `${resp.updatedEvent.updates.startTime} – ${resp.updatedEvent.updates.endTime || ''}`
-                    : '시간대 변경'}
-                  {resp.updatedEvent.updates.timeZone
-                    ? ` ${getTimeZoneMeta(resp.updatedEvent.updates.timeZone).shortCode}`
-                    : ''}
-                </span>
-              </div>
-            )}
-            {(resp.updatedEvent.updates?.location || resp.updatedEvent.updates?.locationAddress) && (
-              <div className="flex items-start gap-1.5 text-[10px] text-neutral-300">
-                <MapPin className="w-3 h-3 text-neutral-400 shrink-0 mt-0.5" />
-                <div className="min-w-0">
-                  {resp.updatedEvent.updates.location && (
-                    <div className="text-neutral-200 break-words">
-                      {resp.updatedEvent.updates.location}
-                    </div>
-                  )}
-                  {resp.updatedEvent.updates.locationAddress && (
-                    <div className="text-neutral-400 break-words">
-                      {resp.updatedEvent.updates.locationAddress}
-                    </div>
-                  )}
+
+          <div className="space-y-1.5">
+            {updatedList.map((patch, idx) => (
+              <div
+                key={`${patch.id}-${idx}`}
+                className="bg-[#202430] p-2.5 rounded-lg border border-white/[0.06] space-y-1"
+              >
+                <div className="text-xs font-semibold text-white">
+                  {patch.targetTitle || '일정'}
                 </div>
+                {(patch.updates?.date ||
+                  patch.updates?.startTime ||
+                  patch.updates?.timeZone) && (
+                  <div className="flex items-center gap-2 text-[11px] text-amber-300 font-mono tabular-nums flex-wrap">
+                    <Clock className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span>
+                      {patch.updates.date ? `${patch.updates.date} ` : ''}
+                      {patch.updates.startTime
+                        ? `${patch.updates.startTime} – ${patch.updates.endTime || ''}`
+                        : !patch.updates.date
+                        ? '시간대 변경'
+                        : ''}
+                      {patch.updates.timeZone
+                        ? ` ${getTimeZoneMeta(patch.updates.timeZone).shortCode}`
+                        : ''}
+                    </span>
+                  </div>
+                )}
+                {patch.updates?.recurrence && (
+                  <div className="flex items-center gap-1.5 text-[10.5px] text-neutral-300">
+                    <Repeat className="w-3 h-3 text-neutral-400 shrink-0" />
+                    <span>{formatRecurrenceLabel(patch.updates.recurrence)}</span>
+                  </div>
+                )}
+                {(patch.updates?.location || patch.updates?.locationAddress) && (
+                  <div className="flex items-start gap-1.5 text-[10px] text-neutral-300">
+                    <MapPin className="w-3 h-3 text-neutral-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      {patch.updates.location && (
+                        <div className="text-neutral-200 break-words">
+                          {patch.updates.location}
+                        </div>
+                      )}
+                      {patch.updates.locationAddress && (
+                        <div className="text-neutral-400 break-words">
+                          {patch.updates.locationAddress}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {patch.diffSummary && (
+                  <div className="text-[10px] text-neutral-400 pt-1 border-t border-white/[0.04]">
+                    {patch.diffSummary}
+                  </div>
+                )}
               </div>
-            )}
-            {resp.updatedEvent.diffSummary && (
-              <div className="text-[10px] text-neutral-400 pt-1 border-t border-white/[0.04]">
-                {resp.updatedEvent.diffSummary}
-              </div>
-            )}
+            ))}
           </div>
         </div>
       )}
 
-      {/* 3. 일정 삭제 완료 카드 (DELETE_EVENT) */}
-      {(resp.actionType === 'DELETE_EVENT' || Boolean(resp.deletedEventId)) && (
+      {/* 3. 일정 삭제 완료 카드 (DELETE_EVENT - 단건 및 다중 일괄 삭제 지원) */}
+      {(resp.actionType === 'DELETE_EVENT' || deletedIds.length > 0) && (
         <div className="bg-[#181b24] border border-rose-500/25 rounded-xl p-3 space-y-1.5">
           <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-300">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-300">
               <CheckCircle2 className="w-3.5 h-3.5 text-rose-400" />
               <span>캘린더 일정 삭제 완료</span>
             </div>
-            <span className="text-[10px] text-rose-300/80 font-mono">삭제됨</span>
+            <span className="text-[10px] text-rose-300/80 font-mono tabular-nums">
+              {deletedIds.length > 1 ? `${deletedIds.length}건 삭제됨` : '삭제됨'}
+            </span>
           </div>
           <p className="text-[11px] text-neutral-300 bg-[#202430] p-2 rounded-lg border border-white/[0.06]">
-            {resp.replyText || '선택한 일정이 캘린더에서 제거되었습니다.'}
+            {resp.replyText ||
+              (deletedIds.length > 1
+                ? `${deletedIds.length}건의 일정이 캘린더에서 일괄 제거되었습니다.`
+                : '선택한 일정이 캘린더에서 제거되었습니다.')}
           </p>
         </div>
       )}
@@ -485,6 +527,12 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
                     <Clock className="w-3 h-3" />
                     {createdTimeLabel}
                   </span>
+                  {ev.recurrence && (
+                    <span className="flex items-center gap-1 text-neutral-300 font-sans">
+                      <Repeat className="w-3 h-3 text-neutral-400 shrink-0" />
+                      <span>{formatRecurrenceLabel(ev.recurrence)}</span>
+                    </span>
+                  )}
                 </div>
                 {(ev.location || ev.locationAddress) && (
                   <div className="flex items-start gap-1 text-[10px] text-neutral-400 mt-1.5 min-w-0">

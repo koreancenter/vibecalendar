@@ -10,9 +10,23 @@ import {
   AgentCommandResponse,
   RecommendedVenue,
   GroundedDateSuggestion,
+  RecurrenceRule,
 } from '../types';
-import { addDays, getEventDateSpan, getTodayDateString, parseLocalDate } from '../shared/dateUtils';
+import {
+  addDays,
+  getDayDistance,
+  getEventDateSpan,
+  getTodayDateString,
+  parseLocalDate,
+} from '../shared/dateUtils';
 import { normalizeCoordinates, normalizePlaceAndAddress } from '../shared/locationUtils';
+import {
+  expandRecurringEventsForRange,
+  normalizeRecurrenceRule,
+  parseOccurrenceIdentity,
+  RECURRENCE_OCCURRENCE_SEP,
+  resolveMasterEventId,
+} from '../shared/recurrenceUtils';
 import {
   convertLocalSlotToEventZone,
   detectBrowserTimeZone,
@@ -22,6 +36,7 @@ import {
   projectEventToViewerTimeZone,
   resolveEventTimeZone,
 } from '../shared/timeZoneUtils';
+import { computeSmartScheduleRebalance } from '../shared/autoScheduler';
 import { areShallowArraysEqual } from './useCalendarEventViewModels';
 
 export interface VaultEventsSyncConfig {
@@ -54,6 +69,7 @@ export interface ManualEventDraft {
   locationLng?: number;
   content?: string;
   checklist?: ChecklistItem[];
+  recurrence?: RecurrenceRule;
 }
 
 const STORAGE_KEY_EVENTS = 'ai_smart_calendar_events_v4';
@@ -67,6 +83,7 @@ function normalizeStoredEventList(raw: unknown): CalendarEventItem[] | null {
         Boolean(item) &&
         typeof item === 'object' &&
         typeof item.id === 'string' &&
+        !item.id.includes(RECURRENCE_OCCURRENCE_SEP) &&
         !LEGACY_REAL_NAME_EVENT_IDS.has(item.id) &&
         typeof item.title === 'string' &&
         typeof item.date === 'string' &&
@@ -79,13 +96,29 @@ function normalizeStoredEventList(raw: unknown): CalendarEventItem[] | null {
         ev.locationAddress
       );
       const { locationLat, locationLng } = normalizeCoordinates(ev.locationLat, ev.locationLng);
-      return {
+      const excludedDates = Array.isArray(ev.excludedDates)
+        ? ev.excludedDates.filter(
+            (d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)
+          )
+        : undefined;
+      const completedDates = Array.isArray(ev.completedDates)
+        ? ev.completedDates.filter(
+            (d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)
+          )
+        : undefined;
+      const cleaned: CalendarEventItem = {
         ...ev,
         location,
         locationAddress,
         locationLat,
         locationLng,
+        recurrence: normalizeRecurrenceRule(ev.recurrence),
+        excludedDates: excludedDates && excludedDates.length > 0 ? excludedDates : undefined,
+        completedDates: completedDates && completedDates.length > 0 ? completedDates : undefined,
       };
+      delete cleaned.recurrenceMasterId;
+      delete cleaned.occurrenceDate;
+      return cleaned;
     });
 }
 
@@ -180,8 +213,13 @@ export function useCalendarEvents({
 
   const prevSelectedDateEventsRef = useRef<CalendarEventItem[]>([]);
   const selectedDateEvents = useMemo(() => {
+    const expandedForDay = expandRecurringEventsForRange(
+      filteredEvents,
+      selectedDate,
+      selectedDate
+    );
     const matched: Array<{ event: CalendarEventItem; localStartTime: string }> = [];
-    for (const e of filteredEvents) {
+    for (const e of expandedForDay) {
       const timing = projectEventToViewerTimeZone(e, effectiveViewerZone);
       const spannedDates = getEventDateSpan(timing.localDate, e.endDate);
       if (spannedDates.includes(selectedDate)) {
@@ -252,9 +290,108 @@ export function useCalendarEvents({
 
   const handleMoveEventDate = useCallback(
     (eventId: string, targetDate: string, targetStartTime?: string, targetEndTime?: string) => {
-      const target = events.find((e) => e.id === eventId);
-      if (!target) return;
+      const { masterId, occurrenceDate } = parseOccurrenceIdentity(eventId);
+      const master = events.find((e) => e.id === masterId);
+      if (!master) return;
 
+      // 반복 일정 회차를 드래그 이동하면 해당 회차만 개별 일정으로 자동 분리(Detach)
+      if (master.recurrence) {
+        const occStartDate = occurrenceDate || master.date;
+        const spanOffsetDays =
+          master.endDate && master.endDate > master.date
+            ? Math.min(30, getDayDistance(master.date, master.endDate))
+            : 0;
+        const occEndDate = spanOffsetDays > 0 ? addDays(occStartDate, spanOffsetDays) : undefined;
+        const occInstance: CalendarEventItem = {
+          ...master,
+          date: occStartDate,
+          endDate: occEndDate,
+        };
+
+        const oldTiming = projectEventToViewerTimeZone(occInstance, effectiveViewerZone);
+        const sourceZone = resolveEventTimeZone(occInstance, effectiveViewerZone);
+
+        let nextDate = targetDate;
+        let nextStartTime = occInstance.startTime;
+        let nextEndTime = occInstance.endTime;
+
+        if (occInstance.isAllDay) {
+          nextDate = targetDate;
+        } else if (targetStartTime && targetEndTime) {
+          const converted = convertLocalSlotToEventZone(
+            targetDate,
+            targetStartTime,
+            targetEndTime,
+            effectiveViewerZone,
+            sourceZone
+          );
+          nextDate = converted.date;
+          nextStartTime = converted.startTime;
+          nextEndTime = converted.endTime;
+        } else {
+          const oldLocalDt = parseLocalDate(oldTiming.localDate);
+          const newLocalDt = parseLocalDate(targetDate);
+          const dayDelta = Math.round(
+            (newLocalDt.getTime() - oldLocalDt.getTime()) / 86_400_000
+          );
+          nextDate = dayDelta !== 0 ? addDays(occInstance.date, dayDelta) : occInstance.date;
+        }
+
+        if (
+          occInstance.date === nextDate &&
+          occInstance.startTime === nextStartTime &&
+          occInstance.endTime === nextEndTime
+        ) {
+          return;
+        }
+
+        const prevMasterSnapshot: CalendarEventItem = { ...master };
+        const nextExcluded = Array.from(new Set([...(master.excludedDates || []), occStartDate]));
+        const wasCompleted = (master.completedDates || []).includes(occStartDate);
+        const detachedEvent: CalendarEventItem = {
+          ...master,
+          id: `detached-evt-${Date.now()}`,
+          date: nextDate,
+          endDate: spanOffsetDays > 0 ? addDays(nextDate, spanOffsetDays) : undefined,
+          startTime: nextStartTime,
+          endTime: nextEndTime,
+          isCompleted: wasCompleted,
+          recurrence: undefined,
+          excludedDates: undefined,
+          completedDates: undefined,
+          recurrenceMasterId: undefined,
+          occurrenceDate: undefined,
+        };
+
+        setEvents((prev) => [
+          detachedEvent,
+          ...prev.map((e) =>
+            e.id === masterId ? { ...e, excludedDates: nextExcluded } : e
+          ),
+        ]);
+        setSelectedEvent((prev) =>
+          prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+            ? detachedEvent
+            : prev
+        );
+        jumpToDate(targetDate);
+
+        showToast(
+          `'${master.title}'의 ${occStartDate} 회차가 ${nextDate} 개별 일정으로 분리 이동되었습니다.`,
+          () => {
+            setEvents((curr) =>
+              curr
+                .filter((e) => e.id !== detachedEvent.id)
+                .map((e) => (e.id === masterId ? prevMasterSnapshot : e))
+            );
+            setSelectedEvent((curr) => (curr?.id === detachedEvent.id ? null : curr));
+            jumpToDate(oldTiming.localDate);
+          }
+        );
+        return;
+      }
+
+      const target = master;
       const oldDate = target.date;
       const oldStartTime = target.startTime;
       const oldEndTime = target.endTime;
@@ -297,13 +434,13 @@ export function useCalendarEvents({
 
       setEvents((prev) =>
         prev.map((e) =>
-          e.id === eventId
+          e.id === target.id
             ? { ...e, date: nextDate, startTime: nextStartTime, endTime: nextEndTime }
             : e
         )
       );
       setSelectedEvent((prev) =>
-        prev && prev.id === eventId
+        prev && prev.id === target.id
           ? { ...prev, date: nextDate, startTime: nextStartTime, endTime: nextEndTime }
           : prev
       );
@@ -321,13 +458,13 @@ export function useCalendarEvents({
       showToast(msg, () => {
         setEvents((prev) =>
           prev.map((e) =>
-            e.id === eventId
+            e.id === target.id
               ? { ...e, date: oldDate, startTime: oldStartTime, endTime: oldEndTime }
               : e
           )
         );
         setSelectedEvent((prev) =>
-          prev && prev.id === eventId
+          prev && prev.id === target.id
             ? { ...prev, date: oldDate, startTime: oldStartTime, endTime: oldEndTime }
             : prev
         );
@@ -338,30 +475,122 @@ export function useCalendarEvents({
   );
 
   const handleDeleteEvent = useCallback(
-    (eventId: string) => {
-      const target = events.find((e) => e.id === eventId);
+    (eventId: string, scope: 'single' | 'all' = 'all') => {
+      const { masterId, occurrenceDate } = parseOccurrenceIdentity(eventId);
+      const target = events.find((e) => e.id === masterId);
       if (!target) return;
 
-      setEvents((prev) => prev.filter((e) => e.id !== eventId));
-      setSelectedEvent((prev) => (prev?.id === eventId ? null : prev));
+      if (scope === 'single' && target.recurrence) {
+        const occDate =
+          occurrenceDate ||
+          (selectedEvent && resolveMasterEventId(selectedEvent.id) === masterId
+            ? selectedEvent.occurrenceDate || selectedEvent.date
+            : null) ||
+          target.date;
 
-      showToast(`'${target.title}' 일정이 삭제되었습니다.`, () => {
-        setEvents((current) => [...current, target]);
-      });
+        const prevSnapshot: CalendarEventItem = { ...target };
+        const nextExcluded = Array.from(new Set([...(target.excludedDates || []), occDate]));
+
+        setEvents((prev) =>
+          prev.map((e) => (e.id === masterId ? { ...e, excludedDates: nextExcluded } : e))
+        );
+        setSelectedEvent((prev) =>
+          prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+            ? null
+            : prev
+        );
+
+        showToast(`'${target.title}'의 ${occDate} 회차가 제외되었습니다.`, () => {
+          setEvents((current) =>
+            current.map((e) => (e.id === masterId ? prevSnapshot : e))
+          );
+        });
+        return;
+      }
+
+      setEvents((prev) => prev.filter((e) => e.id !== masterId));
+      setSelectedEvent((prev) =>
+        prev && resolveMasterEventId(prev.id) === masterId ? null : prev
+      );
+
+      showToast(
+        `'${target.title}'${target.recurrence ? ' 전체 반복 일정이' : ' 일정이'} 삭제되었습니다.`,
+        () => {
+          setEvents((current) => [target, ...current]);
+        }
+      );
     },
-    [events, showToast]
+    [events, selectedEvent, showToast]
   );
 
-  const handleToggleComplete = useCallback((eventId: string) => {
-    setEvents((prev) =>
-      prev.map((e) => (e.id === eventId ? { ...e, isCompleted: !e.isCompleted } : e))
-    );
-    setSelectedEvent((prev) =>
-      prev && prev.id === eventId ? { ...prev, isCompleted: !prev.isCompleted } : prev
-    );
-  }, []);
+  const handleToggleComplete = useCallback(
+    (eventId: string) => {
+      const { masterId, occurrenceDate } = parseOccurrenceIdentity(eventId);
+      const master = events.find((e) => e.id === masterId);
+      if (!master) return;
+
+      if (master.recurrence) {
+        const occDate =
+          occurrenceDate ||
+          (selectedEvent && resolveMasterEventId(selectedEvent.id) === masterId
+            ? selectedEvent.occurrenceDate || selectedEvent.date
+            : null) ||
+          master.date;
+
+        const completedSet = new Set(
+          master.completedDates || (master.isCompleted ? [master.date] : [])
+        );
+        const nextCompleted = !completedSet.has(occDate);
+        if (nextCompleted) {
+          completedSet.add(occDate);
+        } else {
+          completedSet.delete(occDate);
+        }
+        const nextCompletedDates = Array.from(completedSet);
+
+        setEvents((prev) =>
+          prev.map((e) =>
+            e.id === masterId
+              ? {
+                  ...e,
+                  isCompleted: occDate === e.date ? nextCompleted : e.isCompleted,
+                  completedDates:
+                    nextCompletedDates.length > 0 ? nextCompletedDates : undefined,
+                }
+              : e
+          )
+        );
+        setSelectedEvent((prev) => {
+          if (!prev) return prev;
+          const prevMasterId = resolveMasterEventId(prev.id);
+          const prevOccDate = prev.occurrenceDate || prev.date;
+          if (prev.id === eventId || (prevMasterId === masterId && prevOccDate === occDate)) {
+            return {
+              ...prev,
+              isCompleted: nextCompleted,
+              completedDates:
+                nextCompletedDates.length > 0 ? nextCompletedDates : undefined,
+            };
+          }
+          return prev;
+        });
+        return;
+      }
+
+      setEvents((prev) =>
+        prev.map((e) => (e.id === masterId ? { ...e, isCompleted: !e.isCompleted } : e))
+      );
+      setSelectedEvent((prev) =>
+        prev && resolveMasterEventId(prev.id) === masterId
+          ? { ...prev, isCompleted: !prev.isCompleted }
+          : prev
+      );
+    },
+    [events, selectedEvent]
+  );
 
   const handleToggleChecklistItem = useCallback((eventId: string, itemId: string) => {
+    const masterId = resolveMasterEventId(eventId);
     const updateChecklist = (e: CalendarEventItem): CalendarEventItem => {
       const updatedChecklist = (e.checklist || []).map((chk) =>
         chk.id === itemId ? { ...chk, done: !chk.done } : chk
@@ -369,13 +598,18 @@ export function useCalendarEvents({
       return { ...e, checklist: updatedChecklist };
     };
 
-    setEvents((prev) => prev.map((e) => (e.id === eventId ? updateChecklist(e) : e)));
-    setSelectedEvent((prev) => (prev && prev.id === eventId ? updateChecklist(prev) : prev));
+    setEvents((prev) => prev.map((e) => (e.id === masterId ? updateChecklist(e) : e)));
+    setSelectedEvent((prev) =>
+      prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+        ? updateChecklist(prev)
+        : prev
+    );
   }, []);
 
   const handleAddChecklistItem = useCallback((eventId: string, text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    const masterId = resolveMasterEventId(eventId);
     const newItem: ChecklistItem = {
       id: `chk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       text: trimmed,
@@ -385,38 +619,53 @@ export function useCalendarEvents({
       ...e,
       checklist: [...(e.checklist || []), newItem],
     });
-    setEvents((prev) => prev.map((e) => (e.id === eventId ? appendChecklist(e) : e)));
-    setSelectedEvent((prev) => (prev && prev.id === eventId ? appendChecklist(prev) : prev));
+    setEvents((prev) => prev.map((e) => (e.id === masterId ? appendChecklist(e) : e)));
+    setSelectedEvent((prev) =>
+      prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+        ? appendChecklist(prev)
+        : prev
+    );
   }, []);
 
   const handleUpdateChecklistItemText = useCallback(
     (eventId: string, itemId: string, text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
+      const masterId = resolveMasterEventId(eventId);
       const editChecklist = (e: CalendarEventItem): CalendarEventItem => ({
         ...e,
         checklist: (e.checklist || []).map((chk) =>
           chk.id === itemId ? { ...chk, text: trimmed } : chk
         ),
       });
-      setEvents((prev) => prev.map((e) => (e.id === eventId ? editChecklist(e) : e)));
-      setSelectedEvent((prev) => (prev && prev.id === eventId ? editChecklist(prev) : prev));
+      setEvents((prev) => prev.map((e) => (e.id === masterId ? editChecklist(e) : e)));
+      setSelectedEvent((prev) =>
+        prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+          ? editChecklist(prev)
+          : prev
+      );
     },
     []
   );
 
   const handleDeleteChecklistItem = useCallback((eventId: string, itemId: string) => {
+    const masterId = resolveMasterEventId(eventId);
     const removeChecklist = (e: CalendarEventItem): CalendarEventItem => {
       const next = (e.checklist || []).filter((chk) => chk.id !== itemId);
       return { ...e, checklist: next.length > 0 ? next : undefined };
     };
-    setEvents((prev) => prev.map((e) => (e.id === eventId ? removeChecklist(e) : e)));
-    setSelectedEvent((prev) => (prev && prev.id === eventId ? removeChecklist(prev) : prev));
+    setEvents((prev) => prev.map((e) => (e.id === masterId ? removeChecklist(e) : e)));
+    setSelectedEvent((prev) =>
+      prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+        ? removeChecklist(prev)
+        : prev
+    );
   }, []);
 
   const handleApplyAgentResponse = useCallback(
     (res: AgentCommandResponse) => {
       let newlyCreated: CalendarEventItem[] = [];
+      const prevEventsSnapshot = events;
 
       if (res.actionType === 'QUERY_EVENTS') {
         if (res.targetDate) {
@@ -425,6 +674,21 @@ export function useCalendarEvents({
         showToast(`${res.targetDate || selectedDate} 스케줄 브리핑을 불러왔습니다.`);
         return [];
       }
+
+      const updatePatches =
+        res.updatedEvents && res.updatedEvents.length > 0
+          ? res.updatedEvents
+          : res.updatedEvent?.id
+          ? [res.updatedEvent]
+          : [];
+
+      const deleteIdsRaw =
+        res.deletedEventIds && res.deletedEventIds.length > 0
+          ? res.deletedEventIds
+          : res.deletedEventId
+          ? [res.deletedEventId]
+          : [];
+      const deleteMasterSet = new Set(deleteIdsRaw.map((id) => resolveMasterEventId(id)));
 
       if (res.createdEvents && res.createdEvents.length > 0) {
         const withProj = res.createdEvents.map((ev) => {
@@ -442,6 +706,7 @@ export function useCalendarEvents({
             locationAddress,
             locationLat,
             locationLng,
+            recurrence: normalizeRecurrenceRule(ev.recurrence),
             projectId: ev.projectId || primaryProjectId,
           };
         });
@@ -459,46 +724,78 @@ export function useCalendarEvents({
         jumpToDate(firstLocalDate);
       }
 
-      if (res.updatedEvent?.id) {
-        const u = res.updatedEvent;
-        const normalizedUpdates = { ...u.updates };
-        if ('location' in normalizedUpdates || 'locationAddress' in normalizedUpdates) {
-          const { location, locationAddress } = normalizePlaceAndAddress(
-            normalizedUpdates.location,
-            normalizedUpdates.locationAddress
-          );
-          normalizedUpdates.location = location;
-          normalizedUpdates.locationAddress = locationAddress;
+      if (updatePatches.length > 0) {
+        const patchMap = new Map<string, Partial<CalendarEventItem>>();
+        for (const u of updatePatches) {
+          if (!u.id) continue;
+          const targetMasterId = resolveMasterEventId(u.id);
+          const normalizedUpdates: Partial<CalendarEventItem> = { ...u.updates };
+          if ('location' in normalizedUpdates || 'locationAddress' in normalizedUpdates) {
+            const { location, locationAddress } = normalizePlaceAndAddress(
+              normalizedUpdates.location,
+              normalizedUpdates.locationAddress
+            );
+            normalizedUpdates.location = location;
+            normalizedUpdates.locationAddress = locationAddress;
+          }
+          if ('locationLat' in normalizedUpdates || 'locationLng' in normalizedUpdates) {
+            const { locationLat, locationLng } = normalizeCoordinates(
+              normalizedUpdates.locationLat,
+              normalizedUpdates.locationLng
+            );
+            normalizedUpdates.locationLat = locationLat;
+            normalizedUpdates.locationLng = locationLng;
+          }
+          if ('recurrence' in normalizedUpdates) {
+            normalizedUpdates.recurrence = normalizeRecurrenceRule(normalizedUpdates.recurrence);
+          }
+          patchMap.set(targetMasterId, {
+            ...(patchMap.get(targetMasterId) || {}),
+            ...normalizedUpdates,
+          });
         }
-        if ('locationLat' in normalizedUpdates || 'locationLng' in normalizedUpdates) {
-          const { locationLat, locationLng } = normalizeCoordinates(
-            normalizedUpdates.locationLat,
-            normalizedUpdates.locationLng
+
+        if (patchMap.size > 0) {
+          setEvents((prev) =>
+            prev.map((e) => {
+              const patch = patchMap.get(e.id);
+              return patch ? { ...e, ...patch } : e;
+            })
           );
-          normalizedUpdates.locationLat = locationLat;
-          normalizedUpdates.locationLng = locationLng;
+          setSelectedEvent((prev) => {
+            if (!prev) return prev;
+            const patch = patchMap.get(resolveMasterEventId(prev.id));
+            return patch ? { ...prev, ...patch } : prev;
+          });
         }
-        setEvents((prev) =>
-          prev.map((e) => (e.id === u.id ? { ...e, ...normalizedUpdates } : e))
-        );
-        setSelectedEvent((prev) =>
-          prev && prev.id === u.id ? { ...prev, ...normalizedUpdates } : prev
-        );
       }
 
-      if (res.deletedEventId) {
-        setEvents((prev) => prev.filter((e) => e.id !== res.deletedEventId));
-        setSelectedEvent((prev) => (prev?.id === res.deletedEventId ? null : prev));
+      if (deleteMasterSet.size > 0) {
+        setEvents((prev) => prev.filter((e) => !deleteMasterSet.has(e.id)));
+        setSelectedEvent((prev) =>
+          prev && deleteMasterSet.has(resolveMasterEventId(prev.id)) ? null : prev
+        );
       }
 
       if (!newlyCreated.length && res.targetDate) {
         jumpToDate(res.targetDate);
       }
 
-      showToast(res.replyText || 'AI 요청이 반영되었습니다.');
+      const didMutate =
+        newlyCreated.length > 0 || updatePatches.length > 0 || deleteMasterSet.size > 0;
+
+      showToast(
+        res.replyText || 'AI 요청이 반영되었습니다.',
+        didMutate
+          ? () => {
+              setEvents(prevEventsSnapshot);
+              setSelectedEvent(null);
+            }
+          : undefined
+      );
       return newlyCreated;
     },
-    [effectiveViewerZone, jumpToDate, primaryProjectId, selectedDate, showToast]
+    [effectiveViewerZone, events, jumpToDate, primaryProjectId, selectedDate, showToast]
   );
 
   const handleCreateEventFromVenue = useCallback(
@@ -613,7 +910,8 @@ export function useCalendarEvents({
 
   const handleUpdateTimeSlot = useCallback(
     (eventId: string, localStartTime: string, localEndTime: string) => {
-      const target = events.find((e) => e.id === eventId);
+      const masterId = resolveMasterEventId(eventId);
+      const target = events.find((e) => e.id === masterId);
       if (!target) return;
 
       const timing = projectEventToViewerTimeZone(target, effectiveViewerZone);
@@ -627,7 +925,7 @@ export function useCalendarEvents({
 
       setEvents((prev) =>
         prev.map((e) =>
-          e.id === eventId
+          e.id === masterId
             ? {
                 ...e,
                 date: converted.date,
@@ -638,10 +936,10 @@ export function useCalendarEvents({
         )
       );
       setSelectedEvent((prev) =>
-        prev && prev.id === eventId
+        prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
           ? {
               ...prev,
-              date: converted.date,
+              date: prev.recurrenceMasterId ? prev.date : converted.date,
               startTime: converted.startTime,
               endTime: converted.endTime,
             }
@@ -657,12 +955,15 @@ export function useCalendarEvents({
 
   const handleUpdateEventTimeZone = useCallback(
     (eventId: string, nextTimeZone: string | undefined) => {
+      const masterId = resolveMasterEventId(eventId);
       const validTz = nextTimeZone && isValidTimeZone(nextTimeZone) ? nextTimeZone : undefined;
       setEvents((prev) =>
-        prev.map((e) => (e.id === eventId ? { ...e, timeZone: validTz } : e))
+        prev.map((e) => (e.id === masterId ? { ...e, timeZone: validTz } : e))
       );
       setSelectedEvent((prev) =>
-        prev && prev.id === eventId ? { ...prev, timeZone: validTz } : prev
+        prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+          ? { ...prev, timeZone: validTz }
+          : prev
       );
 
       const meta = getTimeZoneMeta(validTz || effectiveViewerZone);
@@ -673,10 +974,15 @@ export function useCalendarEvents({
 
   const handleUpdateEventProject = useCallback(
     (eventId: string, projectId: string | undefined) => {
+      const masterId = resolveMasterEventId(eventId);
       setEvents((prev) =>
-        prev.map((e) => (e.id === eventId ? { ...e, projectId } : e))
+        prev.map((e) => (e.id === masterId ? { ...e, projectId } : e))
       );
-      setSelectedEvent((prev) => (prev && prev.id === eventId ? { ...prev, projectId } : prev));
+      setSelectedEvent((prev) =>
+        prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
+          ? { ...prev, projectId }
+          : prev
+      );
       showToast('일정의 소속 프로젝트가 업데이트되었습니다.');
     },
     [showToast]
@@ -690,6 +996,7 @@ export function useCalendarEvents({
       rawLat?: number,
       rawLng?: number
     ) => {
+      const masterId = resolveMasterEventId(eventId);
       const { location, locationAddress } = normalizePlaceAndAddress(rawLocation, rawAddress);
       const { locationLat, locationLng } =
         location || locationAddress || (rawLat !== undefined && rawLng !== undefined)
@@ -697,13 +1004,13 @@ export function useCalendarEvents({
           : {};
       setEvents((prev) =>
         prev.map((e) =>
-          e.id === eventId
+          e.id === masterId
             ? { ...e, location, locationAddress, locationLat, locationLng }
             : e
         )
       );
       setSelectedEvent((prev) =>
-        prev && prev.id === eventId
+        prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
           ? { ...prev, location, locationAddress, locationLat, locationLng }
           : prev
       );
@@ -773,6 +1080,7 @@ export function useCalendarEvents({
         content: draft.content?.trim() ? draft.content.trim() : undefined,
         isCompleted: false,
         checklist: cleanedChecklist && cleanedChecklist.length > 0 ? cleanedChecklist : undefined,
+        recurrence: normalizeRecurrenceRule(draft.recurrence),
       };
 
       setEvents((prev) => [newEvent, ...prev]);
@@ -793,22 +1101,30 @@ export function useCalendarEvents({
 
   const handleUpdateEventFields = useCallback(
     (eventId: string, updates: Partial<CalendarEventItem>, toastLabel?: string) => {
-      const target = events.find((e) => e.id === eventId);
+      const { masterId, occurrenceDate, isVirtualOccurrence } = parseOccurrenceIdentity(eventId);
+      const target = events.find((e) => e.id === masterId);
       if (!target) return;
 
       const snapshot: CalendarEventItem = { ...target };
-      const merged: CalendarEventItem = { ...target, ...updates };
+      const sanitizedUpdates: Partial<CalendarEventItem> = { ...updates };
+
+      // 가상 회차에서 제목·시간·반복주기만 편집할 때 마스터 시작일(target.date)이 덮어써지지 않도록 보존
+      if (isVirtualOccurrence && sanitizedUpdates.date === occurrenceDate) {
+        delete sanitizedUpdates.date;
+      }
+
+      const merged: CalendarEventItem = { ...target, ...sanitizedUpdates };
 
       if (merged.title !== undefined) {
         merged.title = merged.title.trim() || target.title;
       }
 
-      if ('endDate' in updates) {
+      if ('endDate' in sanitizedUpdates) {
         merged.endDate =
-          updates.endDate &&
-          /^\d{4}-\d{2}-\d{2}$/.test(updates.endDate) &&
-          updates.endDate > merged.date
-            ? updates.endDate
+          sanitizedUpdates.endDate &&
+          /^\d{4}-\d{2}-\d{2}$/.test(sanitizedUpdates.endDate) &&
+          sanitizedUpdates.endDate > merged.date
+            ? sanitizedUpdates.endDate
             : undefined;
       } else if (merged.endDate && merged.endDate <= merged.date) {
         merged.endDate = undefined;
@@ -816,37 +1132,87 @@ export function useCalendarEvents({
 
       if (merged.isAllDay) {
         merged.timeZone = undefined;
-      } else if ('timeZone' in updates) {
+      } else if ('timeZone' in sanitizedUpdates) {
         merged.timeZone =
-          updates.timeZone && isValidTimeZone(updates.timeZone) ? updates.timeZone : undefined;
+          sanitizedUpdates.timeZone && isValidTimeZone(sanitizedUpdates.timeZone)
+            ? sanitizedUpdates.timeZone
+            : undefined;
       }
 
-      if ('content' in updates) {
-        merged.content = updates.content?.trim() ? updates.content.trim() : undefined;
+      if ('content' in sanitizedUpdates) {
+        merged.content = sanitizedUpdates.content?.trim()
+          ? sanitizedUpdates.content.trim()
+          : undefined;
       }
 
-      if ('location' in updates || 'locationAddress' in updates) {
+      if ('location' in sanitizedUpdates || 'locationAddress' in sanitizedUpdates) {
         const normLoc = normalizePlaceAndAddress(merged.location, merged.locationAddress);
         merged.location = normLoc.location;
         merged.locationAddress = normLoc.locationAddress;
       }
 
-      setEvents((prev) => prev.map((e) => (e.id === eventId ? merged : e)));
-      setSelectedEvent((prev) => (prev && prev.id === eventId ? merged : prev));
+      if ('recurrence' in sanitizedUpdates) {
+        merged.recurrence = normalizeRecurrenceRule(sanitizedUpdates.recurrence);
+        if (!merged.recurrence) {
+          merged.excludedDates = undefined;
+          merged.completedDates = undefined;
+        }
+      }
 
-      if (updates.date && updates.date !== target.date) {
+      setEvents((prev) => prev.map((e) => (e.id === masterId ? merged : e)));
+      setSelectedEvent((prev) => {
+        if (!prev) return prev;
+        if (prev.id === masterId) return merged;
+        if (prev.id === eventId || resolveMasterEventId(prev.id) === masterId) {
+          return {
+            ...merged,
+            id: merged.recurrence ? prev.id : merged.id,
+            date: merged.recurrence ? prev.date : merged.date,
+            recurrenceMasterId: merged.recurrence ? masterId : undefined,
+            occurrenceDate: merged.recurrence ? prev.occurrenceDate : undefined,
+          };
+        }
+        return prev;
+      });
+
+      if (sanitizedUpdates.date && sanitizedUpdates.date !== target.date) {
         const localJump = projectEventToViewerTimeZone(merged, effectiveViewerZone).localDate;
         jumpToDate(localJump);
       }
 
       if (toastLabel) {
         showToast(toastLabel, () => {
-          setEvents((curr) => curr.map((e) => (e.id === eventId ? snapshot : e)));
-          setSelectedEvent((curr) => (curr && curr.id === eventId ? snapshot : curr));
+          setEvents((curr) => curr.map((e) => (e.id === masterId ? snapshot : e)));
+          setSelectedEvent((curr) =>
+            curr && resolveMasterEventId(curr.id) === masterId ? snapshot : curr
+          );
         });
       }
     },
     [effectiveViewerZone, events, jumpToDate, showToast]
+  );
+
+  const handleImportEvents = useCallback(
+    (importedEvents: CalendarEventItem[], summaryMessage: string) => {
+      if (!importedEvents.length) {
+        showToast(summaryMessage);
+        return;
+      }
+      const importedIds = new Set(importedEvents.map((e) => e.id));
+      setEvents((prev) => [...importedEvents, ...prev]);
+      setSelectedEvent(importedEvents[0]);
+      const firstLocalDate = projectEventToViewerTimeZone(
+        importedEvents[0],
+        effectiveViewerZone
+      ).localDate;
+      jumpToDate(firstLocalDate);
+
+      showToast(summaryMessage, () => {
+        setEvents((curr) => curr.filter((e) => !importedIds.has(e.id)));
+        setSelectedEvent((curr) => (curr && importedIds.has(curr.id) ? null : curr));
+      });
+    },
+    [effectiveViewerZone, jumpToDate, showToast]
   );
 
   const handlePatchEventsLocations = useCallback(
@@ -860,9 +1226,9 @@ export function useCalendarEvents({
       }>
     ) => {
       if (!patches.length) return;
-      const byId = new Map(patches.map((p) => [p.id, p]));
+      const byId = new Map(patches.map((p) => [resolveMasterEventId(p.id), p]));
       const applyPatch = (ev: CalendarEventItem): CalendarEventItem => {
-        const p = byId.get(ev.id);
+        const p = byId.get(resolveMasterEventId(ev.id));
         if (!p) return ev;
         const norm = normalizePlaceAndAddress(
           p.location || ev.location,
@@ -882,7 +1248,9 @@ export function useCalendarEvents({
       };
 
       setEvents((prev) => prev.map(applyPatch));
-      setSelectedEvent((prev) => (prev && byId.has(prev.id) ? applyPatch(prev) : prev));
+      setSelectedEvent((prev) =>
+        prev && byId.has(resolveMasterEventId(prev.id)) ? applyPatch(prev) : prev
+      );
     },
     []
   );
@@ -895,6 +1263,102 @@ export function useCalendarEvents({
       prev && prev.projectId === deletedProjectId ? { ...prev, projectId: undefined } : prev
     );
   }, []);
+
+  const handleAutoRebalanceSchedule = useCallback(
+    (scopeDate?: string) => {
+      const activeProjectFilterIds =
+        selectedProjectIds && selectedProjectIds.length > 0
+          ? selectedProjectIds
+          : selectedProjectId && selectedProjectId !== 'all'
+          ? [selectedProjectId]
+          : undefined;
+
+      const result = computeSmartScheduleRebalance(events, {
+        viewerTimeZone: effectiveViewerZone,
+        todayDateStr: getTodayDateString(),
+        scopeDate,
+        projectIds: activeProjectFilterIds,
+        includeOverdue: true,
+      });
+
+      if (result.patches.length === 0) {
+        showToast(result.summaryMessage);
+        return result;
+      }
+
+      const patchMap = new Map(result.patches.map((p) => [p.id, p]));
+
+      setEvents((prev) =>
+        prev.map((ev) => {
+          const patch = patchMap.get(ev.id);
+          if (!patch) return ev;
+          return {
+            ...ev,
+            date: patch.after.date,
+            endDate: patch.after.endDate,
+            startTime: patch.after.startTime,
+            endTime: patch.after.endTime,
+          };
+        })
+      );
+
+      setSelectedEvent((prev) => {
+        if (!prev) return prev;
+        const patch = patchMap.get(resolveMasterEventId(prev.id));
+        if (!patch) return prev;
+        return {
+          ...prev,
+          date: patch.after.date,
+          endDate: patch.after.endDate,
+          startTime: patch.after.startTime,
+          endTime: patch.after.endTime,
+        };
+      });
+
+      const firstPatched = events.find((e) => patchMap.has(e.id));
+      if (scopeDate) {
+        jumpToDate(scopeDate);
+      } else if (firstPatched) {
+        const p = patchMap.get(firstPatched.id)!;
+        const projected = projectEventToViewerTimeZone(
+          { ...firstPatched, ...p.after },
+          effectiveViewerZone
+        );
+        jumpToDate(projected.localDate);
+      }
+
+      showToast(result.summaryMessage, () => {
+        setEvents((curr) =>
+          curr.map((ev) => {
+            const patch = patchMap.get(ev.id);
+            if (!patch) return ev;
+            return {
+              ...ev,
+              date: patch.before.date,
+              endDate: patch.before.endDate,
+              startTime: patch.before.startTime,
+              endTime: patch.before.endTime,
+            };
+          })
+        );
+        setSelectedEvent((curr) => {
+          if (!curr) return curr;
+          const patch = patchMap.get(resolveMasterEventId(curr.id));
+          if (!patch) return curr;
+          return {
+            ...curr,
+            date: patch.before.date,
+            endDate: patch.before.endDate,
+            startTime: patch.before.startTime,
+            endTime: patch.before.endTime,
+          };
+        });
+      });
+
+      return result;
+    },
+    [effectiveViewerZone, events, jumpToDate, selectedProjectId, selectedProjectIds, showToast]
+  );
 
   return {
     events,
@@ -922,6 +1386,7 @@ export function useCalendarEvents({
     handleUpdateEventLocation,
     handleCreateManualEvent,
     handleUpdateEventFields,
+    handleImportEvents,
     handlePatchEventsLocations,
     clearProjectAssociation,
     handleDeleteEvent,
@@ -933,5 +1398,6 @@ export function useCalendarEvents({
     handleApplyAgentResponse,
     handleCreateEventFromVenue,
     handleCreateEventFromGroundedSuggestion,
+    handleAutoRebalanceSchedule,
   };
 }

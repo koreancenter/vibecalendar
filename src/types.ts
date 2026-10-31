@@ -6,6 +6,16 @@ export type CalendarCategory =
   | '행사·세미나'
   | '기타';
 
+export type CalendarViewMode = 'month' | 'week' | 'agenda' | 'ops';
+
+export type RecurrenceFrequency = 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly';
+
+export interface RecurrenceRule {
+  frequency: RecurrenceFrequency;
+  until?: string; // YYYY-MM-DD (포함)
+  count?: number; // 총 반복 횟수 상한
+}
+
 export type ProjectStatus = 'active' | 'planning' | 'on_hold' | 'completed';
 
 export interface ProjectItem {
@@ -46,6 +56,11 @@ export interface CalendarEventItem {
   content?: string;
   isCompleted?: boolean;
   checklist?: ChecklistItem[];
+  recurrence?: RecurrenceRule;
+  excludedDates?: string[]; // 반복 일정 중 개별 제외된 회차 날짜(YYYY-MM-DD)
+  completedDates?: string[]; // 반복 일정 중 개별 완료 처리된 회차 날짜(YYYY-MM-DD)
+  recurrenceMasterId?: string; // 가상 전개된 반복 회차의 원본 마스터 일정 ID
+  occurrenceDate?: string; // 가상 전개된 회차의 기준 시작일(YYYY-MM-DD)
   isSample?: boolean;
 }
 
@@ -115,6 +130,13 @@ export interface FreeTimeSlot {
   label?: string;
 }
 
+export interface EventUpdatePatch {
+  id: string;
+  targetTitle: string;
+  updates: Partial<CalendarEventItem>;
+  diffSummary: string;
+}
+
 export interface AgentCommandResponse {
   success: boolean;
   actionType: AgentActionType;
@@ -128,13 +150,10 @@ export interface AgentCommandResponse {
   groundedSuggestions?: GroundedDateSuggestion[];
   groundingSources?: GroundingWebSource[];
   searchQueries?: string[];
-  updatedEvent?: {
-    id: string;
-    targetTitle: string;
-    updates: Partial<CalendarEventItem>;
-    diffSummary: string;
-  } | null;
+  updatedEvent?: EventUpdatePatch | null;
+  updatedEvents?: EventUpdatePatch[];
   deletedEventId?: string | null;
+  deletedEventIds?: string[];
   suggestedPrompts?: string[];
   conflictWarning?: {
     hasConflict: boolean;

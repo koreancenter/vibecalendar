@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Fingerprint, Loader2, Lock, LockOpen, Shield, X } from 'lucide-react';
+import { Bell, Fingerprint, Loader2, Lock, LockOpen, Shield, X } from 'lucide-react';
 import {
   AutoLockMinutesOption,
   PinLengthOption,
 } from '../../utils/vaultCrypto';
 import { BiometricUserCancelledError } from '../../utils/webauthnBiometrics';
+import { ReminderLeadMinutes } from '../../hooks/useEventReminders';
+import { PWAInstallButton } from '../PWAInstallButton';
 import { LegalDrawerTab } from './LegalAndColophonDrawer';
 
 interface VaultControlMenuProps {
@@ -26,6 +28,9 @@ interface VaultControlMenuProps {
   hasSampleData?: boolean;
   onLoadSampleData?: () => void;
   onClearSampleData?: () => void;
+  reminderLeadMinutes?: ReminderLeadMinutes;
+  onChangeReminderLeadMinutes?: (lead: ReminderLeadMinutes) => void;
+  onPwaInstalled?: () => void;
 }
 
 export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
@@ -43,6 +48,9 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
   hasSampleData = false,
   onLoadSampleData,
   onClearSampleData,
+  reminderLeadMinutes = 0,
+  onChangeReminderLeadMinutes,
+  onPwaInstalled,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
@@ -332,6 +340,56 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
               </button>
             </div>
           )}
+
+          {onChangeReminderLeadMinutes && (
+            <div className="px-3.5 py-2.5 border-b border-white/[0.06] space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-neutral-400 flex items-center gap-1.5 whitespace-nowrap">
+                  <Bell className="w-3 h-3 text-neutral-400 shrink-0" />
+                  <span>임박 일정 로컬 알림</span>
+                </span>
+                <span className="text-[10.5px] font-mono text-neutral-500 tabular-nums whitespace-nowrap">
+                  {reminderLeadMinutes === 0 ? '꺼짐' : `${reminderLeadMinutes}분 전`}
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                {(
+                  [
+                    { value: 0, label: '꺼짐' },
+                    { value: 10, label: '10분' },
+                    { value: 15, label: '15분' },
+                    { value: 30, label: '30분' },
+                  ] as const
+                ).map((opt) => {
+                  const selected = reminderLeadMinutes === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => onChangeReminderLeadMinutes(opt.value)}
+                      className={`py-1 rounded-md text-[11px] tabular-nums transition-colors duration-150 cursor-pointer whitespace-nowrap ${
+                        selected
+                          ? 'bg-white/[0.12] text-white font-medium'
+                          : 'text-neutral-500 hover:text-neutral-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="px-1.5 py-1 border-b border-white/[0.06] empty:hidden">
+            <PWAInstallButton
+              variant="menu"
+              onInstalled={() => {
+                setIsOpen(false);
+                onPwaInstalled?.();
+              }}
+            />
+          </div>
 
           {(onLoadSampleData || (hasSampleData && onClearSampleData)) && (
             <div className="py-1 border-b border-white/[0.06]">

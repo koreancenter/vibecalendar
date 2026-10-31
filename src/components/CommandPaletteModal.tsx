@@ -1,16 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bell,
   Calendar,
   CornerDownLeft,
+  Database,
+  Download,
   FolderKanban,
+  Globe2,
+  ListChecks,
   Lock,
   MapPin,
   PanelLeft,
   Plus,
   Search,
+  Sparkles,
+  Upload,
+  Wand2,
   X,
 } from 'lucide-react';
-import { CalendarEventItem, ProjectItem } from '../types';
+import { CalendarEventItem, CalendarViewMode, ProjectItem } from '../types';
+import { ReminderLeadMinutes } from '../hooks/useEventReminders';
 import { resolveEventLuxuryTheme } from '../utils/eventTheme';
 
 interface CommandPaletteModalProps {
@@ -18,7 +27,7 @@ interface CommandPaletteModalProps {
   events: CalendarEventItem[];
   projects: ProjectItem[];
   selectedProjectId: string | 'all';
-  viewMode: 'month' | 'week' | 'agenda';
+  viewMode: CalendarViewMode;
   isSidebarOpen: boolean;
   isVaultEncrypted: boolean;
   onClose: () => void;
@@ -26,10 +35,20 @@ interface CommandPaletteModalProps {
   onSelectProject: (projectId: string | 'all') => void;
   onOpenCreateEvent: (prefillTitle?: string) => void;
   onOpenCreateProject: () => void;
-  onChangeViewMode: (mode: 'month' | 'week' | 'agenda') => void;
+  onChangeViewMode: (mode: CalendarViewMode) => void;
   onToday: () => void;
   onToggleSidebar: () => void;
   onLockVault: () => void;
+  onTriggerReverseMilestones?: () => void;
+  onTriggerImportIcs?: () => void;
+  onExportWorkspaceJson?: () => void;
+  onAutoRebalance?: () => void;
+  hasDualTimeZone?: boolean;
+  onToggleDualTimeZone?: () => void;
+  reminderLeadMinutes?: ReminderLeadMinutes;
+  onChangeReminderLeadMinutes?: (lead: ReminderLeadMinutes) => void;
+  canInstallPwa?: boolean;
+  onInstallPwa?: () => void;
 }
 
 interface PaletteItem {
@@ -60,6 +79,16 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onToday,
   onToggleSidebar,
   onLockVault,
+  onTriggerReverseMilestones,
+  onTriggerImportIcs,
+  onExportWorkspaceJson,
+  onAutoRebalance,
+  hasDualTimeZone = false,
+  onToggleDualTimeZone,
+  reminderLeadMinutes = 0,
+  onChangeReminderLeadMinutes,
+  canInstallPwa = false,
+  onInstallPwa,
 }) => {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -163,6 +192,71 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         },
       },
       {
+        id: 'act-view-ops',
+        section: 'action',
+        title: '공정 런시트 · 준비 보드 뷰 전환',
+        subtitle: viewMode === 'ops' ? '현재 활성 뷰' : 'D-Day 역산 · 기한 경과 · 체크리스트 총괄',
+        shortcut: 'O',
+        keywords: '공정 런시트 보드 준비 ops runsheet kanban d-day',
+        icon: <ListChecks className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+        onExecute: () => {
+          onClose();
+          onChangeViewMode('ops');
+        },
+      },
+      ...(onAutoRebalance
+        ? [
+            {
+              id: 'act-auto-rebalance',
+              section: 'action' as const,
+              title: '시간 충돌 · 지연 공정 자동 재배치',
+              subtitle: '겹치거나 기한이 지난 미완료 공정을 업무 시간 빈 슬롯으로 1클릭 정렬',
+              keywords: '자동 재배치 충돌 해결 지연 공정 리밸런싱 auto rebalance schedule conflict',
+              icon: <Wand2 className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onAutoRebalance();
+              },
+            },
+          ]
+        : []),
+      ...(onToggleDualTimeZone
+        ? [
+            {
+              id: 'act-toggle-dual-tz',
+              section: 'action' as const,
+              title: hasDualTimeZone
+                ? '글로벌 보조 시간대(듀얼 타임라인 축) 해제'
+                : '글로벌 보조 시간대(듀얼 타임라인 축) 켜기',
+              subtitle: hasDualTimeZone
+                ? '주간·일간 단일 로컬 시간축으로 복귀'
+                : '주간·일간 타임라인 좌측에 현지 + 글로벌 보조 시각 병렬 표시',
+              keywords: '타임존 시간대 듀얼 글로벌 보조 timezone dual utc gmt',
+              icon: <Globe2 className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onToggleDualTimeZone();
+              },
+            },
+          ]
+        : []),
+      ...(onTriggerReverseMilestones
+        ? [
+            {
+              id: 'act-ai-reverse-milestones',
+              section: 'action' as const,
+              title: 'D-Day 역산 공정 AI 자동 설계',
+              subtitle: '개최일 기준으로 사전 준비 마일스톤과 체크리스트 일괄 생성',
+              keywords: 'd-day 역산 공정 설계 마일스톤 체크리스트 ai reverse milestone',
+              icon: <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onTriggerReverseMilestones();
+              },
+            },
+          ]
+        : []),
+      {
         id: 'act-new-project',
         section: 'action',
         title: '새 행사 프로젝트 생성',
@@ -174,6 +268,75 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onOpenCreateProject();
         },
       },
+      ...(onTriggerImportIcs
+        ? [
+            {
+              id: 'act-import-ics',
+              section: 'action' as const,
+              title: '표준 캘린더(.ics) 파일 가져오기',
+              subtitle: 'Google · Apple · Outlook 내보내기 일정 일괄 등록',
+              keywords: 'ics ical 가져오기 import 캘린더 파일 업로드',
+              icon: <Upload className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onTriggerImportIcs();
+              },
+            },
+          ]
+        : []),
+      ...(onExportWorkspaceJson
+        ? [
+            {
+              id: 'act-export-json',
+              section: 'action' as const,
+              title: '워크스페이스 백업(.json) 다운로드',
+              subtitle: '프로젝트 및 전체 일정을 무손실 백업 파일로 저장',
+              keywords: '백업 json 저장 내보내기 backup export',
+              icon: <Database className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onExportWorkspaceJson();
+              },
+            },
+          ]
+        : []),
+      ...(onChangeReminderLeadMinutes
+        ? [
+            {
+              id: 'act-cycle-reminder',
+              section: 'action' as const,
+              title: '임박 일정 로컬 알림 전환',
+              subtitle: `현재 ${
+                reminderLeadMinutes === 0 ? '꺼짐' : `${reminderLeadMinutes}분 전 알림`
+              } · 실행 시 10분 / 15분 / 30분 / 꺼짐 순환`,
+              keywords: '알림 리마인더 푸시 notification reminder alert 10분 15분 30분',
+              icon: <Bell className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                const order: ReminderLeadMinutes[] = [0, 10, 15, 30];
+                const idx = order.indexOf(reminderLeadMinutes);
+                const next = order[(idx + 1) % order.length];
+                onClose();
+                onChangeReminderLeadMinutes(next);
+              },
+            },
+          ]
+        : []),
+      ...(canInstallPwa && onInstallPwa
+        ? [
+            {
+              id: 'act-install-pwa',
+              section: 'action' as const,
+              title: '현장 오프라인 앱(PWA) 설치',
+              subtitle: '네트워크 단절 시에도 런시트와 암호화 볼트를 독립 앱으로 열람',
+              keywords: 'pwa 앱 설치 오프라인 현장 install offline app',
+              icon: <Download className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onInstallPwa();
+              },
+            },
+          ]
+        : []),
       {
         id: 'act-toggle-sidebar',
         section: 'action',
@@ -308,6 +471,16 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     onLockVault,
     onSelectEvent,
     onSelectProject,
+    onTriggerReverseMilestones,
+    onTriggerImportIcs,
+    onExportWorkspaceJson,
+    onAutoRebalance,
+    hasDualTimeZone,
+    onToggleDualTimeZone,
+    reminderLeadMinutes,
+    onChangeReminderLeadMinutes,
+    canInstallPwa,
+    onInstallPwa,
   ]);
 
   useEffect(() => {
@@ -464,7 +637,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         {/* 하단 단축키 안내 헤어라인 */}
         <div className="h-8 px-4 bg-[#0f121a] border-t border-white/[0.06] flex items-center justify-between text-[10.5px] text-neutral-500 font-mono shrink-0">
           <span>↑↓ 이동 · Enter 실행</span>
-          <span className="hidden sm:inline">단축키: N 새 일정 · T 오늘 · M/W/D 뷰 전환</span>
+          <span className="hidden sm:inline">단축키: N 새 일정 · T 오늘 · M/W/D/O 뷰 전환</span>
         </div>
       </div>
     </div>

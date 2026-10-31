@@ -2,6 +2,10 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Plus, Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { getCalendarGrid, getEventDateSpan } from '../shared/dateUtils';
+import {
+  expandRecurringEventsForRange,
+  formatRecurrenceLabel,
+} from '../shared/recurrenceUtils';
 import { hasEventConflict } from '../shared/scheduleUtils';
 import {
   areShallowArraysEqual,
@@ -106,15 +110,23 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
     onCellDragStart: handleCellDragStartCallback,
   });
 
+  const expandedEvents = useMemo(
+    () =>
+      grid.length > 0
+        ? expandRecurringEventsForRange(events, grid[0].date, grid[grid.length - 1].date)
+        : events,
+    [events, grid]
+  );
+
   const { byEventId, projectThemesById, getViewModel } = useCalendarEventViewModels({
-    events,
+    events: expandedEvents,
     projects,
     viewerTimeZone,
   });
 
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEventItem[]>();
-    for (const ev of events) {
+    for (const ev of expandedEvents) {
       const timing = (byEventId.get(ev.id) ?? getViewModel(ev)).timing;
       const spanDates = getEventDateSpan(timing.localDate, ev.endDate);
       for (const cellDate of spanDates) {
@@ -136,7 +148,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
       });
     });
     return map;
-  }, [events, byEventId, getViewModel]);
+  }, [expandedEvents, byEventId, getViewModel]);
 
   const conflictingEventIds = useMemo(() => {
     const set = new Set<string>();
@@ -480,6 +492,15 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                           ? `${tooltipTiming.localStartTime} – ${tooltipTiming.localEndTime}`
                           : `${activeTooltipEvent.startTime} – ${activeTooltipEvent.endTime}`}
                       </span>
+
+                      {activeTooltipEvent.recurrence && (
+                        <>
+                          <span className="font-[360] text-white/38 tracking-[0.025em]">반복</span>
+                          <span className="font-[380] tabular-nums text-white/74 tracking-[0.02em] leading-[1.5] truncate">
+                            {formatRecurrenceLabel(activeTooltipEvent.recurrence)}
+                          </span>
+                        </>
+                      )}
 
                       {!activeTooltipEvent.isAllDay &&
                         tooltipTiming &&

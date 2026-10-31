@@ -6,6 +6,7 @@ import { AiChatSidebar } from './components/AiChatSidebar';
 import { MonthGridView } from './components/MonthGridView';
 import { WeekGridView } from './components/WeekGridView';
 import { DayAgendaView } from './components/DayAgendaView';
+import { OperationsRunsheetView } from './components/OperationsRunsheetView';
 import { EventDetailModal } from './components/EventDetailModal';
 import { EventComposerModal, EventComposerSeed } from './components/EventComposerModal';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
@@ -15,6 +16,7 @@ import { ProjectModal } from './components/ProjectModal';
 import { ProjectManagementModal } from './components/ProjectManagementModal';
 import { SharePassModal, ShareModalTarget } from './components/SharePassModal';
 import { SharedPassStandaloneView } from './components/SharedPassStandaloneView';
+import { PWAInstallButton, OfflineStatusBanner } from './components/PWAInstallButton';
 import { VaultIntroGate } from './components/vault/VaultIntroGate';
 import { VaultControlMenu } from './components/vault/VaultControlMenu';
 import {
@@ -29,15 +31,29 @@ import {
   useCalendarEventViewModels,
 } from './hooks/useCalendarEventViewModels';
 import { useTimeZonePreferences } from './hooks/useTimeZonePreferences';
-import { CalendarEventItem, ProjectItem } from './types';
+import { useEventReminders } from './hooks/useEventReminders';
+import { usePWAInstall } from './hooks/usePWAInstall';
+import { LUXURY_PROJECT_COLORS } from './constants/projects';
+import { CalendarEventItem, CalendarViewMode, ProjectItem } from './types';
 import { addDays } from './shared/dateUtils';
+import {
+  parseOccurrenceIdentity,
+  RECURRENCE_OCCURRENCE_SEP,
+  resolveMasterEventId,
+} from './shared/recurrenceUtils';
 import { hasEventConflict } from './shared/scheduleUtils';
 import {
   decodeSharePayload,
   extractShareTokenFromLocation,
   SharedPassPayload,
+  sharedEventToCalendarItem,
 } from './utils/shareCodec';
 import { getEmptyCalendarGuideText } from './utils/emptyStateGuide';
+import {
+  downloadWorkspaceBackupFile,
+  parseIcsContent,
+  parseWorkspaceBackupJson,
+} from './utils/icsImport';
 import {
   createSampleWorkspaceDataset,
   isSampleEventItem,
@@ -81,6 +97,11 @@ type AppGateState =
   | { mode: 'unlocked_browse'; sessionId: number }
   | { mode: 'unlocked_vault'; sessionId: number };
 
+interface PendingSharedImport {
+  payload: SharedPassPayload;
+  selectedSlotIndex?: number;
+}
+
 interface WorkspaceContentProps {
   isVaultEncrypted: boolean;
   isBiometricEnabled: boolean;
@@ -89,6 +110,8 @@ interface WorkspaceContentProps {
   onConsumeInitialVaultBundle?: () => void;
   initialToastNotice?: string | null;
   onConsumeToastNotice?: () => void;
+  pendingSharedImport?: PendingSharedImport | null;
+  onConsumePendingSharedImport?: () => void;
   autoLockMinutes: AutoLockMinutesOption;
   onChangeAutoLockMinutes: (minutes: AutoLockMinutesOption) => void;
   onToggleBiometrics: (enable: boolean) => Promise<void>;
@@ -112,6 +135,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   onConsumeInitialVaultBundle,
   initialToastNotice,
   onConsumeToastNotice,
+  pendingSharedImport,
+  onConsumePendingSharedImport,
   autoLockMinutes,
   onChangeAutoLockMinutes,
   onToggleBiometrics,
@@ -123,6 +148,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
 }) => {
   const { toastMessage, showToast, handleExecuteUndo, hasUndo } = useToast();
   const tzPrefs = useTimeZonePreferences();
+  const pwaInstall = usePWAInstall();
 
   useEffect(() => {
     if (initialToastNotice) {
@@ -234,6 +260,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     handleUpdateEventLocation,
     handleCreateManualEvent,
     handleUpdateEventFields,
+    handleImportEvents,
     handlePatchEventsLocations,
     clearProjectAssociation,
     handleDeleteEvent,
@@ -245,6 +272,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     handleApplyAgentResponse,
     handleCreateEventFromVenue,
     handleCreateEventFromGroundedSuggestion,
+    handleAutoRebalanceSchedule,
   } = useCalendarEvents({
     showToast,
     selectedProjectId,
@@ -252,6 +280,173 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     viewerTimeZone: tzPrefs.viewerTimeZone,
     vaultEventsConfig,
   });
+
+  const { reminderLeadMinutes, setReminderLeadMinutes } = useEventReminders({
+    events,
+    viewerTimeZone: tzPrefs.viewerTimeZone,
+    onInAppReminder: (msg) => showToast(msg),
+  });
+
+  const handleImportSharedPassPayload = useCallback(
+    (payload: SharedPassPayload, selectedSlotIndex?: number) => {
+      const prevProjects = projects;
+      const prevEvents = events;
+      const prevSelectedIds = selectedProjectIds;
+      const nowStamp = Date.now();
+
+      if (payload.kind === 'event' && payload.event) {
+        const baseItem = sharedEventToCalendarItem(payload.event);
+        const chosenSlot =
+          selectedSlotIndex !== undefined
+            ? payload.event.proposedSlots?.[selectedSlotIndex]
+            : undefined;
+
+        let targetProjectId: string | undefined;
+        let createdProject: ProjectItem | null = null;
+        const projNameTrimmed = payload.event.projectName?.trim();
+        if (projNameTrimmed) {
+          const existingProj = projects.find(
+            (p) => p.name.trim().toLowerCase() === projNameTrimmed.toLowerCase()
+          );
+          if (existingProj) {
+            targetProjectId = existingProj.id;
+          } else {
+            const palette =
+              LUXURY_PROJECT_COLORS[projects.length % LUXURY_PROJECT_COLORS.length];
+            createdProject = {
+              id: `proj-pass-${nowStamp}`,
+              name: projNameTrimmed,
+              color: palette.hex,
+              status: 'active',
+              createdAt: new Date().toISOString(),
+            };
+            targetProjectId = createdProject.id;
+          }
+        }
+
+        const importedEvent: CalendarEventItem = {
+          ...baseItem,
+          id: `pass-evt-${nowStamp}-${Math.random().toString(36).slice(2, 6)}`,
+          projectId: targetProjectId,
+          ...(chosenSlot
+            ? {
+                date: chosenSlot.date,
+                endDate: undefined,
+                startTime: chosenSlot.startTime,
+                endTime: chosenSlot.endTime,
+                isAllDay: false,
+              }
+            : {}),
+          checklist: baseItem.checklist?.map((chk, idx) => ({
+            ...chk,
+            id: `chk-pass-${nowStamp}-${idx}`,
+          })),
+        };
+
+        if (createdProject) {
+          setProjects((curr) => [...curr, createdProject!]);
+        }
+        setEvents((curr) => [...curr, importedEvent]);
+        setSelectedEvent(importedEvent);
+        jumpToDate(importedEvent.date);
+
+        const slotNote = chosenSlot
+          ? ` (${chosenSlot.date.slice(5)} ${chosenSlot.startTime} 확정 슬롯)`
+          : '';
+        showToast(
+          `브리핑 패스 일정 '${importedEvent.title}'${slotNote}을(를) 내 워크스페이스에 반영했습니다.`,
+          () => {
+            setProjects(prevProjects);
+            setEvents(prevEvents);
+            setSelectedProjectIds(prevSelectedIds);
+          }
+        );
+        return;
+      }
+
+      if (payload.kind === 'project' && payload.project) {
+        const pr = payload.project;
+        const existingProj = projects.find(
+          (p) =>
+            p.name.trim().toLowerCase() === pr.name.trim().toLowerCase() ||
+            (pr.code && p.code && p.code.trim().toLowerCase() === pr.code.trim().toLowerCase())
+        );
+
+        const palette =
+          LUXURY_PROJECT_COLORS[projects.length % LUXURY_PROJECT_COLORS.length];
+        const targetProject: ProjectItem = existingProj || {
+          id: `proj-pass-${nowStamp}`,
+          name: pr.name,
+          code: pr.code,
+          clientOrOrg: pr.clientOrOrg,
+          description: pr.description,
+          startDate: pr.startDate,
+          endDate: pr.endDate,
+          color: palette.hex,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+        };
+
+        const importedEvents: CalendarEventItem[] = pr.events.map((ev, idx) => {
+          const item = sharedEventToCalendarItem(ev);
+          return {
+            ...item,
+            id: `pass-evt-${nowStamp}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+            projectId: targetProject.id,
+            checklist: item.checklist?.map((chk, cIdx) => ({
+              ...chk,
+              id: `chk-pass-${nowStamp}-${idx}-${cIdx}`,
+            })),
+          };
+        });
+
+        if (!existingProj) {
+          setProjects((curr) => [...curr, targetProject]);
+        }
+        if (importedEvents.length > 0) {
+          setEvents((curr) => [...curr, ...importedEvents]);
+        }
+        setSelectedProjectId(targetProject.id);
+        setSelectedCategory('전체');
+        const anchorDate = importedEvents[0]?.date || pr.startDate;
+        if (anchorDate) {
+          jumpToDate(anchorDate);
+        }
+        if (importedEvents[0]) {
+          setSelectedEvent(importedEvents[0]);
+        }
+
+        showToast(
+          `공유 프로젝트 '${pr.name}' 및 런시트 일정 ${importedEvents.length}건을 내 워크스페이스에 반영했습니다.`,
+          () => {
+            setProjects(prevProjects);
+            setEvents(prevEvents);
+            setSelectedProjectIds(prevSelectedIds);
+          }
+        );
+      }
+    },
+    [
+      events,
+      jumpToDate,
+      projects,
+      selectedProjectIds,
+      setEvents,
+      setProjects,
+      setSelectedCategory,
+      setSelectedEvent,
+      setSelectedProjectId,
+      setSelectedProjectIds,
+      showToast,
+    ]
+  );
+
+  useEffect(() => {
+    if (!pendingSharedImport) return;
+    const queued = pendingSharedImport;
+    onConsumePendingSharedImport?.();
+    handleImportSharedPassPayload(queued.payload, queued.selectedSlotIndex);
+  }, [handleImportSharedPassPayload, onConsumePendingSharedImport, pendingSharedImport]);
 
   const workspaceViewModels = useCalendarEventViewModels({
     events,
@@ -342,10 +537,16 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   const [shareTarget, setShareTarget] = useState<ShareModalTarget | null>(null);
   const [previewSharedPayload, setPreviewSharedPayload] = useState<SharedPassPayload | null>(null);
 
-  const [viewMode, setViewMode] = useState<'month' | 'week' | 'agenda'>('month');
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [composerSeed, setComposerSeed] = useState<EventComposerSeed | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [externalPromptRequest, setExternalPromptRequest] = useState<{
+    id: number;
+    prompt: string;
+    autoSend?: boolean;
+  } | null>(null);
+  const paletteIcsInputRef = useRef<HTMLInputElement>(null);
 
   const [legalDrawer, setLegalDrawer] = useState<{
     isOpen: boolean;
@@ -504,7 +705,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   );
 
   const handlePrev = useCallback(() => {
-    if (viewMode === 'month') {
+    if (viewMode === 'month' || viewMode === 'ops') {
       handlePrevMonth();
       return;
     }
@@ -515,7 +716,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   }, [viewMode, handlePrevMonth, selectedDate, setSelectedDate, syncYearMonthFromDate]);
 
   const handleNext = useCallback(() => {
-    if (viewMode === 'month') {
+    if (viewMode === 'month' || viewMode === 'ops') {
       handleNextMonth();
       return;
     }
@@ -525,11 +726,140 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     syncYearMonthFromDate(newDate);
   }, [viewMode, handleNextMonth, selectedDate, setSelectedDate, syncYearMonthFromDate]);
 
+  const handleImportIcsFile = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const defaultProjId =
+          selectedProjectId && selectedProjectId !== 'all'
+            ? selectedProjectId
+            : selectedProjectIds.length === 1
+            ? selectedProjectIds[0]
+            : undefined;
+
+        const parsed = parseIcsContent(text, {
+          existingEvents: events,
+          defaultProjectId: defaultProjId,
+          viewerTimeZone: tzPrefs.viewerTimeZone,
+        });
+
+        if (parsed.events.length === 0) {
+          showToast(
+            parsed.skippedDuplicates > 0
+              ? `중복 일정 ${parsed.skippedDuplicates}건을 제외하여 새로 추가할 일정이 없습니다.`
+              : '파일에서 가져올 수 있는 표준 일정(VEVENT)을 찾지 못했습니다.'
+          );
+          return;
+        }
+
+        const dupSuffix =
+          parsed.skippedDuplicates > 0 ? ` (중복 ${parsed.skippedDuplicates}건 제외)` : '';
+        handleImportEvents(
+          parsed.events,
+          `'${file.name}'에서 일정 ${parsed.events.length}건을 가져왔습니다.${dupSuffix}`
+        );
+      } catch (err: unknown) {
+        showToast(
+          err instanceof Error && err.message
+            ? err.message
+            : 'ICS 일정 파일을 읽는 중 오류가 발생했습니다.'
+        );
+      }
+    },
+    [events, handleImportEvents, selectedProjectId, selectedProjectIds, showToast, tzPrefs.viewerTimeZone]
+  );
+
+  const handleExportWorkspaceJson = useCallback(() => {
+    downloadWorkspaceBackupFile(events, projects);
+    showToast(
+      `프로젝트 ${projects.length}개 · 일정 ${events.length}건 통합 백업(.json) 파일이 다운로드되었습니다.`
+    );
+  }, [events, projects, showToast]);
+
+  const handleImportWorkspaceJsonFile = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const restored = parseWorkspaceBackupJson(text);
+        const prevProjects = projects;
+        const prevEvents = events;
+        const prevSelectedIds = selectedProjectIds;
+
+        if (restored.projects.length > 0) {
+          setProjects(restored.projects);
+        }
+        setEvents(restored.events);
+        setSelectedProjectId('all');
+        setSelectedCategory('전체');
+        setSelectedEvent(restored.events[0] || null);
+        if (restored.events[0]?.date) {
+          jumpToDate(restored.events[0].date);
+        }
+
+        showToast(
+          `백업 파일에서 프로젝트 ${restored.projects.length}개 · 일정 ${restored.events.length}건을 복원했습니다.`,
+          () => {
+            setProjects(prevProjects);
+            setEvents(prevEvents);
+            setSelectedProjectIds(prevSelectedIds);
+          }
+        );
+      } catch (err: unknown) {
+        showToast(
+          err instanceof Error && err.message
+            ? err.message
+            : '백업 JSON 파일 복원 중 오류가 발생했습니다.'
+        );
+      }
+    },
+    [
+      events,
+      jumpToDate,
+      projects,
+      selectedProjectIds,
+      setEvents,
+      setProjects,
+      setSelectedCategory,
+      setSelectedEvent,
+      setSelectedProjectId,
+      setSelectedProjectIds,
+      showToast,
+    ]
+  );
+
+  const handleRequestReverseMilestones = useCallback(
+    (customPrompt?: string) => {
+      const activeProj =
+        selectedProjectId && selectedProjectId !== 'all'
+          ? projects.find((p) => p.id === selectedProjectId)
+          : selectedProjectIds.length === 1
+          ? projects.find((p) => p.id === selectedProjectIds[0])
+          : undefined;
+
+      const anchorDate = activeProj?.endDate || activeProj?.startDate || selectedDate;
+      const subjectLabel = activeProj?.name || '본 행사';
+      const resolvedPrompt =
+        customPrompt ||
+        `'${subjectLabel}' 개최일(${anchorDate})을 D-Day로 잡고 D-30, D-14, D-7, D-3, D-1 핵심 역산 준비 공정 일정과 각 단계별 사전 체크리스트를 캘린더에 일괄 설계해서 등록해 줘.`;
+
+      setIsSidebarOpen(true);
+      setExternalPromptRequest({
+        id: Date.now(),
+        prompt: resolvedPrompt,
+        autoSend: true,
+      });
+    },
+    [projects, selectedDate, selectedProjectId, selectedProjectIds]
+  );
+
   const [deleteModalState, setDeleteModalState] = useState<{
     isOpen: boolean;
     title: string;
     itemName: string;
     itemType: '일정' | '프로젝트';
+    isRecurringSeries?: boolean;
+    occurrenceDateLabel?: string;
+    onConfirmSingleOccurrence?: () => void;
     onConfirm: () => void;
   }>({
     isOpen: false,
@@ -541,20 +871,39 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
 
   const requestDeleteEvent = useCallback(
     (eventId: string) => {
-      const target = events.find((e) => e.id === eventId);
+      const { masterId, occurrenceDate } = parseOccurrenceIdentity(eventId);
+      const target = events.find((e) => e.id === masterId);
       if (!target) return;
+
+      const isRecurring = Boolean(target.recurrence);
+      const resolvedOccDate =
+        occurrenceDate ||
+        (selectedEvent && resolveMasterEventId(selectedEvent.id) === masterId
+          ? selectedEvent.occurrenceDate || selectedEvent.date
+          : undefined) ||
+        target.date;
 
       setDeleteModalState({
         isOpen: true,
-        title: '일정 삭제 확인',
+        title: isRecurring ? '반복 일정 삭제 확인' : '일정 삭제 확인',
         itemName: target.title,
         itemType: '일정',
+        isRecurringSeries: isRecurring,
+        occurrenceDateLabel: isRecurring ? resolvedOccDate : undefined,
+        onConfirmSingleOccurrence: isRecurring
+          ? () => {
+              handleDeleteEvent(
+                `${masterId}${RECURRENCE_OCCURRENCE_SEP}${resolvedOccDate}`,
+                'single'
+              );
+            }
+          : undefined,
         onConfirm: () => {
-          handleDeleteEvent(eventId);
+          handleDeleteEvent(masterId, 'all');
         },
       });
     },
-    [events, handleDeleteEvent]
+    [events, handleDeleteEvent, selectedEvent]
   );
 
   const requestDeleteProject = useCallback(
@@ -564,6 +913,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         title: '프로젝트 삭제 확인',
         itemName: project.name,
         itemType: '프로젝트',
+        isRecurringSeries: false,
+        occurrenceDateLabel: undefined,
+        onConfirmSingleOccurrence: undefined,
         onConfirm: () => {
           deleteProject(project.id);
           clearProjectAssociation(project.id);
@@ -620,7 +972,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
       const hasBlockingOverlay =
         Boolean(composerSeed) ||
         isCommandPaletteOpen ||
-        Boolean(selectedEvent && viewMode !== 'agenda') ||
+        Boolean(selectedEvent && viewMode !== 'agenda' && viewMode !== 'ops') ||
         isProjectModalOpen ||
         isProjectManagementOpen ||
         Boolean(shareTarget) ||
@@ -648,6 +1000,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
       } else if (lowerKey === 'd') {
         e.preventDefault();
         setViewMode('agenda');
+      } else if (lowerKey === 'o') {
+        e.preventDefault();
+        setViewMode('ops');
       }
     };
 
@@ -674,6 +1029,20 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   return (
     <CalendarEventViewModelsProvider value={workspaceViewModels}>
       <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0a0c10] text-neutral-200 font-sans antialiased">
+      <input
+        ref={paletteIcsInputRef}
+        type="file"
+        accept=".ics,text/calendar"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) {
+            void handleImportIcsFile(file);
+          }
+        }}
+      />
+
       {/* 1. 최상단 네비게이션 헤더 */}
       <TitleBar
         currentYear={currentYear}
@@ -687,6 +1056,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         onChangeViewMode={setViewMode}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onOpenCreateEvent={() => handleOpenCreateEvent()}
+        onImportIcsFile={(file) => void handleImportIcsFile(file)}
+        onExportWorkspaceJson={handleExportWorkspaceJson}
+        onImportWorkspaceJsonFile={(file) => void handleImportWorkspaceJsonFile(file)}
         selectedDate={selectedDate}
         events={filteredEvents}
         projects={projects}
@@ -694,61 +1066,104 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         selectedCategory={selectedCategory}
         timeZoneSlot={
           <TimeZoneControl
+            now={tzPrefs.now}
             viewerMeta={tzPrefs.viewerMeta}
             viewerClock={tzPrefs.viewerClock}
+            secondaryMeta={tzPrefs.secondaryMeta}
+            secondaryClock={tzPrefs.secondaryClock}
+            secondaryDiffLabel={tzPrefs.secondaryDiffLabel}
+            isManualPrimary={tzPrefs.isManualPrimary}
+            onSelectSecondaryTimeZone={(tz) => {
+              tzPrefs.setSecondaryTimeZone(tz);
+              showToast(
+                tz
+                  ? '글로벌 보조 시간대(듀얼 타임라인 축)가 활성화되었습니다.'
+                  : '보조 시간대 표시가 해제되었습니다.'
+              );
+            }}
+            onSelectPrimaryTimeZone={(tz) => {
+              tzPrefs.setManualViewerTimeZone(tz);
+              if (tz) {
+                showToast('기준 시간대가 수동 전환되었습니다.');
+              }
+            }}
+            onResetPrimaryToSystem={() => {
+              tzPrefs.resetViewerTimeZoneToSystem();
+              showToast('기기 현재 위치 시간대 자동 감지로 복원되었습니다.');
+            }}
+            onSwapTimeZones={() => {
+              tzPrefs.swapPrimaryAndSecondary();
+              showToast('기준 시간대와 보조 시간대를 맞바꿨습니다.');
+            }}
           />
         }
         vaultSlot={
-          <VaultControlMenu
-            isVaultEncrypted={isVaultEncrypted}
-            isBiometricEnabled={isBiometricEnabled}
-            isBiometricHardwareAvailable={isBiometricHardwareAvailable}
-            autoLockMinutes={autoLockMinutes}
-            onChangeAutoLockMinutes={(mins) => {
-              onChangeAutoLockMinutes(mins);
-              showToast(
-                mins === 0
-                  ? '자동 잠금이 해제되었습니다.'
-                  : `${mins}분 자리 비움 시 자동 잠금됩니다.`
-              );
-            }}
-            onToggleBiometrics={async (enable) => {
-              await onToggleBiometrics(enable);
-              showToast(
-                enable
-                  ? '생체 인증(Face ID · Touch ID · 지문) 빠른 잠금 해제가 활성화되었습니다.'
-                  : '생체 인증 잠금 해제가 해제되었습니다.'
-              );
-            }}
-            onLockNow={onLockNow}
-            onReturnToIntroGate={onReturnToIntroGate}
-            onSetupOrChangePin={async (newPin, pinLen, enableBioAfter) => {
-              await onSetupOrChangePin(
-                newPin,
-                pinLen,
-                {
+          <div className="flex items-center gap-1.5 shrink-0">
+            <PWAInstallButton
+              variant="toolbar"
+              onInstalled={() => showToast('오프라인 현장 앱 설치가 완료되었습니다.')}
+            />
+            <VaultControlMenu
+              isVaultEncrypted={isVaultEncrypted}
+              isBiometricEnabled={isBiometricEnabled}
+              isBiometricHardwareAvailable={isBiometricHardwareAvailable}
+              autoLockMinutes={autoLockMinutes}
+              onChangeAutoLockMinutes={(mins) => {
+                onChangeAutoLockMinutes(mins);
+                showToast(
+                  mins === 0
+                    ? '자동 잠금이 해제되었습니다.'
+                    : `${mins}분 자리 비움 시 자동 잠금됩니다.`
+                );
+              }}
+              onToggleBiometrics={async (enable) => {
+                await onToggleBiometrics(enable);
+                showToast(
+                  enable
+                    ? '생체 인증(Face ID · Touch ID · 지문) 빠른 잠금 해제가 활성화되었습니다.'
+                    : '생체 인증 잠금 해제가 해제되었습니다.'
+                );
+              }}
+              onLockNow={onLockNow}
+              onReturnToIntroGate={onReturnToIntroGate}
+              onSetupOrChangePin={async (newPin, pinLen, enableBioAfter) => {
+                await onSetupOrChangePin(
+                  newPin,
+                  pinLen,
+                  {
+                    events,
+                    projects,
+                    selectedProjectIds,
+                  },
+                  enableBioAfter
+                );
+                if (isVaultEncrypted) {
+                  showToast('볼트 PIN 번호가 안전하게 변경되었습니다.');
+                }
+              }}
+              onDisableVaultEncryption={() => {
+                onDisableVaultEncryption({
                   events,
                   projects,
                   selectedProjectIds,
-                },
-                enableBioAfter
-              );
-              if (isVaultEncrypted) {
-                showToast('볼트 PIN 번호가 안전하게 변경되었습니다.');
-              }
-            }}
-            onDisableVaultEncryption={() => {
-              onDisableVaultEncryption({
-                events,
-                projects,
-                selectedProjectIds,
-              });
-            }}
-            onOpenLegalDrawer={(tab) => setLegalDrawer({ isOpen: true, tab })}
-            hasSampleData={hasSampleData}
-            onLoadSampleData={handleLoadSampleData}
-            onClearSampleData={handleClearSampleData}
-          />
+                });
+              }}
+              onOpenLegalDrawer={(tab) => setLegalDrawer({ isOpen: true, tab })}
+              hasSampleData={hasSampleData}
+              onLoadSampleData={handleLoadSampleData}
+              onClearSampleData={handleClearSampleData}
+              reminderLeadMinutes={reminderLeadMinutes}
+              onChangeReminderLeadMinutes={(lead) => {
+                void setReminderLeadMinutes(lead);
+                showToast(
+                  lead === 0
+                    ? '임박 일정 로컬 알림이 해제되었습니다.'
+                    : `일정 시작 ${lead}분 전 로컬 알림이 활성화되었습니다.`
+                );
+              }}
+              onPwaInstalled={() => showToast('오프라인 현장 앱 설치가 완료되었습니다.')}
+            />
+          </div>
         }
         showToast={showToast}
       />
@@ -807,6 +1222,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
               projects={projects}
               selectedProjectId={selectedProjectId}
               selectedProjectIds={selectedProjectIds}
+              externalPromptRequest={externalPromptRequest}
+              onConsumeExternalPrompt={() => setExternalPromptRequest(null)}
             />
           </div>
         </div>
@@ -842,6 +1259,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 selectedEvent={selectedEvent}
                 viewerTimeZone={tzPrefs.viewerTimeZone}
                 viewerShortCode={tzPrefs.viewerMeta.shortCode}
+                secondaryTimeZone={tzPrefs.secondaryTimeZone}
+                secondaryShortCode={tzPrefs.secondaryMeta?.shortCode}
                 projects={projects}
                 comparedProjectIds={selectedProjectIds}
                 emptyGuideText={emptyGuideText}
@@ -862,6 +1281,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 events={selectedDateEvents}
                 selectedEvent={selectedEvent}
                 viewerTimeZone={tzPrefs.viewerTimeZone}
+                secondaryTimeZone={tzPrefs.secondaryTimeZone}
                 projects={projects}
                 comparedProjectIds={selectedProjectIds}
                 onUpdateProject={handleUpdateEventProject}
@@ -879,9 +1299,52 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 onMoveEventDate={handleMoveEventDate}
                 onQuickAiPromptForDate={handleQuickAiPromptForDate}
                 onShareEvent={handleShareEvent}
+                onAutoRebalanceDate={(date) => {
+                  handleAutoRebalanceSchedule(date);
+                }}
                 emptyGuideText={emptyGuideText}
                 isWorkspaceEmpty={isWorkspaceEmpty}
                 onLoadSampleData={handleLoadSampleData}
+              />
+            </div>
+          )}
+
+          {viewMode === 'ops' && (
+            <div className="flex-1 h-full overflow-hidden flex flex-col">
+              <OperationsRunsheetView
+                events={filteredEvents}
+                selectedDate={selectedDate}
+                selectedDateEvents={selectedDateEvents}
+                selectedEvent={selectedEvent}
+                viewerTimeZone={tzPrefs.viewerTimeZone}
+                projects={projects}
+                selectedProjectId={selectedProjectId}
+                comparedProjectIds={selectedProjectIds}
+                emptyGuideText={emptyGuideText}
+                isWorkspaceEmpty={isWorkspaceEmpty}
+                onLoadSampleData={handleLoadSampleData}
+                onSelectDate={(date) => {
+                  setSelectedDate(date);
+                  syncYearMonthFromDate(date);
+                }}
+                onSelectEvent={setSelectedEvent}
+                onDeleteEvent={requestDeleteEvent}
+                onToggleComplete={handleToggleComplete}
+                onToggleChecklistItem={handleToggleChecklistItem}
+                onUpdateProject={handleUpdateEventProject}
+                onUpdateTimeZone={handleUpdateEventTimeZone}
+                onUpdateLocation={handleUpdateEventLocation}
+                onUpdateEventFields={handleUpdateEventFields}
+                onAddChecklistItem={handleAddChecklistItem}
+                onUpdateChecklistItemText={handleUpdateChecklistItemText}
+                onDeleteChecklistItem={handleDeleteChecklistItem}
+                onOpenCreateEvent={(date) => handleOpenCreateEvent({ date })}
+                onShareEvent={handleShareEvent}
+                onQuickAiPromptForDate={handleQuickAiPromptForDate}
+                onRequestReverseMilestones={(prompt) => handleRequestReverseMilestones(prompt)}
+                onAutoRebalance={() => {
+                  handleAutoRebalanceSchedule();
+                }}
               />
             </div>
           )}
@@ -894,12 +1357,15 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         title={deleteModalState.title}
         itemName={deleteModalState.itemName}
         itemType={deleteModalState.itemType}
+        isRecurringSeries={deleteModalState.isRecurringSeries}
+        occurrenceDateLabel={deleteModalState.occurrenceDateLabel}
+        onConfirmSingleOccurrence={deleteModalState.onConfirmSingleOccurrence}
         onConfirm={deleteModalState.onConfirm}
         onClose={() => setDeleteModalState((prev) => ({ ...prev, isOpen: false }))}
       />
 
       {/* 4. 일정 상세 모달 */}
-      {viewMode !== 'agenda' && (
+      {viewMode !== 'agenda' && viewMode !== 'ops' && (
         <EventDetailModal
           event={selectedEvent}
           viewerTimeZone={tzPrefs.viewerTimeZone}
@@ -982,6 +1448,43 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
             onReturnToIntroGate();
           }
         }}
+        onTriggerReverseMilestones={() => handleRequestReverseMilestones()}
+        onTriggerImportIcs={() => paletteIcsInputRef.current?.click()}
+        onExportWorkspaceJson={handleExportWorkspaceJson}
+        onAutoRebalance={() => {
+          handleAutoRebalanceSchedule(viewMode === 'agenda' ? selectedDate : undefined);
+        }}
+        hasDualTimeZone={Boolean(tzPrefs.secondaryTimeZone)}
+        onToggleDualTimeZone={() => {
+          if (tzPrefs.secondaryTimeZone) {
+            tzPrefs.setSecondaryTimeZone(null);
+            showToast('보조 시간대 표시가 해제되었습니다.');
+          } else {
+            const fallbackSecondary =
+              tzPrefs.viewerTimeZone === 'UTC' ? 'Asia/Seoul' : 'UTC';
+            tzPrefs.setSecondaryTimeZone(fallbackSecondary);
+            showToast(
+              `글로벌 보조 시간대(${fallbackSecondary === 'UTC' ? 'UTC' : 'KST'}) 듀얼 축이 활성화되었습니다.`
+            );
+          }
+        }}
+        reminderLeadMinutes={reminderLeadMinutes}
+        onChangeReminderLeadMinutes={(lead) => {
+          void setReminderLeadMinutes(lead);
+          showToast(
+            lead === 0
+              ? '임박 일정 로컬 알림이 해제되었습니다.'
+              : `일정 시작 ${lead}분 전 로컬 알림이 활성화되었습니다.`
+          );
+        }}
+        canInstallPwa={!pwaInstall.isInstalled && pwaInstall.isInstallable}
+        onInstallPwa={() => {
+          void pwaInstall.install().then((accepted) => {
+            if (accepted) {
+              showToast('오프라인 현장 앱 설치가 완료되었습니다.');
+            }
+          });
+        }}
       />
 
       {/* 5. 프로젝트 등록/수정 모달 */}
@@ -1042,6 +1545,10 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           <SharedPassStandaloneView
             payload={previewSharedPayload}
             isPreviewMode={true}
+            onImportToWorkspace={(pl, slotIdx) => {
+              setPreviewSharedPayload(null);
+              handleImportSharedPassPayload(pl, slotIdx);
+            }}
             onExit={() => setPreviewSharedPayload(null)}
           />
         </div>
@@ -1078,6 +1585,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
 
 export default function App() {
   const [urlSharedPayload, setUrlSharedPayload] = useState<SharedPassPayload | null>(null);
+  const [pendingSharedImport, setPendingSharedImport] = useState<PendingSharedImport | null>(
+    null
+  );
   const [isDecodingShareUrl, setIsDecodingShareUrl] = useState<boolean>(() =>
     Boolean(extractShareTokenFromLocation())
   );
@@ -1213,6 +1723,22 @@ export default function App() {
     }
     setUrlSharedPayload(null);
   }, []);
+
+  const handleImportFromUrlSharePass = useCallback(
+    (payload: SharedPassPayload, selectedSlotIndex?: number) => {
+      handleExitUrlShareMode();
+      setPendingSharedImport({ payload, selectedSlotIndex });
+      if (gateStateRef.current.mode === 'onboarding') {
+        saveLegalConsent();
+        setBrowseSessionActive(true);
+        setGateState({
+          mode: 'unlocked_browse',
+          sessionId: Date.now(),
+        });
+      }
+    },
+    [handleExitUrlShareMode]
+  );
 
   const handlePersistEncryptedBundle = useCallback((bundle: VaultPlaintextBundle) => {
     if (!activeVaultSessionRef.current) return;
@@ -1494,54 +2020,71 @@ export default function App() {
 
   if (urlSharedPayload) {
     return (
-      <SharedPassStandaloneView
-        payload={urlSharedPayload}
-        isPreviewMode={false}
-        onExit={handleExitUrlShareMode}
-      />
+      <>
+        <SharedPassStandaloneView
+          payload={urlSharedPayload}
+          isPreviewMode={false}
+          onImportToWorkspace={handleImportFromUrlSharePass}
+          onExit={handleExitUrlShareMode}
+        />
+        <OfflineStatusBanner />
+      </>
     );
   }
 
   if (gateState.mode === 'onboarding' || gateState.mode === 'locked') {
     return (
-      <VaultIntroGate
-        mode={gateState.mode}
-        vaultPinLength={gateState.mode === 'locked' ? gateState.pinLength : 4}
-        isBiometricEnabled={gateState.mode === 'locked' ? isBiometricEnabled : false}
-        initialHasConsented={Boolean(readLegalConsent())}
-        onCreateVault={handleCreateVaultFromGate}
-        onUnlockVault={handleUnlockVaultFromGate}
-        onUnlockVaultWithBiometrics={handleUnlockVaultWithBiometricsFromGate}
-        onEnterBrowseWithoutLock={handleEnterBrowseWithoutLock}
-        onFactoryResetVault={handleFactoryResetVault}
-      />
+      <>
+        {pendingSharedImport && gateState.mode === 'locked' && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-xl bg-[#13161f]/95 border border-white/[0.12] text-xs text-neutral-200 shadow-2xl backdrop-blur-md whitespace-nowrap">
+            암호화 볼트 잠금을 해제하면 공유 브리핑 패스가 내 워크스페이스에 자동 반영됩니다.
+          </div>
+        )}
+        <VaultIntroGate
+          mode={gateState.mode}
+          vaultPinLength={gateState.mode === 'locked' ? gateState.pinLength : 4}
+          isBiometricEnabled={gateState.mode === 'locked' ? isBiometricEnabled : false}
+          initialHasConsented={Boolean(readLegalConsent())}
+          onCreateVault={handleCreateVaultFromGate}
+          onUnlockVault={handleUnlockVaultFromGate}
+          onUnlockVaultWithBiometrics={handleUnlockVaultWithBiometricsFromGate}
+          onEnterBrowseWithoutLock={handleEnterBrowseWithoutLock}
+          onFactoryResetVault={handleFactoryResetVault}
+        />
+        <OfflineStatusBanner />
+      </>
     );
   }
 
   return (
-    <WorkspaceContent
-      key={
-        gateState.mode === 'unlocked_vault'
-          ? `vault-${gateState.sessionId}`
-          : `browse-${gateState.sessionId}`
-      }
-      isVaultEncrypted={gateState.mode === 'unlocked_vault'}
-      isBiometricEnabled={isBiometricEnabled}
-      isBiometricHardwareAvailable={isBiometricHardwareAvailable}
-      getInitialVaultBundle={
-        gateState.mode === 'unlocked_vault' ? getInitialVaultBundle : undefined
-      }
-      onConsumeInitialVaultBundle={handleConsumeInitialVaultBundle}
-      initialToastNotice={transitionNotice}
-      onConsumeToastNotice={() => setTransitionNotice(null)}
-      autoLockMinutes={autoLockMinutes}
-      onChangeAutoLockMinutes={handleChangeAutoLockMinutes}
-      onToggleBiometrics={handleToggleBiometrics}
-      onPersistEncryptedBundle={handlePersistEncryptedBundle}
-      onLockNow={handleLockNow}
-      onReturnToIntroGate={handleReturnToIntroGate}
-      onSetupOrChangePin={handleSetupOrChangePinInWorkspace}
-      onDisableVaultEncryption={handleDisableVaultEncryptionInWorkspace}
-    />
+    <>
+      <WorkspaceContent
+        key={
+          gateState.mode === 'unlocked_vault'
+            ? `vault-${gateState.sessionId}`
+            : `browse-${gateState.sessionId}`
+        }
+        isVaultEncrypted={gateState.mode === 'unlocked_vault'}
+        isBiometricEnabled={isBiometricEnabled}
+        isBiometricHardwareAvailable={isBiometricHardwareAvailable}
+        getInitialVaultBundle={
+          gateState.mode === 'unlocked_vault' ? getInitialVaultBundle : undefined
+        }
+        onConsumeInitialVaultBundle={handleConsumeInitialVaultBundle}
+        initialToastNotice={transitionNotice}
+        onConsumeToastNotice={() => setTransitionNotice(null)}
+        pendingSharedImport={pendingSharedImport}
+        onConsumePendingSharedImport={() => setPendingSharedImport(null)}
+        autoLockMinutes={autoLockMinutes}
+        onChangeAutoLockMinutes={handleChangeAutoLockMinutes}
+        onToggleBiometrics={handleToggleBiometrics}
+        onPersistEncryptedBundle={handlePersistEncryptedBundle}
+        onLockNow={handleLockNow}
+        onReturnToIntroGate={handleReturnToIntroGate}
+        onSetupOrChangePin={handleSetupOrChangePinInWorkspace}
+        onDisableVaultEncryption={handleDisableVaultEncryptionInWorkspace}
+      />
+      <OfflineStatusBanner />
+    </>
   );
 }

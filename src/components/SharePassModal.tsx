@@ -11,9 +11,20 @@ import {
   X,
 } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
-import { formatKoreanDateWithDay } from '../shared/dateUtils';
+import { addDays, formatKoreanDateWithDay } from '../shared/dateUtils';
 import { formatCombinedLocation } from '../shared/locationUtils';
-import { getTimeZoneMeta } from '../shared/timeZoneUtils';
+import {
+  calculateFreeTimeSlots,
+  minutesToTime,
+  timeToMinutes,
+} from '../shared/scheduleUtils';
+import {
+  convertLocalSlotToEventZone,
+  getTimeZoneMeta,
+  projectEventToViewerTimeZone,
+  resolveEventTimeZone,
+  toViewerProjectedEvent,
+} from '../shared/timeZoneUtils';
 import {
   buildProjectSharePayload,
   buildSharePassUrl,
@@ -22,6 +33,7 @@ import {
   formatPassPlainText,
   ShareCardTheme,
   SharedPassPayload,
+  SharedProposedSlot,
 } from '../utils/shareCodec';
 import {
   canUseNativeShare,
@@ -57,6 +69,7 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
   const [senderNote, setSenderNote] = useState('');
   const [includeMemo, setIncludeMemo] = useState(false);
   const [includeChecklist, setIncludeChecklist] = useState(false);
+  const [includeProposedSlots, setIncludeProposedSlots] = useState(false);
   const [includeCompleted, setIncludeCompleted] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [copiedAction, setCopiedAction] = useState<string | null>(null);
@@ -66,6 +79,7 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
     setSenderNote('');
     setIncludeMemo(false);
     setIncludeChecklist(false);
+    setIncludeProposedSlots(false);
     setIncludeCompleted(true);
     setCopiedAction(null);
   }, [target]);
@@ -79,6 +93,72 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [target, onClose]);
 
+  const candidateProposedSlots = useMemo<SharedProposedSlot[]>(() => {
+    if (!target || target.kind !== 'event' || target.event.isAllDay) return [];
+    const ev = target.event;
+    const sourceTz = resolveEventTimeZone(ev, viewerTimeZone);
+    const projectedEv = projectEventToViewerTimeZone(ev, viewerTimeZone);
+    const startMin = timeToMinutes(projectedEv.localStartTime);
+    const endMin = timeToMinutes(projectedEv.localEndTime);
+    const duration = Math.max(30, endMin > startMin ? endMin - startMin : 60);
+
+    const results: SharedProposedSlot[] = [
+      {
+        date: ev.date,
+        startTime: ev.startTime,
+        endTime: ev.endTime,
+        label: '1순위 제안',
+      },
+    ];
+
+    const projectedPool = events
+      .filter((other) => other.id !== ev.id && !other.isAllDay)
+      .map((other) => toViewerProjectedEvent(other, viewerTimeZone));
+
+    for (let dayOffset = 0; dayOffset <= 2 && results.length < 3; dayOffset++) {
+      const checkLocalDate =
+        dayOffset === 0 ? projectedEv.localDate : addDays(projectedEv.localDate, dayOffset);
+      const dayEvents = projectedPool.filter((other) => other.date === checkLocalDate);
+      const gaps = calculateFreeTimeSlots(dayEvents, duration);
+
+      for (const gap of gaps) {
+        const gStart = timeToMinutes(gap.startTime);
+        const gEnd = timeToMinutes(gap.endTime);
+        for (
+          let candStart = gStart;
+          candStart + duration <= gEnd && results.length < 3;
+          candStart += 60
+        ) {
+          const candStartStr = minutesToTime(candStart);
+          const candEndStr = minutesToTime(candStart + duration);
+          const inSource = convertLocalSlotToEventZone(
+            checkLocalDate,
+            candStartStr,
+            candEndStr,
+            viewerTimeZone,
+            sourceTz
+          );
+          const duplicate = results.some(
+            (r) =>
+              r.date === inSource.date &&
+              r.startTime === inSource.startTime &&
+              r.endTime === inSource.endTime
+          );
+          if (!duplicate) {
+            results.push({
+              date: inSource.date,
+              startTime: inSource.startTime,
+              endTime: inSource.endTime,
+              label: dayOffset === 0 ? '당일 대안' : '익일 대안',
+            });
+          }
+        }
+      }
+    }
+
+    return results;
+  }, [target, events, viewerTimeZone]);
+
   const payload = useMemo<SharedPassPayload | null>(() => {
     if (!target) return null;
     if (target.kind === 'event') {
@@ -91,6 +171,7 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
         senderNote,
         includeMemo,
         includeChecklist,
+        proposedSlots: includeProposedSlots ? candidateProposedSlots : undefined,
       });
     }
     return buildProjectSharePayload({
@@ -111,6 +192,8 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
     senderNote,
     includeMemo,
     includeChecklist,
+    includeProposedSlots,
+    candidateProposedSlots,
     includeCompleted,
   ]);
 
@@ -498,6 +581,42 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
                         </div>
                       )}
 
+                      {ev.proposedSlots && ev.proposedSlots.length > 0 && (
+                        <div className="space-y-1.5">
+                          <span
+                            className={`text-[11px] font-medium block ${
+                              isEditorial ? 'text-slate-400' : 'text-neutral-400'
+                            }`}
+                          >
+                            후보 시간 제안 · {ev.proposedSlots.length}개 옵션
+                          </span>
+                          <div className="space-y-1">
+                            {ev.proposedSlots.map((slot, idx) => (
+                              <div
+                                key={`${slot.date}-${slot.startTime}-${idx}`}
+                                className={`text-xs font-mono tabular-nums flex items-center justify-between gap-2 ${
+                                  isEditorial ? 'text-slate-700' : 'text-neutral-200'
+                                }`}
+                              >
+                                <span>
+                                  #{idx + 1} {slot.date} {slot.startTime}–{slot.endTime}{' '}
+                                  {tzMeta.shortCode}
+                                </span>
+                                {slot.label && (
+                                  <span
+                                    className={`font-sans text-[11px] ${
+                                      isEditorial ? 'text-slate-400' : 'text-neutral-500'
+                                    }`}
+                                  >
+                                    {slot.label}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* 패스 푸터 */}
                       <div
                         className={`pt-3 border-t flex items-center justify-between text-[10px] ${
@@ -727,20 +846,41 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
                   </label>
 
                   {target.kind === 'event' ? (
-                    <label
-                      className={`flex items-center justify-between px-3 py-2.5 text-xs ${
-                        hasEventChecklist ? 'cursor-pointer' : 'opacity-45 cursor-not-allowed'
-                      }`}
-                    >
-                      <span className="text-neutral-200">체크리스트 포함</span>
-                      <input
-                        type="checkbox"
-                        disabled={!hasEventChecklist}
-                        checked={includeChecklist}
-                        onChange={(e) => setIncludeChecklist(e.target.checked)}
-                        className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
-                      />
-                    </label>
+                    <>
+                      <label
+                        className={`flex items-center justify-between px-3 py-2.5 text-xs ${
+                          hasEventChecklist ? 'cursor-pointer' : 'opacity-45 cursor-not-allowed'
+                        }`}
+                      >
+                        <span className="text-neutral-200">체크리스트 포함</span>
+                        <input
+                          type="checkbox"
+                          disabled={!hasEventChecklist}
+                          checked={includeChecklist}
+                          onChange={(e) => setIncludeChecklist(e.target.checked)}
+                          className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
+                        />
+                      </label>
+
+                      <label
+                        className={`flex items-center justify-between px-3 py-2.5 text-xs ${
+                          !target.event.isAllDay && candidateProposedSlots.length > 0
+                            ? 'cursor-pointer'
+                            : 'opacity-45 cursor-not-allowed'
+                        }`}
+                      >
+                        <span className="text-neutral-200">
+                          후보 시간 제안 포함 ({candidateProposedSlots.length}개 가용 슬롯)
+                        </span>
+                        <input
+                          type="checkbox"
+                          disabled={target.event.isAllDay || candidateProposedSlots.length === 0}
+                          checked={includeProposedSlots}
+                          onChange={(e) => setIncludeProposedSlots(e.target.checked)}
+                          className="w-4 h-4 accent-indigo-500 rounded cursor-pointer"
+                        />
+                      </label>
+                    </>
                   ) : (
                     <label className="flex items-center justify-between px-3 py-2.5 text-xs cursor-pointer">
                       <span className="text-neutral-200">완료된 일정 포함</span>

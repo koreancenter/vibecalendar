@@ -20,8 +20,14 @@ import {
   Search,
   Pencil,
   Check,
+  Repeat,
 } from 'lucide-react';
-import { CalendarCategory, CalendarEventItem, ProjectItem } from '../types';
+import {
+  CalendarCategory,
+  CalendarEventItem,
+  ProjectItem,
+  RecurrenceFrequency,
+} from '../types';
 import { CALENDAR_CATEGORIES } from '../constants/categories';
 import {
   detectBrowserTimeZone,
@@ -35,6 +41,7 @@ import {
   normalizeCoordinates,
   parseCoordinatePairFromString,
 } from '../shared/locationUtils';
+import { formatRecurrenceLabel, RECURRENCE_OPTIONS } from '../shared/recurrenceUtils';
 import { resolveEventLuxuryTheme } from '../utils/eventTheme';
 import { generateIcsContent, downloadIcsFile } from '../utils/icsExport';
 import { resolveLocationDetails } from '../services/agentApi';
@@ -117,6 +124,10 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
   const [isAllDayDraft, setIsAllDayDraft] = useState(event.isAllDay);
   const [startTimeDraft, setStartTimeDraft] = useState(event.startTime);
   const [endTimeDraft, setEndTimeDraft] = useState(event.endTime);
+  const [recurrenceFreqDraft, setRecurrenceFreqDraft] = useState<RecurrenceFrequency | 'none'>(
+    event.recurrence?.frequency || 'none'
+  );
+  const [recurrenceUntilDraft, setRecurrenceUntilDraft] = useState(event.recurrence?.until || '');
   const [coreError, setCoreError] = useState<string | null>(null);
 
   const [isEditingContent, setIsEditingContent] = useState(false);
@@ -152,6 +163,8 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
     setIsAllDayDraft(event.isAllDay);
     setStartTimeDraft(event.startTime);
     setEndTimeDraft(event.endTime);
+    setRecurrenceFreqDraft(event.recurrence?.frequency || 'none');
+    setRecurrenceUntilDraft(event.recurrence?.until || '');
     setCoreError(null);
   }, [
     event.id,
@@ -161,6 +174,8 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
     event.isAllDay,
     event.startTime,
     event.endTime,
+    event.recurrence?.frequency,
+    event.recurrence?.until,
   ]);
 
   useEffect(() => {
@@ -341,6 +356,10 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
       setCoreError('종료 시간은 시작 시간보다 늦어야 합니다.');
       return;
     }
+    if (recurrenceFreqDraft !== 'none' && recurrenceUntilDraft && recurrenceUntilDraft < dateDraft) {
+      setCoreError('반복 종료일은 시작일 이후여야 합니다.');
+      return;
+    }
     onUpdateEventFields(
       event.id,
       {
@@ -350,6 +369,15 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
         isAllDay: isAllDayDraft,
         startTime: startTimeDraft,
         endTime: endTimeDraft,
+        recurrence:
+          recurrenceFreqDraft !== 'none'
+            ? {
+                frequency: recurrenceFreqDraft,
+                ...(recurrenceUntilDraft && recurrenceUntilDraft >= dateDraft
+                  ? { until: recurrenceUntilDraft }
+                  : {}),
+              }
+            : undefined,
       },
       '일정 제목 및 일시가 수정되었습니다.'
     );
@@ -581,6 +609,45 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
               )}
             </div>
 
+            <div className="pt-2 border-t border-white/[0.06] grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
+                  <Repeat className="w-3 h-3 text-neutral-500 shrink-0" />
+                  <span>반복 주기</span>
+                </label>
+                <select
+                  value={recurrenceFreqDraft}
+                  onChange={(e) => {
+                    const nextVal = e.target.value as RecurrenceFrequency | 'none';
+                    setRecurrenceFreqDraft(nextVal);
+                    if (nextVal === 'none') {
+                      setRecurrenceUntilDraft('');
+                    }
+                  }}
+                  className="w-full h-8.5 px-2 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 outline-hidden cursor-pointer"
+                >
+                  {RECURRENCE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value} className="bg-[#12151e] text-neutral-100">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {recurrenceFreqDraft !== 'none' && (
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1">반복 종료일</label>
+                  <input
+                    type="date"
+                    min={dateDraft}
+                    value={recurrenceUntilDraft}
+                    onChange={(e) => setRecurrenceUntilDraft(e.target.value)}
+                    className="w-full h-8.5 px-2.5 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                  />
+                </div>
+              )}
+            </div>
+
             {coreError && <p className="text-[11px] text-rose-300">{coreError}</p>}
 
             <div className="flex items-center justify-end gap-1.5 pt-0.5">
@@ -593,6 +660,8 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                   setIsAllDayDraft(event.isAllDay);
                   setStartTimeDraft(event.startTime);
                   setEndTimeDraft(event.endTime);
+                  setRecurrenceFreqDraft(event.recurrence?.frequency || 'none');
+                  setRecurrenceUntilDraft(event.recurrence?.until || '');
                   setCoreError(null);
                   setIsEditingCore(false);
                 }}
@@ -689,6 +758,18 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                       {timing.sourceMeta.shortCode}
                     </span>
                   ))}
+
+                {event.recurrence && (
+                  <>
+                    <span className="text-neutral-600" aria-hidden="true">
+                      ·
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-neutral-300 font-sans whitespace-nowrap">
+                      <Repeat className="w-3 h-3 text-neutral-400 shrink-0" />
+                      <span>{formatRecurrenceLabel(event.recurrence)}</span>
+                    </span>
+                  </>
+                )}
               </div>
 
               {!event.isAllDay && timing.hasOffsetDiff && (

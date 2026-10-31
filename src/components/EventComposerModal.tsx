@@ -9,6 +9,7 @@ import {
   Loader2,
   MapPin,
   Plus,
+  Repeat,
   Search,
   X,
 } from 'lucide-react';
@@ -17,9 +18,11 @@ import {
   CalendarEventItem,
   ChecklistItem,
   ProjectItem,
+  RecurrenceFrequency,
 } from '../types';
 import { CALENDAR_CATEGORIES, CATEGORY_COLORS } from '../constants/categories';
 import { ManualEventDraft } from '../hooks/useCalendarEvents';
+import { RECURRENCE_OPTIONS } from '../shared/recurrenceUtils';
 import {
   detectBrowserTimeZone,
   GLOBAL_EVENT_TIMEZONES,
@@ -97,6 +100,8 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
   const [content, setContent] = useState('');
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [newCheckText, setNewCheckText] = useState('');
+  const [recurrenceFreq, setRecurrenceFreq] = useState<RecurrenceFrequency | 'none'>('none');
+  const [recurrenceUntil, setRecurrenceUntil] = useState('');
 
   const [isResolvingLoc, setIsResolvingLoc] = useState(false);
   const [locNotice, setLocNotice] = useState<string | null>(null);
@@ -124,6 +129,8 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
     setContent('');
     setChecklist([]);
     setNewCheckText('');
+    setRecurrenceFreq('none');
+    setRecurrenceUntil('');
     setIsResolvingLoc(false);
     setLocNotice(null);
     setFormError(null);
@@ -271,6 +278,10 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
       setFormError('종료 시간은 시작 시간보다 늦어야 합니다.');
       return;
     }
+    if (recurrenceFreq !== 'none' && recurrenceUntil && recurrenceUntil < date) {
+      setFormError('반복 종료일은 시작일 이후여야 합니다.');
+      return;
+    }
 
     const pendingChecks = newCheckText.trim()
       ? [
@@ -295,6 +306,13 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
       locationLng,
       content: content.trim() || undefined,
       checklist: pendingChecks.length > 0 ? pendingChecks : undefined,
+      recurrence:
+        recurrenceFreq !== 'none'
+          ? {
+              frequency: recurrenceFreq,
+              ...(recurrenceUntil && recurrenceUntil >= date ? { until: recurrenceUntil } : {}),
+            }
+          : undefined,
     });
     onClose();
   };
@@ -410,6 +428,9 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                     if (endDate && endDate < e.target.value) {
                       setEndDate('');
                     }
+                    if (recurrenceUntil && recurrenceUntil < e.target.value) {
+                      setRecurrenceUntil('');
+                    }
                   }}
                   className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
                 />
@@ -470,6 +491,47 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                 </div>
               </div>
             )}
+
+            <div className="pt-2 border-t border-white/[0.06] grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
+                  <Repeat className="w-3 h-3 text-neutral-500 shrink-0" />
+                  <span>반복 주기</span>
+                </label>
+                <select
+                  value={recurrenceFreq}
+                  onChange={(e) => {
+                    const nextVal = e.target.value as RecurrenceFrequency | 'none';
+                    setRecurrenceFreq(nextVal);
+                    if (nextVal === 'none') {
+                      setRecurrenceUntil('');
+                    }
+                  }}
+                  className="w-full h-9 px-2.5 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 outline-hidden cursor-pointer"
+                >
+                  {RECURRENCE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value} className="bg-[#12151e] text-neutral-100">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {recurrenceFreq !== 'none' && (
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1">
+                    반복 종료일 <span className="text-neutral-500">(미지정 시 계속 반복)</span>
+                  </label>
+                  <input
+                    type="date"
+                    min={date}
+                    value={recurrenceUntil}
+                    onChange={(e) => setRecurrenceUntil(e.target.value)}
+                    className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                  />
+                </div>
+              )}
+            </div>
 
             {liveConflict && (
               <div className="pt-1 flex items-start justify-between gap-2 text-[11px] text-amber-300">

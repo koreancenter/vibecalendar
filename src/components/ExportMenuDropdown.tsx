@@ -8,8 +8,16 @@ import {
   Layers,
   Check,
   Loader2,
+  Upload,
+  Database,
+  FolderInput,
 } from 'lucide-react';
-import { CalendarCategory, CalendarEventItem, ProjectItem } from '../types';
+import {
+  CalendarCategory,
+  CalendarEventItem,
+  CalendarViewMode,
+  ProjectItem,
+} from '../types';
 import { getTodayDateString, getWeekDays } from '../shared/dateUtils';
 import { generateIcsContent, downloadIcsFile } from '../utils/icsExport';
 import {
@@ -24,11 +32,14 @@ interface ExportMenuDropdownProps {
   currentYear: number;
   currentMonth: number;
   selectedDate: string;
-  viewMode: 'month' | 'week' | 'agenda';
+  viewMode: CalendarViewMode;
   events: CalendarEventItem[];
   projects: ProjectItem[];
   selectedProjectIds: string[];
   selectedCategory: CalendarCategory | '전체';
+  onImportIcsFile?: (file: File) => void;
+  onExportWorkspaceJson?: () => void;
+  onImportWorkspaceJsonFile?: (file: File) => void;
   onExportDone?: (message: string) => void;
 }
 
@@ -36,11 +47,14 @@ export const ExportMenuDropdown: React.FC<ExportMenuDropdownProps> = ({
   currentYear,
   currentMonth,
   selectedDate,
-  viewMode,
+  viewMode: _viewMode,
   events,
   projects,
   selectedProjectIds,
   selectedCategory,
+  onImportIcsFile,
+  onExportWorkspaceJson,
+  onImportWorkspaceJsonFile,
   onExportDone,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -57,6 +71,8 @@ export const ExportMenuDropdown: React.FC<ExportMenuDropdownProps> = ({
   });
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const icsInputRef = useRef<HTMLInputElement>(null);
+  const jsonInputRef = useRef<HTMLInputElement>(null);
 
   const selectedDateEvents = useMemo(
     () => events.filter((e) => e.date === selectedDate),
@@ -188,13 +204,42 @@ export const ExportMenuDropdown: React.FC<ExportMenuDropdownProps> = ({
 
   return (
     <div className="relative inline-block text-left" ref={dropdownRef}>
+      <input
+        ref={icsInputRef}
+        type="file"
+        accept=".ics,text/calendar"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file && onImportIcsFile) {
+            onImportIcsFile(file);
+            triggerSuccessFeedback();
+          }
+        }}
+      />
+      <input
+        ref={jsonInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file && onImportWorkspaceJsonFile) {
+            onImportWorkspaceJsonFile(file);
+            triggerSuccessFeedback();
+          }
+        }}
+      />
+
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
         disabled={Boolean(exportingScope)}
-        aria-label="내보내기"
+        aria-label="내보내기 및 백업"
         aria-expanded={isOpen}
-        title="일정 내보내기 (PDF · ICS)"
+        title="내보내기 · 가져오기 · 백업 (PDF · ICS · JSON)"
         className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer disabled:opacity-60 ${
           isOpen
             ? 'bg-white/[0.08] text-white'
@@ -340,6 +385,77 @@ export const ExportMenuDropdown: React.FC<ExportMenuDropdownProps> = ({
               </button>
             </div>
           </div>
+
+          {/* 섹션 3: 가져오기 · 워크스페이스 백업 (.ics / .json) */}
+          {(onImportIcsFile || onExportWorkspaceJson || onImportWorkspaceJsonFile) && (
+            <div className="pt-1.5 mt-1.5 border-t border-white/[0.06]">
+              <div className="px-2.5 pb-1">
+                <span className="text-[10px] font-medium text-neutral-500 whitespace-nowrap">
+                  가져오기 · 백업 (ICS · JSON)
+                </span>
+              </div>
+
+              <div className="space-y-0.5">
+                {onImportIcsFile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      icsInputRef.current?.click();
+                    }}
+                    className="group w-full px-2.5 py-1.5 rounded-[7px] hover:bg-white/[0.06] text-left flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Upload className="w-3.5 h-3.5 text-neutral-400 group-hover:text-white transition-colors shrink-0" />
+                      <span className="text-xs text-neutral-200 group-hover:text-white transition-colors truncate">
+                        표준 일정(.ics) 가져오기
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-neutral-500 shrink-0">ICS</span>
+                  </button>
+                )}
+
+                {onExportWorkspaceJson && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onExportWorkspaceJson();
+                      triggerSuccessFeedback();
+                      setIsOpen(false);
+                    }}
+                    className="group w-full px-2.5 py-1.5 rounded-[7px] hover:bg-white/[0.06] text-left flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Database className="w-3.5 h-3.5 text-neutral-400 group-hover:text-white transition-colors shrink-0" />
+                      <span className="text-xs text-neutral-200 group-hover:text-white transition-colors truncate">
+                        워크스페이스 백업(.json) 저장
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-neutral-500 shrink-0">JSON</span>
+                  </button>
+                )}
+
+                {onImportWorkspaceJsonFile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      jsonInputRef.current?.click();
+                    }}
+                    className="group w-full px-2.5 py-1.5 rounded-[7px] hover:bg-white/[0.06] text-left flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FolderInput className="w-3.5 h-3.5 text-neutral-400 group-hover:text-white transition-colors shrink-0" />
+                      <span className="text-xs text-neutral-200 group-hover:text-white transition-colors truncate">
+                        백업 파일(.json) 복원
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono text-neutral-500 shrink-0">복원</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -3,11 +3,16 @@ import {
   AgentCommandResponse,
   CalendarCategory,
   CalendarEventItem,
+  EventUpdatePatch,
   RecommendedVenue,
 } from '../types';
 import { AgentAttachmentPayload, AgentContext } from './agentApi';
 import { getDayDistance, parseNaturalDateFromText } from '../shared/dateUtils';
 import { normalizePlaceAndAddress } from '../shared/locationUtils';
+import {
+  inferRecurrenceRuleFromPrompt,
+  normalizeRecurrenceRule,
+} from '../shared/recurrenceUtils';
 import { calculateFreeTimeSlots } from '../shared/scheduleUtils';
 import {
   detectBrowserTimeZone,
@@ -55,7 +60,8 @@ export const COMPACT_LOCAL_SYSTEM_PROMPT = `당신은 한국어 일정 관리 �
       "category": "업무" | "방문·출장" | "식사·모임" | "개인" | "행사·세미나" | "기타",
       "location": "정확한 공식 장소·건물·호실명 (~인근 표현 금지)",
       "locationAddress": "시/도 시/군/구 도로명 건물번호 상세 주소",
-      "content": "상세 메모"
+      "content": "상세 메모",
+      "recurrence": { "frequency": "daily" | "weekly" | "biweekly" | "monthly" | "yearly", "until": "YYYY-MM-DD" }
     }
   ],
   "updatedEvent": {
@@ -64,7 +70,9 @@ export const COMPACT_LOCAL_SYSTEM_PROMPT = `당신은 한국어 일정 관리 �
     "diffSummary": "변경 요약",
     "updates": { "date": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "startTime": "HH:mm", "endTime": "HH:mm", "timeZone": "Asia/Seoul", "title": "제목", "location": "정확한 공식 장소명", "locationAddress": "상세 도로명 주소" }
   },
+  "updatedEvents": [],
   "deletedEventId": null,
+  "deletedEventIds": [],
   "recommendedVenues": [
     {
       "name": "정확한 공식 상호·장소명 (~인근 금지)",
@@ -80,9 +88,9 @@ export const COMPACT_LOCAL_SYSTEM_PROMPT = `당신은 한국어 일정 관리 �
 
 규칙:
 1. 일정 조회 질문이면 actionType="QUERY_EVENTS", createdEvents=[]로 설정하세요.
-2. 새 일정 등록이나 첨부 문서/표의 일정 추출이면 actionType="CREATE_EVENT"로 설정하고 createdEvents에 담으세요. 시간이 없으면 10:00~11:00(점심은 12:00~13:30)로 설정하세요. "한국 시간 10시", "10:00 KST", "자카르타 14시" 등 특정 시간대·해외 도시 시각 언급 시 startTime/endTime은 해당 시각 그대로 두고 timeZone에 IANA 시간대(예: Asia/Seoul, Asia/Jakarta, Asia/Makassar)를 기록하세요.
-3. 직전/선택 일정 변경은 actionType="UPDATE_EVENT"와 대상 id를 updatedEvent에 담으세요.
-4. 일정 삭제는 actionType="DELETE_EVENT"와 deletedEventId에 대상 id를 담으세요.
+2. 새 일정 등록·역산 마일스톤 생성·첨부 문서 추출이면 actionType="CREATE_EVENT"로 설정하고 createdEvents에 담으세요. 시간이 없으면 10:00~11:00(점심은 12:00~13:30)로 설정하세요. "매주/격주/매일/매월" 반복 표현이 있으면 recurrence를 설정하고, 특정 시간대·해외 도시 시각 언급 시 timeZone에 IANA 시간대를 기록하세요.
+3. 단일 또는 복수 일정 변경은 actionType="UPDATE_EVENT"와 updatedEvent 또는 updatedEvents 배열에 대상 id를 담으세요.
+4. 단일 또는 복수 일정 삭제는 actionType="DELETE_EVENT"와 deletedEventId 또는 deletedEventIds 배열에 대상 id를 담으세요.
 5. 식당/모임 장소 추천은 actionType="RECOMMEND_VENUE"와 recommendedVenues에 2~3곳을 담으세요.
 6. 모든 장소명(location, name)과 주소(locationAddress, address)에서 "~인근", "~근처", "~부근" 같은 모호한 수식어는 절대 사용하지 말고 정확한 공식 장소명과 상세 주소를 분리하여 기재하세요.`;
 
@@ -257,64 +265,83 @@ export function normalizeLocalModelOutput(
       : detectBrowserTimeZone();
   const explicitPromptTz = parseExplicitTimeZoneFromText(prompt);
 
-  const createdEvents: CalendarEventItem[] =
+  const rawCreatedArr =
     !isQuery && Array.isArray(parsed.createdEvents)
-      ? parsed.createdEvents
-          .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
-          .slice(0, 20)
-          .map((ev, idx) => {
-            const title =
-              typeof ev.title === 'string' && ev.title.trim() ? ev.title.trim() : '새 일정';
-            const { location, locationAddress } = normalizePlaceAndAddress(
-              ev.location,
-              ev.locationAddress
-            );
-            const modelTz =
-              typeof ev.timeZone === 'string' && isValidTimeZone(ev.timeZone.trim())
-                ? ev.timeZone.trim()
-                : undefined;
-            const inferredTz =
-              explicitPromptTz ||
-              parseExplicitTimeZoneFromText(title) ||
-              parseExplicitTimeZoneFromText(location) ||
-              parseExplicitTimeZoneFromText(locationAddress) ||
-              inferTimeZoneFromLocation(location) ||
-              inferTimeZoneFromLocation(locationAddress) ||
-              inferTimeZoneFromLocation(title) ||
-              undefined;
-
-            const resolvedDate =
-              typeof ev.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.date)
-                ? ev.date
-                : targetDate;
-            const resolvedEndDate =
-              typeof ev.endDate === 'string' &&
-              /^\d{4}-\d{2}-\d{2}$/.test(ev.endDate) &&
-              ev.endDate > resolvedDate
-                ? ev.endDate
-                : undefined;
-
-            return {
-              id: typeof ev.id === 'string' && ev.id ? ev.id : `local-evt-${now}-${idx}`,
-              title,
-              date: resolvedDate,
-              endDate: resolvedEndDate,
-              startTime: normalizeTime(ev.startTime, '10:00'),
-              endTime: normalizeTime(ev.endTime, '11:00'),
-              timeZone: Boolean(ev.isAllDay) ? undefined : modelTz || inferredTz,
-              isAllDay: Boolean(ev.isAllDay),
-              category: normalizeCategory(ev.category),
-              projectId: defaultProjectId,
-              location,
-              locationAddress,
-              content:
-                typeof ev.content === 'string' && ev.content.trim()
-                  ? ev.content.trim()
-                  : undefined,
-              isCompleted: false,
-            };
-          })
+      ? parsed.createdEvents.filter((item): item is Record<string, unknown> =>
+          Boolean(item && typeof item === 'object')
+        )
       : [];
+  const promptRecurrenceFallback =
+    rawCreatedArr.length === 1 ? inferRecurrenceRuleFromPrompt(prompt) : undefined;
+
+  const createdEvents: CalendarEventItem[] = rawCreatedArr.slice(0, 20).map((ev, idx) => {
+    const title =
+      typeof ev.title === 'string' && ev.title.trim() ? ev.title.trim() : '새 일정';
+    const { location, locationAddress } = normalizePlaceAndAddress(
+      ev.location,
+      ev.locationAddress
+    );
+    const modelTz =
+      typeof ev.timeZone === 'string' && isValidTimeZone(ev.timeZone.trim())
+        ? ev.timeZone.trim()
+        : undefined;
+    const inferredTz =
+      explicitPromptTz ||
+      parseExplicitTimeZoneFromText(title) ||
+      parseExplicitTimeZoneFromText(location) ||
+      parseExplicitTimeZoneFromText(locationAddress) ||
+      inferTimeZoneFromLocation(location) ||
+      inferTimeZoneFromLocation(locationAddress) ||
+      inferTimeZoneFromLocation(title) ||
+      undefined;
+
+    const resolvedDate =
+      typeof ev.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ev.date)
+        ? ev.date
+        : targetDate;
+    const resolvedEndDate =
+      typeof ev.endDate === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(ev.endDate) &&
+      ev.endDate > resolvedDate
+        ? ev.endDate
+        : undefined;
+
+    const checklist = Array.isArray(ev.checklist)
+      ? ev.checklist
+          .filter(
+            (c): c is Record<string, unknown> =>
+              Boolean(c && typeof c === 'object' && typeof c.text === 'string' && c.text.trim())
+          )
+          .slice(0, 8)
+          .map((c, cIdx) => ({
+            id: `lchk-${now}-${idx}-${cIdx}`,
+            text: String(c.text).trim(),
+            done: Boolean(c.done),
+          }))
+      : undefined;
+
+    return {
+      id: typeof ev.id === 'string' && ev.id ? ev.id : `local-evt-${now}-${idx}`,
+      title,
+      date: resolvedDate,
+      endDate: resolvedEndDate,
+      startTime: normalizeTime(ev.startTime, '10:00'),
+      endTime: normalizeTime(ev.endTime, '11:00'),
+      timeZone: Boolean(ev.isAllDay) ? undefined : modelTz || inferredTz,
+      isAllDay: Boolean(ev.isAllDay),
+      category: normalizeCategory(ev.category),
+      projectId: defaultProjectId,
+      location,
+      locationAddress,
+      content:
+        typeof ev.content === 'string' && ev.content.trim()
+          ? ev.content.trim()
+          : undefined,
+      isCompleted: false,
+      checklist,
+      recurrence: normalizeRecurrenceRule(ev.recurrence) || promptRecurrenceFallback,
+    };
+  });
 
   const queriedEvents = isQuery
     ? context.existingEvents
@@ -332,13 +359,11 @@ export function normalizeLocalModelOutput(
     ? calculateFreeTimeSlots(mapEventsToViewerZone(queriedEvents, safeViewerTz))
     : [];
 
-  let updatedEvent: AgentCommandResponse['updatedEvent'] = null;
-  if (
-    parsed.updatedEvent &&
-    typeof parsed.updatedEvent === 'object' &&
-    typeof (parsed.updatedEvent as Record<string, unknown>).id === 'string'
-  ) {
-    const u = parsed.updatedEvent as Record<string, unknown>;
+  const normalizeSinglePatch = (rawObj: unknown): EventUpdatePatch | null => {
+    if (!rawObj || typeof rawObj !== 'object') return null;
+    const u = rawObj as Record<string, unknown>;
+    if (typeof u.id !== 'string' || !u.id.trim()) return null;
+
     const rawUpdates =
       u.updates && typeof u.updates === 'object' ? (u.updates as Record<string, unknown>) : {};
     const updates: Partial<CalendarEventItem> = {};
@@ -381,22 +406,48 @@ export function normalizeLocalModelOutput(
     if (typeof rawUpdates.content === 'string') {
       updates.content = rawUpdates.content.trim();
     }
+    if ('recurrence' in rawUpdates) {
+      updates.recurrence = normalizeRecurrenceRule(rawUpdates.recurrence);
+    }
 
-    updatedEvent = {
-      id: String(u.id),
+    return {
+      id: u.id.trim(),
       targetTitle: typeof u.targetTitle === 'string' ? u.targetTitle : '선택 일정',
       diffSummary:
         typeof u.diffSummary === 'string' ? u.diffSummary : '일정 정보가 수정되었습니다.',
       updates,
     };
-  }
+  };
 
-  const deletedEventId =
-    actionType === 'DELETE_EVENT' &&
-    typeof parsed.deletedEventId === 'string' &&
-    parsed.deletedEventId
-      ? parsed.deletedEventId
-      : null;
+  const patchMap = new Map<string, EventUpdatePatch>();
+  const firstPatch = normalizeSinglePatch(parsed.updatedEvent);
+  if (firstPatch) {
+    patchMap.set(firstPatch.id, firstPatch);
+  }
+  if (Array.isArray(parsed.updatedEvents)) {
+    for (const item of parsed.updatedEvents.slice(0, 20)) {
+      const p = normalizeSinglePatch(item);
+      if (p) patchMap.set(p.id, p);
+    }
+  }
+  const updatedEvents = Array.from(patchMap.values());
+  const updatedEvent = updatedEvents[0] || null;
+
+  const delSet = new Set<string>();
+  if (actionType === 'DELETE_EVENT') {
+    if (typeof parsed.deletedEventId === 'string' && parsed.deletedEventId.trim()) {
+      delSet.add(parsed.deletedEventId.trim());
+    }
+    if (Array.isArray(parsed.deletedEventIds)) {
+      for (const idItem of parsed.deletedEventIds.slice(0, 20)) {
+        if (typeof idItem === 'string' && idItem.trim()) {
+          delSet.add(idItem.trim());
+        }
+      }
+    }
+  }
+  const deletedEventIds = Array.from(delSet);
+  const deletedEventId = deletedEventIds[0] || null;
 
   const recommendedVenues: RecommendedVenue[] = Array.isArray(parsed.recommendedVenues)
     ? parsed.recommendedVenues
@@ -433,6 +484,8 @@ export function normalizeLocalModelOutput(
     createdEvents,
     recommendedVenues,
     updatedEvent,
+    updatedEvents: updatedEvents.length > 0 ? updatedEvents : undefined,
     deletedEventId,
+    deletedEventIds: deletedEventIds.length > 0 ? deletedEventIds : undefined,
   };
 }

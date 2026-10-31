@@ -1,5 +1,9 @@
 import { CalendarEventItem } from '../types';
 import { addDays } from '../shared/dateUtils';
+import {
+  recurrenceRuleToRruleString,
+  stripVirtualOccurrences,
+} from '../shared/recurrenceUtils';
 import { detectBrowserTimeZone, isValidTimeZone } from '../shared/timeZoneUtils';
 import { formatCombinedLocation, hasValidCoordinates } from '../shared/locationUtils';
 
@@ -22,7 +26,7 @@ function escapeIcsText(str: string): string {
 }
 
 /**
- * 일정 배열을 RFC 5545 표준 iCalendar (.ics) 문자열로 직렬화
+ * 일정 배열을 RFC 5545 표준 iCalendar (.ics) 문자열로 직렬화 (RRULE / EXDATE 지원)
  */
 export function generateIcsContent(
   events: CalendarEventItem[],
@@ -30,6 +34,7 @@ export function generateIcsContent(
 ): string {
   const now = new Date();
   const dtStamp = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  const masterEvents = stripVirtualOccurrences(events);
 
   const lines: string[] = [
     'BEGIN:VCALENDAR',
@@ -41,7 +46,7 @@ export function generateIcsContent(
     `X-WR-TIMEZONE:${detectBrowserTimeZone()}`,
   ];
 
-  for (const ev of events) {
+  for (const ev of masterEvents) {
     const isAllDay = ev.isAllDay || (!ev.startTime && !ev.endTime);
     const startStr = formatIcsDateTime(ev.date, ev.startTime, isAllDay);
 
@@ -76,6 +81,26 @@ export function generateIcsContent(
     } else {
       lines.push(`DTSTART:${startStr}`);
       lines.push(`DTEND:${endStr}`);
+    }
+    if (ev.recurrence) {
+      const rruleStr = recurrenceRuleToRruleString(ev.recurrence);
+      if (rruleStr) {
+        lines.push(`RRULE:${rruleStr}`);
+      }
+    }
+    if (ev.excludedDates && ev.excludedDates.length > 0) {
+      const exFormatted = ev.excludedDates
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        .map((d) => formatIcsDateTime(d, ev.startTime, isAllDay));
+      if (exFormatted.length > 0) {
+        if (isAllDay) {
+          lines.push(`EXDATE;VALUE=DATE:${exFormatted.join(',')}`);
+        } else if (ev.timeZone && isValidTimeZone(ev.timeZone)) {
+          lines.push(`EXDATE;TZID=${ev.timeZone}:${exFormatted.join(',')}`);
+        } else {
+          lines.push(`EXDATE:${exFormatted.join(',')}`);
+        }
+      }
     }
     lines.push(`SUMMARY:${escapeIcsText(ev.title)}`);
     if (description.trim()) {

@@ -7,7 +7,12 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import { CalendarCategory, CalendarEventItem, ProjectItem } from '../types';
+import {
+  CalendarCategory,
+  CalendarEventItem,
+  CalendarViewMode,
+  ProjectItem,
+} from '../types';
 import { getWeekRangeLabel, formatKoreanDateWithDay } from '../shared/dateUtils';
 import { ExportMenuDropdown } from './ExportMenuDropdown';
 
@@ -26,10 +31,13 @@ interface TitleBarProps {
   onPrev: () => void;
   onNext: () => void;
   onToday: () => void;
-  viewMode: 'month' | 'week' | 'agenda';
-  onChangeViewMode: (mode: 'month' | 'week' | 'agenda') => void;
+  viewMode: CalendarViewMode;
+  onChangeViewMode: (mode: CalendarViewMode) => void;
   onOpenCommandPalette?: () => void;
   onOpenCreateEvent?: () => void;
+  onImportIcsFile?: (file: File) => void;
+  onExportWorkspaceJson?: () => void;
+  onImportWorkspaceJsonFile?: (file: File) => void;
   showToast: (msg: string) => void;
 }
 
@@ -52,6 +60,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onChangeViewMode,
   onOpenCommandPalette,
   onOpenCreateEvent,
+  onImportIcsFile,
+  onExportWorkspaceJson,
+  onImportWorkspaceJsonFile,
   showToast,
 }) => {
   return (
@@ -86,7 +97,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           type="button"
           onClick={onPrev}
           className="h-7 w-7 rounded-lg flex items-center justify-center text-neutral-500 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer"
-          title={viewMode === 'month' ? '이전 달' : viewMode === 'week' ? '이전 주' : '이전 날'}
+          title={
+            viewMode === 'month' || viewMode === 'ops'
+              ? '이전 달'
+              : viewMode === 'week'
+              ? '이전 주'
+              : '이전 날'
+          }
         >
           <ChevronLeft className="w-4 h-4" strokeWidth={1.65} />
         </button>
@@ -100,13 +117,20 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           {viewMode === 'month' && `${currentYear}년 ${currentMonth + 1}월`}
           {viewMode === 'week' && `${currentYear}년 ${getWeekRangeLabel(selectedDate)}`}
           {viewMode === 'agenda' && formatKoreanDateWithDay(selectedDate, true)}
+          {viewMode === 'ops' && `공정 런시트 · ${currentYear}년 ${currentMonth + 1}월`}
         </button>
 
         <button
           type="button"
           onClick={onNext}
           className="h-7 w-7 rounded-lg flex items-center justify-center text-neutral-500 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer"
-          title={viewMode === 'month' ? '다음 달' : viewMode === 'week' ? '다음 주' : '다음 날'}
+          title={
+            viewMode === 'month' || viewMode === 'ops'
+              ? '다음 달'
+              : viewMode === 'week'
+              ? '다음 주'
+              : '다음 날'
+          }
         >
           <ChevronRight className="w-4 h-4" strokeWidth={1.65} />
         </button>
@@ -145,6 +169,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               { mode: 'month', label: '월', shortcut: 'M' },
               { mode: 'week', label: '주', shortcut: 'W' },
               { mode: 'agenda', label: '일', shortcut: 'D' },
+              { mode: 'ops', label: '공정', shortcut: 'O' },
             ] as const
           ).map(({ mode, label, shortcut }) => {
             const active = viewMode === mode;
@@ -155,7 +180,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                 role="tab"
                 aria-selected={active}
                 onClick={() => onChangeViewMode(mode)}
-                title={`${label}간 뷰 (${shortcut})`}
+                title={
+                  mode === 'ops'
+                    ? '행사 공정 런시트 · 준비 보드 뷰 (O)'
+                    : `${label}간 뷰 (${shortcut})`
+                }
                 className={`text-xs transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
                   active
                     ? 'text-white font-medium'
@@ -189,6 +218,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           projects={projects}
           selectedProjectIds={selectedProjectIds}
           selectedCategory={selectedCategory}
+          onImportIcsFile={onImportIcsFile}
+          onExportWorkspaceJson={onExportWorkspaceJson}
+          onImportWorkspaceJsonFile={onImportWorkspaceJsonFile}
           onExportDone={showToast}
         />
 
