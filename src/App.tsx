@@ -24,6 +24,8 @@ import {
   LegalDrawerTab,
 } from './components/vault/LegalAndColophonDrawer';
 import { EventHistoryPopover } from './components/EventHistoryPopover';
+import { ApiSettingsModal } from './components/ApiSettingsModal';
+import { subscribeCloudKeyUnauthorized } from './utils/cloudApiKeyStorage';
 import { useToast } from './hooks/useToast';
 import { useCalendarEvents, VaultEventsSyncConfig } from './hooks/useCalendarEvents';
 import { EventHistoryProvider } from './hooks/useEventHistory';
@@ -611,6 +613,24 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     tab: 'disclaimer',
   });
 
+  const [apiSettingsModal, setApiSettingsModal] = useState<{
+    isOpen: boolean;
+    alertMessage: string | null;
+  }>({
+    isOpen: false,
+    alertMessage: null,
+  });
+
+  useEffect(() => {
+    return subscribeCloudKeyUnauthorized((evt) => {
+      setApiSettingsModal({
+        isOpen: true,
+        alertMessage: evt.message,
+      });
+      showToast(evt.message);
+    });
+  }, [showToast]);
+
   const handleOpenCreateEvent = useCallback(
     (seedOverrides?: Partial<EventComposerSeed>) => {
       const defaultProjId =
@@ -1067,6 +1087,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         Boolean(shareTarget) ||
         Boolean(previewSharedPayload) ||
         legalDrawer.isOpen ||
+        apiSettingsModal.isOpen ||
         deleteModalState.isOpen;
 
       if (hasBlockingOverlay) return;
@@ -1101,6 +1122,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [
+    apiSettingsModal.isOpen,
     composerSeed,
     deleteModalState.isOpen,
     eventHistory,
@@ -1256,6 +1278,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                     : `일정 시작 ${lead}분 전 로컬 알림이 활성화되었습니다.`
                 );
               }}
+              onOpenApiSettings={() =>
+                setApiSettingsModal({ isOpen: true, alertMessage: null })
+              }
               onPwaInstalled={() => showToast('오프라인 현장 앱 설치가 완료되었습니다.')}
             />
           </div>
@@ -1658,9 +1683,17 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         onCopySuccess={showToast}
       />
 
+      {/* 6-5. Cloud API 설정 모달 (저장된 키 401 만료·권한 오류 시 자동 오픈) */}
+      <ApiSettingsModal
+        isOpen={apiSettingsModal.isOpen}
+        alertMessage={apiSettingsModal.alertMessage}
+        onClose={() => setApiSettingsModal({ isOpen: false, alertMessage: null })}
+        showToast={showToast}
+      />
+
       {/* 7. 하단 알림 토스트 & 실행 취소 배너 */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-[#1e222b] text-neutral-100 text-xs px-4 py-2.5 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md">
+        <div className="fixed bottom-6 right-6 z-[80] flex items-center gap-3 bg-[#1e222b] text-neutral-100 text-xs px-4 py-2.5 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md">
           <span>{toastMessage}</span>
           {hasUndo && (
             <button

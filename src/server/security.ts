@@ -1443,13 +1443,14 @@ export function toSafeErrorResponse(
   err: unknown,
   context: ApiErrorContext = 'general',
   isInlineMediaEndpoint = false
-): { status: number; error: string } {
+): { status: number; error: string; code?: string } {
   const parsedErr = UpstreamErrorShapeSchema.safeParse(err);
   const rawStatus = parsedErr.success
     ? parsedErr.data.statusCode ?? parsedErr.data.status
     : undefined;
   const rawCode = parsedErr.success ? parsedErr.data.code : undefined;
   const errType = parsedErr.success ? parsedErr.data.type : undefined;
+  const rawErrMessage = err instanceof Error ? err.message : '';
 
   if (errType === 'entity.too.large' || rawStatus === 413) {
     return {
@@ -1500,11 +1501,20 @@ export function toSafeErrorResponse(
     };
   }
 
-  if (rawStatus === 401 || rawStatus === 403) {
+  const isApiKeyAuthFailure =
+    rawStatus === 401 ||
+    rawStatus === 403 ||
+    (rawStatus === 400 &&
+      /api[_\s-]?key.*(?:invalid|expired|not\s+valid)|api_key_invalid|unauthenticated|permission[_\s-]?denied/i.test(
+        rawErrMessage
+      )) ||
+    /api[_\s-]?key.*(?:expired|not\s+valid)|api_key_invalid/i.test(rawErrMessage);
+
+  if (isApiKeyAuthFailure) {
     return {
-      status: 502,
-      error:
-        '입력된 API Key 인증을 확인할 수 없습니다. 모델 선택기(Cloud 탭)에서 키를 다시 검증해 주세요.',
+      status: 401,
+      code: 'CLOUD_API_KEY_UNAUTHORIZED',
+      error: '키가 만료되었거나 권한이 없습니다. 다시 입력해 주세요',
     };
   }
 
@@ -1545,5 +1555,7 @@ export function apiErrorHandler(
     req.path === '/api/agent/command' || req.path === '/api/agent/ollama-proxy';
   const safe = toSafeErrorResponse(err, 'general', isInlineMediaEndpoint);
   logSafeServerError('API Middleware Error', err);
-  res.status(safe.status).json({ error: safe.error });
+  res
+    .status(safe.status)
+    .json({ error: safe.error, ...(safe.code ? { code: safe.code } : {}) });
 }

@@ -9,11 +9,24 @@ import { DEFAULT_OLLAMA_BASE_URL, executeOllamaAgentCommand } from './ollamaProv
 import { executeWebLlmAgentCommand, WebLlmLoadProgress } from './webllmProvider';
 import { shouldUseSearchGroundingForPlanning } from '../shared/scheduleUtils';
 import {
+  CLOUD_KEY_EXPIRED_MESSAGE,
   CloudModelOption,
   ensureCloudKeyHydrated,
+  handleSavedCloudKeyUnauthorized,
 } from '../utils/cloudApiKeyStorage';
 
 export type { CloudModelOption };
+
+function isUnauthorizedCloudError(
+  httpStatus: number,
+  body?: Record<string, unknown> | null
+): boolean {
+  return (
+    httpStatus === 401 ||
+    body?.status === 401 ||
+    body?.code === 'CLOUD_API_KEY_UNAUTHORIZED'
+  );
+}
 
 export const DEFAULT_AI_MODEL_SELECTION: AiModelSelection = {
   provider: 'cloud',
@@ -26,6 +39,7 @@ export interface VerifyCloudApiKeyResponse {
   ok: boolean;
   models: CloudModelOption[];
   error?: string;
+  latencyMs?: number;
 }
 
 export async function verifyCloudApiKey(apiKey: string): Promise<VerifyCloudApiKeyResponse> {
@@ -33,6 +47,9 @@ export async function verifyCloudApiKey(apiKey: string): Promise<VerifyCloudApiK
   if (!trimmed) {
     return { ok: false, models: [], error: 'API Key 필요' };
   }
+
+  const startedAt = performance.now();
+  const measureRtt = () => Math.max(1, Math.round(performance.now() - startedAt));
 
   try {
     const res = await fetch('/api/agent/cloud-models', {
@@ -42,24 +59,33 @@ export async function verifyCloudApiKey(apiKey: string): Promise<VerifyCloudApiK
       },
       body: JSON.stringify({ apiKey: trimmed }),
     });
+    const clientRttMs = measureRtt();
     const data = (await res.json().catch(() => null)) as Partial<VerifyCloudApiKeyResponse> | null;
+    const resolvedLatencyMs =
+      typeof data?.latencyMs === 'number' && Number.isFinite(data.latencyMs) && data.latencyMs > 0
+        ? Math.round(data.latencyMs)
+        : clientRttMs;
+
     if (!res.ok || !data) {
       return {
         ok: false,
         models: [],
         error: data?.error || `검증 요청 오류 (${res.status})`,
+        latencyMs: resolvedLatencyMs,
       };
     }
     return {
       ok: Boolean(data.ok),
       models: Array.isArray(data.models) ? data.models : [],
       error: data.error,
+      latencyMs: resolvedLatencyMs,
     };
   } catch {
     return {
       ok: false,
       models: [],
       error: '서버와 통신할 수 없습니다',
+      latencyMs: measureRtt(),
     };
   }
 }
@@ -233,10 +259,15 @@ export async function sendAgentCommand(
             } else if (eventType === 'done') {
               finalResponse = parsed as unknown as AgentCommandResponse;
             } else if (eventType === 'error') {
-              streamErrorMessage =
-                typeof parsed.error === 'string'
-                  ? parsed.error
-                  : 'AI 스트리밍 응답 처리 중 오류가 발생했습니다.';
+              if (clientCloudApiKey && isUnauthorizedCloudError(0, parsed)) {
+                handleSavedCloudKeyUnauthorized(CLOUD_KEY_EXPIRED_MESSAGE);
+                streamErrorMessage = CLOUD_KEY_EXPIRED_MESSAGE;
+              } else {
+                streamErrorMessage =
+                  typeof parsed.error === 'string'
+                    ? parsed.error
+                    : 'AI 스트리밍 응답 처리 중 오류가 발생했습니다.';
+              }
             }
           } catch {
             // Ignore malformed partial frame
@@ -267,8 +298,14 @@ export async function sendAgentCommand(
         }
       }
     } else if (!streamRes.ok && streamRes.status !== 404) {
-      const errData = (await streamRes.json().catch(() => ({}))) as { error?: string };
-      throw new Error(errData.error || `서버 오류 (${streamRes.status})`);
+      const errData = (await streamRes.json().catch(() => ({}))) as Record<string, unknown>;
+      if (clientCloudApiKey && isUnauthorizedCloudError(streamRes.status, errData)) {
+        handleSavedCloudKeyUnauthorized(CLOUD_KEY_EXPIRED_MESSAGE);
+        throw new Error(CLOUD_KEY_EXPIRED_MESSAGE);
+      }
+      throw new Error(
+        typeof errData.error === 'string' ? errData.error : `서버 오류 (${streamRes.status})`
+      );
     }
   }
 
@@ -282,8 +319,14 @@ export async function sendAgentCommand(
   });
 
   if (!res.ok) {
-    const errData = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(errData.error || `서버 오류 (${res.status})`);
+    const errData = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (clientCloudApiKey && isUnauthorizedCloudError(res.status, errData)) {
+      handleSavedCloudKeyUnauthorized(CLOUD_KEY_EXPIRED_MESSAGE);
+      throw new Error(CLOUD_KEY_EXPIRED_MESSAGE);
+    }
+    throw new Error(
+      typeof errData.error === 'string' ? errData.error : `서버 오류 (${res.status})`
+    );
   }
 
   return res.json() as Promise<AgentCommandResponse>;
@@ -314,8 +357,14 @@ export async function requestGroundedDateSuggestions(
   });
 
   if (!res.ok) {
-    const errData = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(errData.error || `일정 탐색 오류 (${res.status})`);
+    const errData = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (apiKey && isUnauthorizedCloudError(res.status, errData)) {
+      handleSavedCloudKeyUnauthorized(CLOUD_KEY_EXPIRED_MESSAGE);
+      throw new Error(CLOUD_KEY_EXPIRED_MESSAGE);
+    }
+    throw new Error(
+      typeof errData.error === 'string' ? errData.error : `일정 탐색 오류 (${res.status})`
+    );
   }
 
   return res.json() as Promise<AgentCommandResponse>;
@@ -345,8 +394,14 @@ export async function resolveLocationDetails(params: {
   });
 
   if (!res.ok) {
-    const errData = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(errData.error || `위치 탐색 오류 (${res.status})`);
+    const errData = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (apiKey && isUnauthorizedCloudError(res.status, errData)) {
+      handleSavedCloudKeyUnauthorized(CLOUD_KEY_EXPIRED_MESSAGE);
+      throw new Error(CLOUD_KEY_EXPIRED_MESSAGE);
+    }
+    throw new Error(
+      typeof errData.error === 'string' ? errData.error : `위치 탐색 오류 (${res.status})`
+    );
   }
 
   return res.json() as Promise<ResolveLocationResponse>;
@@ -387,6 +442,10 @@ export async function enrichLocationsBatch(params: {
   });
 
   if (!res.ok) {
+    const errData = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (isUnauthorizedCloudError(res.status, errData)) {
+      handleSavedCloudKeyUnauthorized(CLOUD_KEY_EXPIRED_MESSAGE);
+    }
     return { items: [], groundingSources: [], searchQueries: [] };
   }
 

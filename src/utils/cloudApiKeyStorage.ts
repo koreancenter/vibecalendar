@@ -24,7 +24,17 @@ let hydrationPromise: Promise<{ apiKey: string; models: CloudModelOption[] }> | 
 let cachedPlainApiKey = '';
 let cachedVerifiedModels: CloudModelOption[] = [];
 
+export const CLOUD_KEY_EXPIRED_MESSAGE =
+  '키가 만료되었거나 권한이 없습니다. 다시 입력해 주세요';
+
+export interface CloudKeyUnauthorizedEvent {
+  id: number;
+  message: string;
+}
+
 const listeners = new Set<() => void>();
+const unauthorizedListeners = new Set<(event: CloudKeyUnauthorizedEvent) => void>();
+let lastUnauthorizedAlertAt = 0;
 
 function notifyListeners(): void {
   for (const listener of listeners) {
@@ -41,6 +51,45 @@ export function subscribeCloudKeyChanges(listener: () => void): () => void {
   return () => {
     listeners.delete(listener);
   };
+}
+
+export function subscribeCloudKeyUnauthorized(
+  listener: (event: CloudKeyUnauthorizedEvent) => void
+): () => void {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
+}
+
+export function handleSavedCloudKeyUnauthorized(
+  customMessage: string = CLOUD_KEY_EXPIRED_MESSAGE
+): boolean {
+  // 저장된 API 키가 있는 상태에서 401이 발생한 경우에만 발동
+  if (!cachedPlainApiKey) {
+    return false;
+  }
+
+  purgeCloudKeyStorageSync();
+
+  const now = Date.now();
+  if (now - lastUnauthorizedAlertAt < 1200) {
+    return true;
+  }
+  lastUnauthorizedAlertAt = now;
+
+  const eventPayload: CloudKeyUnauthorizedEvent = {
+    id: now,
+    message: customMessage || CLOUD_KEY_EXPIRED_MESSAGE,
+  };
+  for (const listener of unauthorizedListeners) {
+    try {
+      listener(eventPayload);
+    } catch {
+      // ignore listener errors
+    }
+  }
+  return true;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

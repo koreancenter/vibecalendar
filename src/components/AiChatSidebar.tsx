@@ -26,6 +26,7 @@ import {
   sendAgentCommand,
 } from '../services/agentApi';
 import {
+  CLOUD_KEY_EXPIRED_MESSAGE,
   ensureCloudKeyHydrated,
   getCachedCloudApiKey,
   getCachedCloudModels,
@@ -827,7 +828,8 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
       const errorMsg: AgentMessage = {
         id: `msg-err-${Date.now()}`,
         role: 'assistant',
-        content: `오류가 발생했습니다: ${message}`,
+        content:
+          message === CLOUD_KEY_EXPIRED_MESSAGE ? message : `오류가 발생했습니다: ${message}`,
         timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, errorMsg]);

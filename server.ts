@@ -104,7 +104,9 @@ app.post(
     } catch (err: unknown) {
       logSafeServerError('Agent Command API', err);
       const safe = toSafeErrorResponse(err, 'command', true);
-      res.status(safe.status).json({ error: safe.error });
+      res
+        .status(safe.status)
+        .json({ error: safe.error, ...(safe.code ? { code: safe.code } : {}) });
     }
   }
 );
@@ -164,7 +166,11 @@ app.post(
     } catch (err: unknown) {
       logSafeServerError('Agent Stream API', err);
       const safe = toSafeErrorResponse(err, 'command', true);
-      writeSse('error', { error: safe.error, status: safe.status });
+      writeSse('error', {
+        error: safe.error,
+        status: safe.status,
+        ...(safe.code ? { code: safe.code } : {}),
+      });
       if (!res.writableEnded) {
         res.end();
       }
@@ -192,7 +198,9 @@ app.post(
     } catch (err: unknown) {
       logSafeServerError('Grounding Dates API', err);
       const safe = toSafeErrorResponse(err, 'grounding', false);
-      res.status(safe.status).json({ error: safe.error });
+      res
+        .status(safe.status)
+        .json({ error: safe.error, ...(safe.code ? { code: safe.code } : {}) });
     }
   }
 );
@@ -222,7 +230,9 @@ app.post(
     } catch (err: unknown) {
       logSafeServerError('Resolve Location API', err);
       const safe = toSafeErrorResponse(err, 'location', false);
-      res.status(safe.status).json({ error: safe.error });
+      res
+        .status(safe.status)
+        .json({ error: safe.error, ...(safe.code ? { code: safe.code } : {}) });
     }
   }
 );
@@ -252,7 +262,9 @@ app.post(
     } catch (err: unknown) {
       logSafeServerError('Enrich Locations API', err);
       const safe = toSafeErrorResponse(err, 'location', false);
-      res.status(safe.status).json({ error: safe.error });
+      res
+        .status(safe.status)
+        .json({ error: safe.error, ...(safe.code ? { code: safe.code } : {}) });
     }
   }
 );

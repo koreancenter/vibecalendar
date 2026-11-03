@@ -31,6 +31,7 @@ interface VaultControlMenuProps {
   onClearSampleData?: () => void;
   reminderLeadMinutes?: ReminderLeadMinutes;
   onChangeReminderLeadMinutes?: (lead: ReminderLeadMinutes) => void;
+  onOpenApiSettings?: () => void;
   onPwaInstalled?: () => void;
 }
 
@@ -51,6 +52,7 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
   onClearSampleData,
   reminderLeadMinutes = 0,
   onChangeReminderLeadMinutes,
+  onOpenApiSettings,
   onPwaInstalled,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -384,6 +386,21 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {onOpenApiSettings && (
+            <div className="py-1 border-b border-white/[0.06]">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onOpenApiSettings();
+                }}
+                className="w-full px-3.5 py-2 text-left hover:bg-white/[0.05] text-neutral-300 hover:text-white transition-colors duration-150 cursor-pointer whitespace-nowrap"
+              >
+                Cloud API 설정
+              </button>
             </div>
           )}
 

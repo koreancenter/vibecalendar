@@ -79,6 +79,7 @@ export interface VerifiedCloudModelsResult {
   ok: boolean;
   models: VerifiedCloudModelItem[];
   error?: string;
+  latencyMs?: number;
 }
 
 const EXCLUDED_VERIFY_MODEL_ID_PATTERN =
@@ -113,6 +114,9 @@ export async function verifyAndListCloudModels(
   if (!cleanKey) {
     return { ok: false, models: [], error: 'API Key 필요' };
   }
+
+  const startedAt = performance.now();
+  const elapsedMs = () => Math.max(1, Math.round(performance.now() - startedAt));
 
   try {
     const ai = new GoogleGenAI({
@@ -158,6 +162,7 @@ export async function verifyAndListCloudModels(
       }
     }
 
+    const latencyMs = elapsedMs();
     const pool = rawCandidates.length > 0 ? rawCandidates : fallbackCandidates;
     pool.sort(
       (a, b) => scoreCloudModelCandidate(b.id) - scoreCloudModelCandidate(a.id) || a.id.localeCompare(b.id)
@@ -178,14 +183,17 @@ export async function verifyAndListCloudModels(
         ok: false,
         models: [],
         error: '이 API Key로 사용할 수 있는 Gemini 모델이 없습니다',
+        latencyMs,
       };
     }
 
     return {
       ok: true,
       models: dedupedByLabel,
+      latencyMs,
     };
   } catch (err: unknown) {
+    const latencyMs = elapsedMs();
     const rawMsg = err instanceof Error ? err.message.toLowerCase() : '';
     const status =
       err && typeof err === 'object' && 'status' in err && typeof (err as { status?: unknown }).status === 'number'
@@ -202,14 +210,14 @@ export async function verifyAndListCloudModels(
       rawMsg.includes('permission_denied') ||
       rawMsg.includes('unauthenticated')
     ) {
-      return { ok: false, models: [], error: '유효하지 않은 API Key입니다' };
+      return { ok: false, models: [], error: '유효하지 않은 API Key입니다', latencyMs };
     }
 
     if (status === 429 || rawMsg.includes('quota') || rawMsg.includes('rate limit')) {
-      return { ok: false, models: [], error: 'API 요청 한도를 초과했습니다' };
+      return { ok: false, models: [], error: 'API 요청 한도를 초과했습니다', latencyMs };
     }
 
-    return { ok: false, models: [], error: 'API Key 연결 검증에 실패했습니다' };
+    return { ok: false, models: [], error: 'API Key 연결 검증에 실패했습니다', latencyMs };
   }
 }
 

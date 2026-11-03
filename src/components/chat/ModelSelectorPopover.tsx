@@ -9,6 +9,7 @@ import {
   getCachedCloudModels,
   saveVerifiedCloudApiKey,
   subscribeCloudKeyChanges,
+  subscribeCloudKeyUnauthorized,
 } from '../../utils/cloudApiKeyStorage';
 import {
   DEFAULT_OLLAMA_BASE_URL,
@@ -94,9 +95,18 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
       }
     });
 
+    const unsubscribeUnauthorized = subscribeCloudKeyUnauthorized((evt) => {
+      setIsOpen(false);
+      setCloudKeyInput('');
+      setVerifiedApiKey('');
+      setCloudModels([]);
+      setCloudError(evt.message);
+    });
+
     return () => {
       mounted = false;
       unsubscribe();
+      unsubscribeUnauthorized();
     };
   }, []);
 
