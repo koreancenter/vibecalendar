@@ -2,9 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Calendar,
-  Clock,
+  ChevronDown,
+  ChevronUp,
   FileText,
   FolderKanban,
+  Globe,
   ListTodo,
   Loader2,
   MapPin,
@@ -21,6 +23,7 @@ import {
   RecurrenceFrequency,
 } from '../types';
 import { CALENDAR_CATEGORIES, CATEGORY_COLORS } from '../constants/categories';
+import { getProjectThemeClasses } from '../constants/projects';
 import { ManualEventDraft } from '../hooks/useCalendarEvents';
 import { RECURRENCE_OPTIONS } from '../shared/recurrenceUtils';
 import {
@@ -32,7 +35,13 @@ import {
   toViewerProjectedEvent,
 } from '../shared/timeZoneUtils';
 import { detectConflictAndSuggest } from '../shared/scheduleUtils';
-import { normalizeCoordinates } from '../shared/locationUtils';
+import {
+  formatCombinedLocation,
+  hasValidCoordinates,
+  normalizeCoordinates,
+  normalizePlaceAndAddress,
+  parseCoordinatePairFromString,
+} from '../shared/locationUtils';
 import { resolveLocationDetails } from '../services/agentApi';
 
 export interface EventComposerSeed {
@@ -44,6 +53,8 @@ export interface EventComposerSeed {
   isAllDay?: boolean;
   projectId?: string;
   category?: CalendarCategory;
+  location?: string;
+  locationAddress?: string;
 }
 
 interface EventComposerModalProps {
@@ -54,6 +65,14 @@ interface EventComposerModalProps {
   projects: ProjectItem[];
   onClose: () => void;
   onSubmit: (draft: ManualEventDraft) => void;
+}
+
+interface ResolvedGeoSnapshot {
+  combinedInput: string;
+  location?: string;
+  locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
 }
 
 function computeNextHourSlot(startTime: string): string {
@@ -88,18 +107,23 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
   const [category, setCategory] = useState<CalendarCategory>('업무');
   const [date, setDate] = useState(seed.date);
   const [endDate, setEndDate] = useState('');
+  const [showEndDateInput, setShowEndDateInput] = useState(false);
   const [isAllDay, setIsAllDay] = useState(false);
   const [startTime, setStartTime] = useState('10:00');
   const [endTime, setEndTime] = useState('11:00');
   const [timeZone, setTimeZone] = useState<string>(safeViewerZone);
   const [projectId, setProjectId] = useState<string>('');
-  const [location, setLocation] = useState('');
-  const [locationAddress, setLocationAddress] = useState('');
-  const [locationLat, setLocationLat] = useState<number | undefined>(undefined);
-  const [locationLng, setLocationLng] = useState<number | undefined>(undefined);
+
+  // 단일 스마트 장소·주소 검색 필드 상태
+  const [locationQuery, setLocationQuery] = useState('');
+  const [resolvedGeo, setResolvedGeo] = useState<ResolvedGeoSnapshot | null>(null);
+
+  // 점진적 공개(Progressive Disclosure): 메모 및 사전 체크리스트
+  const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
   const [content, setContent] = useState('');
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [newCheckText, setNewCheckText] = useState('');
+
   const [recurrenceFreq, setRecurrenceFreq] = useState<RecurrenceFrequency | 'none'>('none');
   const [recurrenceUntil, setRecurrenceUntil] = useState('');
 
@@ -115,6 +139,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
     setCategory(seed.category || '업무');
     setDate(seed.date);
     setEndDate(seed.endDate || '');
+    setShowEndDateInput(Boolean(seed.endDate));
     setIsAllDay(Boolean(seed.isAllDay));
     const initStart = seed.startTime || '10:00';
     const initEnd = seed.endTime || computeNextHourSlot(initStart);
@@ -122,10 +147,12 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
     setEndTime(initEnd);
     setTimeZone(safeViewerZone);
     setProjectId(seed.projectId || '');
-    setLocation('');
-    setLocationAddress('');
-    setLocationLat(undefined);
-    setLocationLng(undefined);
+
+    const initialLocQuery = formatCombinedLocation(seed.location, seed.locationAddress, ' · ');
+    setLocationQuery(initialLocQuery);
+    setResolvedGeo(null);
+
+    setIsDetailsExpanded(false);
     setContent('');
     setChecklist([]);
     setNewCheckText('');
@@ -170,6 +197,16 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
     return Array.from(map.values());
   }, [safeViewerZone]);
 
+  const selectedProject = useMemo(
+    () => (projectId ? projects.find((p) => p.id === projectId) ?? null : null),
+    [projectId, projects]
+  );
+
+  const selectedProjectTheme = useMemo(
+    () => getProjectThemeClasses(selectedProject?.color),
+    [selectedProject?.color]
+  );
+
   const liveConflict = useMemo(() => {
     if (!isOpen || isAllDay || !date || !startTime || !endTime || endTime <= startTime) {
       return null;
@@ -193,7 +230,18 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
       projectedExisting
     );
     return result.hasConflict ? result : null;
-  }, [isOpen, isAllDay, date, startTime, endTime, timeZone, safeViewerZone, title, category, existingEvents]);
+  }, [
+    isOpen,
+    isAllDay,
+    date,
+    startTime,
+    endTime,
+    timeZone,
+    safeViewerZone,
+    title,
+    category,
+    existingEvents,
+  ]);
 
   if (!isOpen) return null;
 
@@ -203,6 +251,16 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
       setEndTime(computeNextHourSlot(nextStart));
     }
     setFormError(null);
+  };
+
+  const handleLocationQueryChange = (nextVal: string) => {
+    setLocationQuery(nextVal);
+    if (resolvedGeo && nextVal.trim() !== resolvedGeo.combinedInput) {
+      setResolvedGeo(null);
+    }
+    if (locNotice) {
+      setLocNotice(null);
+    }
   };
 
   const handleAddChecklistDraft = () => {
@@ -221,31 +279,44 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
 
   const handleAutoResolveLocation = async () => {
     if (isResolvingLoc) return;
-    const query = location.trim() || locationAddress.trim() || title.trim();
-    if (!query) {
+    const rawInput = locationQuery.trim();
+    const fallbackQuery = rawInput || title.trim();
+    if (!fallbackQuery) {
       setLocNotice('탐색할 장소명이나 주소를 먼저 입력해 주세요.');
       return;
     }
+
+    const parsedInput = normalizePlaceAndAddress(rawInput);
     setIsResolvingLoc(true);
     setLocNotice(null);
+
     try {
       const res = await resolveLocationDetails({
-        location: location.trim() || query,
-        locationAddress: locationAddress.trim() || undefined,
+        location: parsedInput.location || fallbackQuery,
+        locationAddress: parsedInput.locationAddress,
       });
+
       if (res.found) {
-        if (res.location && !location.trim()) {
-          setLocation(res.location);
-        }
-        if (res.locationAddress) {
-          setLocationAddress(res.locationAddress);
-        }
+        const nextLoc = res.location || parsedInput.location || rawInput || fallbackQuery;
+        const nextAddr = res.locationAddress || parsedInput.locationAddress;
         const coords = normalizeCoordinates(res.locationLat, res.locationLng);
-        setLocationLat(coords.locationLat);
-        setLocationLng(coords.locationLng);
-        setLocNotice('도로명 주소 및 위경도 좌표가 확인되었습니다.');
+        const combined = formatCombinedLocation(nextLoc, nextAddr, ' · ');
+
+        setLocationQuery(combined);
+        setResolvedGeo({
+          combinedInput: combined,
+          location: nextLoc || undefined,
+          locationAddress: nextAddr || undefined,
+          locationLat: coords.locationLat,
+          locationLng: coords.locationLng,
+        });
+        setLocNotice(
+          hasValidCoordinates(coords.locationLat, coords.locationLng)
+            ? `좌표 확인됨 · ${coords.locationLat!.toFixed(5)}, ${coords.locationLng!.toFixed(5)}`
+            : '도로명 주소가 확인되었습니다.'
+        );
       } else {
-        setLocNotice('외부 검색에서 주소·위경도를 찾지 못했습니다. 직접 입력해 주세요.');
+        setLocNotice('일치하는 상세 주소를 찾지 못했습니다. 장소·주소를 직접 입력할 수 있습니다.');
       }
     } catch (err: unknown) {
       setLocNotice(
@@ -290,6 +361,32 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
         ]
       : checklist;
 
+    const trimmedLocQuery = locationQuery.trim();
+    let finalLocation: string | undefined;
+    let finalAddress: string | undefined;
+    let finalLat: number | undefined;
+    let finalLng: number | undefined;
+
+    if (trimmedLocQuery) {
+      if (resolvedGeo && trimmedLocQuery === resolvedGeo.combinedInput) {
+        finalLocation = resolvedGeo.location;
+        finalAddress = resolvedGeo.locationAddress;
+        finalLat = resolvedGeo.locationLat;
+        finalLng = resolvedGeo.locationLng;
+      } else {
+        const directCoords = parseCoordinatePairFromString(trimmedLocQuery);
+        if (directCoords) {
+          finalLocation = trimmedLocQuery;
+          finalLat = directCoords.lat;
+          finalLng = directCoords.lng;
+        } else {
+          const normalized = normalizePlaceAndAddress(trimmedLocQuery);
+          finalLocation = normalized.location || trimmedLocQuery;
+          finalAddress = normalized.locationAddress;
+        }
+      }
+    }
+
     onSubmit({
       title: trimmedTitle,
       date,
@@ -300,10 +397,10 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
       isAllDay,
       category,
       projectId: projectId || undefined,
-      location: location.trim() || undefined,
-      locationAddress: locationAddress.trim() || undefined,
-      locationLat,
-      locationLng,
+      location: finalLocation,
+      locationAddress: finalAddress,
+      locationLat: finalLat,
+      locationLng: finalLng,
       content: content.trim() || undefined,
       checklist: pendingChecks.length > 0 ? pendingChecks : undefined,
       recurrence:
@@ -324,6 +421,9 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
     }
   };
 
+  const optionalSummaryCount =
+    (content.trim() ? 1 : 0) + checklist.length + (newCheckText.trim() ? 1 : 0);
+
   return (
     <div
       onClick={onClose}
@@ -336,10 +436,10 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
         onKeyDown={handleFormKeyDown}
-        className="luxury-glass-border relative w-full max-w-xl bg-gradient-to-b from-[#181c27]/86 via-[#11141d]/84 to-[#0c0e15]/90 backdrop-blur-xl backdrop-saturate-150 rounded-xl shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] overflow-hidden flex flex-col max-h-[90vh]"
+        className="luxury-glass-border relative w-full max-w-3xl bg-gradient-to-b from-[#171b26]/95 via-[#11141d]/96 to-[#0c0e15]/98 backdrop-blur-xl backdrop-saturate-150 rounded-2xl shadow-[0_24px_56px_-12px_rgba(0,0,0,0.82),0_8px_20px_-4px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[92dvh]"
       >
         {/* 헤더 */}
-        <div className="px-5 py-3.5 border-b border-white/[0.07] bg-white/[0.02] flex items-center justify-between gap-3 shrink-0">
+        <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 text-xs text-neutral-300">
             <Calendar className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
             <span className="font-semibold text-white tracking-tight">새 일정 등록</span>
@@ -353,365 +453,483 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
             onClick={onClose}
             className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
             title="닫기 (Esc)"
+            aria-label="닫기"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* 본문 입력 영역 */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4 select-text">
-          {/* 1. 제목 */}
-          <div>
-            <input
-              ref={titleInputRef}
-              type="text"
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                if (formError) setFormError(null);
-              }}
-              placeholder="일정 제목 입력 (예: 코엑스 오디토리움 리허설 점검)"
-              className="w-full h-10 px-3.5 rounded-xl bg-[#0d1017] border border-white/[0.10] focus:border-white/28 text-sm font-medium text-white placeholder:text-neutral-500 outline-hidden transition-colors"
-            />
-          </div>
-
-          {/* 2. 분류 선택 */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {CALENDAR_CATEGORIES.map((cat) => {
-              const active = category === cat;
-              const style = CATEGORY_COLORS[cat];
-              return (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setCategory(cat)}
-                  className={`h-7 px-2.5 rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 border ${
-                    active
-                      ? 'bg-white/[0.11] border-white/[0.24] text-white font-medium'
-                      : 'bg-[#0e1118] border-white/[0.06] text-neutral-400 hover:text-neutral-200 hover:border-white/[0.12]'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${style.dot}`} />
-                  <span>{cat}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 3. 일시 및 시간대 */}
-          <div className="p-3.5 rounded-xl bg-[#161a24] border border-white/[0.06] space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-neutral-300 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                <span>일시 및 시간대</span>
-              </span>
-
-              <label className="inline-flex items-center gap-1.5 text-xs text-neutral-300 cursor-pointer select-none whitespace-nowrap shrink-0">
-                <input
-                  type="checkbox"
-                  checked={isAllDay}
-                  onChange={(e) => setIsAllDay(e.target.checked)}
-                  className="rounded border-white/20 bg-[#0d1017] accent-white cursor-pointer"
-                />
-                <span>종일 일정</span>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        {/* 본문: 2단 그리드 레이아웃 (중첩 박스 제거 · 단일 뷰 최적화) */}
+        <div className="p-5 overflow-y-auto md:overflow-visible select-text">
+          <div className="grid grid-cols-1 md:grid-cols-[1.12fr_0.88fr] gap-5 md:gap-6 items-start">
+            {/* 좌측 컬럼: 제목 · 카테고리 칩 · 컨텍스트 프로젝트 배지 · 인라인 일시/시간대 */}
+            <div className="space-y-3.5 min-w-0">
+              {/* 1. 제목 입력 */}
               <div>
-                <label className="block text-[11px] text-neutral-400 mb-1">시작일</label>
                 <input
-                  type="date"
-                  value={date}
+                  ref={titleInputRef}
+                  type="text"
+                  value={title}
                   onChange={(e) => {
-                    setDate(e.target.value);
-                    if (endDate && endDate < e.target.value) {
-                      setEndDate('');
-                    }
-                    if (recurrenceUntil && recurrenceUntil < e.target.value) {
-                      setRecurrenceUntil('');
-                    }
+                    setTitle(e.target.value);
+                    if (formError) setFormError(null);
                   }}
-                  className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                  placeholder="일정 제목 입력 (Ctrl + Enter 빠른 등록)"
+                  title="일정 제목 (Ctrl + Enter 또는 ⌘ + Enter로 즉시 등록)"
+                  className="w-full h-9.5 px-3.5 rounded-lg bg-white/[0.03] border border-white/[0.10] focus:border-white/28 text-sm font-medium text-white placeholder:text-neutral-500 outline-hidden transition-colors"
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] text-neutral-400 mb-1">
-                  종료일 <span className="text-neutral-500">(다일 일정 선택 시)</span>
-                </label>
-                <input
-                  type="date"
-                  min={date}
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
-                />
-              </div>
-            </div>
-
-            {!isAllDay && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-0.5">
-                <div>
-                  <label className="block text-[11px] text-neutral-400 mb-1">시작 시간</label>
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => handleStartTimeChange(e.target.value)}
-                    className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
-                  />
+              {/* 2. 분류 칩 & 컨텍스트 프로젝트 인라인 배지 */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-1 flex-wrap">
+                  {CALENDAR_CATEGORIES.map((cat) => {
+                    const active = category === cat;
+                    const style = CATEGORY_COLORS[cat];
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setCategory(cat)}
+                        className={`h-7 px-2.5 rounded-md text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 border ${
+                          active
+                            ? 'bg-white/[0.12] border-white/[0.24] text-white font-medium'
+                            : 'bg-transparent border-white/[0.06] text-neutral-400 hover:text-neutral-200 hover:border-white/[0.14]'
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${style.dot}`} />
+                        <span>{cat}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <div>
-                  <label className="block text-[11px] text-neutral-400 mb-1">종료 시간</label>
-                  <input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => {
-                      setEndTime(e.target.value);
-                      if (formError) setFormError(null);
-                    }}
-                    className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-neutral-400 mb-1">기준 시간대</label>
-                  <select
-                    value={timeZone}
-                    onChange={(e) => setTimeZone(e.target.value)}
-                    className="w-full h-9 px-2.5 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono text-neutral-100 outline-hidden cursor-pointer"
-                  >
-                    {timeZoneOptions.map((tz) => (
-                      <option key={tz.iana} value={tz.iana} className="bg-[#12151e] text-neutral-100">
-                        {tz.shortCode} · {tz.cityKo}
-                      </option>
-                    ))}
-                  </select>
+                {/* 컨텍스트 프로젝트 배지 / 글로벌 뷰 인라인 드롭다운 배지 */}
+                <div className="flex items-center gap-2 min-w-0">
+                  {selectedProject ? (
+                    <div
+                      className={`inline-flex items-center gap-1.5 h-6.5 pl-2.5 pr-1.5 rounded-md border text-xs max-w-full ${selectedProjectTheme.chipSurfaceClass}`}
+                      title={`소속 프로젝트: ${selectedProject.name}`}
+                    >
+                      <FolderKanban className="w-3 h-3 text-neutral-400 shrink-0" />
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${selectedProjectTheme.dotClass}`}
+                      />
+                      <span className="truncate font-medium max-w-[220px]">
+                        {selectedProject.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setProjectId('')}
+                        className="p-0.5 rounded hover:bg-white/10 text-neutral-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                        title="프로젝트 지정 해제"
+                        aria-label="프로젝트 지정 해제"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : projects.length > 0 ? (
+                    <div className="relative inline-flex items-center">
+                      <FolderKanban className="pointer-events-none absolute left-2.5 w-3 h-3 text-neutral-400" />
+                      <select
+                        value={projectId}
+                        onChange={(e) => setProjectId(e.target.value)}
+                        aria-label="소속 프로젝트 선택"
+                        className="h-6.5 pl-7 pr-6 rounded-md bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/[0.16] text-[11.5px] text-neutral-300 outline-hidden cursor-pointer appearance-none transition-colors max-w-[240px] truncate"
+                      >
+                        <option value="" className="bg-[#12151e] text-neutral-300">
+                          프로젝트 연결 (일반 일정)
+                        </option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id} className="bg-[#12151e] text-neutral-100">
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-2 w-3 h-3 text-neutral-500" />
+                    </div>
+                  ) : null}
                 </div>
               </div>
-            )}
 
-            <div className="pt-2 border-t border-white/[0.06] grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="block text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
-                  <Repeat className="w-3 h-3 text-neutral-500 shrink-0" />
-                  <span>반복 주기</span>
-                </label>
-                <select
-                  value={recurrenceFreq}
-                  onChange={(e) => {
-                    const nextVal = e.target.value as RecurrenceFrequency | 'none';
-                    setRecurrenceFreq(nextVal);
-                    if (nextVal === 'none') {
-                      setRecurrenceUntil('');
-                    }
-                  }}
-                  className="w-full h-9 px-2.5 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 outline-hidden cursor-pointer"
-                >
-                  {RECURRENCE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value} className="bg-[#12151e] text-neutral-100">
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {recurrenceFreq !== 'none' && (
-                <div>
-                  <label className="block text-[11px] text-neutral-400 mb-1">
-                    반복 종료일 <span className="text-neutral-500">(미지정 시 계속 반복)</span>
-                  </label>
+              {/* 3. 컴팩트 2줄 인라인 일시 · 시간대 · 반복 설정 */}
+              <div className="pt-3.5 border-t border-white/5 space-y-2.5">
+                {/* 1줄: 날짜 + 시작~종료 시간 (또는 다일 종료일) */}
+                <div className="flex flex-wrap items-center gap-1.5">
                   <input
                     type="date"
-                    min={date}
-                    value={recurrenceUntil}
-                    onChange={(e) => setRecurrenceUntil(e.target.value)}
-                    className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                    value={date}
+                    aria-label="시작 날짜"
+                    onChange={(e) => {
+                      setDate(e.target.value);
+                      if (endDate && endDate < e.target.value) {
+                        setEndDate('');
+                      }
+                      if (recurrenceUntil && recurrenceUntil < e.target.value) {
+                        setRecurrenceUntil('');
+                      }
+                      if (formError) setFormError(null);
+                    }}
+                    className="h-8.5 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark] shrink-0"
                   />
+
+                  {showEndDateInput && (
+                    <div className="inline-flex items-center gap-1 shrink-0">
+                      <span className="text-xs text-neutral-500">~</span>
+                      <input
+                        type="date"
+                        min={date}
+                        value={endDate}
+                        aria-label="종료 날짜"
+                        onChange={(e) => {
+                          setEndDate(e.target.value);
+                          if (formError) setFormError(null);
+                        }}
+                        className="h-8.5 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEndDate('');
+                          setShowEndDateInput(false);
+                        }}
+                        className="p-1 rounded text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.06] transition-colors cursor-pointer"
+                        title="종료일 해제"
+                        aria-label="종료일 해제"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
+
+                  {!isAllDay && (
+                    <div className="inline-flex items-center gap-1 shrink-0">
+                      <input
+                        type="time"
+                        value={startTime}
+                        aria-label="시작 시간"
+                        onChange={(e) => handleStartTimeChange(e.target.value)}
+                        className="h-8.5 px-2 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                      />
+                      <span className="text-xs text-neutral-500">–</span>
+                      <input
+                        type="time"
+                        value={endTime}
+                        aria-label="종료 시간"
+                        onChange={(e) => {
+                          setEndTime(e.target.value);
+                          if (formError) setFormError(null);
+                        }}
+                        className="h-8.5 px-2 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* 2줄: 종일 토글 · 시간대 · 다일 토글 · 반복 주기 */}
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <label className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md bg-white/[0.02] border border-white/[0.07] hover:border-white/[0.15] text-neutral-300 cursor-pointer select-none whitespace-nowrap shrink-0 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={isAllDay}
+                      onChange={(e) => setIsAllDay(e.target.checked)}
+                      className="rounded border-white/20 bg-[#0d1017] accent-white cursor-pointer"
+                    />
+                    <span>종일</span>
+                  </label>
+
+                  {!isAllDay && (
+                    <div className="relative inline-flex items-center shrink-0">
+                      <Globe className="pointer-events-none absolute left-2 w-3 h-3 text-neutral-400" />
+                      <select
+                        value={timeZone}
+                        onChange={(e) => setTimeZone(e.target.value)}
+                        aria-label="기준 시간대"
+                        title="기준 시간대 선택"
+                        className="h-7 pl-6.5 pr-5.5 rounded-md bg-white/[0.02] border border-white/[0.07] hover:border-white/[0.15] text-[11.5px] font-mono text-neutral-200 outline-hidden cursor-pointer appearance-none transition-colors"
+                      >
+                        {timeZoneOptions.map((tz) => (
+                          <option
+                            key={tz.iana}
+                            value={tz.iana}
+                            className="bg-[#12151e] text-neutral-100"
+                          >
+                            {tz.shortCode} · {tz.cityKo}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-1.5 w-3 h-3 text-neutral-500" />
+                    </div>
+                  )}
+
+                  {!showEndDateInput && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEndDateInput(true);
+                        if (!endDate) setEndDate(date);
+                      }}
+                      className="h-7 px-2 rounded-md border border-white/[0.07] hover:border-white/[0.16] text-[11.5px] text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      + 종료일
+                    </button>
+                  )}
+
+                  <div className="relative inline-flex items-center shrink-0">
+                    <Repeat className="pointer-events-none absolute left-2 w-3 h-3 text-neutral-400" />
+                    <select
+                      value={recurrenceFreq}
+                      onChange={(e) => {
+                        const nextVal = e.target.value as RecurrenceFrequency | 'none';
+                        setRecurrenceFreq(nextVal);
+                        if (nextVal === 'none') {
+                          setRecurrenceUntil('');
+                        }
+                      }}
+                      aria-label="반복 주기"
+                      className="h-7 pl-6.5 pr-5.5 rounded-md bg-white/[0.02] border border-white/[0.07] hover:border-white/[0.15] text-[11.5px] text-neutral-300 outline-hidden cursor-pointer appearance-none transition-colors"
+                    >
+                      {RECURRENCE_OPTIONS.map((opt) => (
+                        <option
+                          key={opt.value}
+                          value={opt.value}
+                          className="bg-[#12151e] text-neutral-100"
+                        >
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-1.5 w-3 h-3 text-neutral-500" />
+                  </div>
+
+                  {recurrenceFreq !== 'none' && (
+                    <input
+                      type="date"
+                      min={date}
+                      value={recurrenceUntil}
+                      onChange={(e) => setRecurrenceUntil(e.target.value)}
+                      title="반복 종료일 (미지정 시 계속 반복)"
+                      aria-label="반복 종료일"
+                      className="h-7 px-2 rounded-md bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-[11.5px] font-mono tabular-nums text-neutral-200 outline-hidden [color-scheme:dark] shrink-0"
+                    />
+                  )}
+                </div>
+
+                {/* 시간 충돌 실시간 경고 및 대안 슬롯 */}
+                {liveConflict && (
+                  <div className="pt-1 flex items-center justify-between gap-2 text-[11px] text-amber-300">
+                    <span className="inline-flex items-center gap-1.5 min-w-0">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                      <span className="truncate" title={liveConflict.message}>
+                        {liveConflict.message}
+                      </span>
+                    </span>
+                    {liveConflict.suggestedSlots[0] && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStartTime(liveConflict.suggestedSlots[0].startTime);
+                          setEndTime(liveConflict.suggestedSlots[0].endTime);
+                        }}
+                        className="px-2 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 text-[10.5px] font-mono tabular-nums text-amber-200 whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        {liveConflict.suggestedSlots[0].startTime}–
+                        {liveConflict.suggestedSlots[0].endTime} 적용
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {formError && (
+                  <p className="text-xs text-rose-400 font-medium pt-0.5">{formError}</p>
+                )}
+              </div>
+            </div>
+
+            {/* 우측 컬럼: 스마트 장소·주소 통합 검색 + 점진적 공개(메모 & 체크리스트) */}
+            <div className="space-y-3.5 min-w-0 pt-3.5 border-t border-white/5 md:pt-0 md:border-t-0 md:border-l md:border-white/5 md:pl-6">
+              {/* 4. 통합 스마트 장소 · 주소 검색 필드 (인라인 지오코딩 액션 아이콘) */}
+              <div className="space-y-1.5">
+                <div className="relative flex items-center">
+                  <MapPin className="pointer-events-none absolute left-3 w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                  <input
+                    type="text"
+                    value={locationQuery}
+                    onChange={(e) => handleLocationQueryChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+                        e.preventDefault();
+                        void handleAutoResolveLocation();
+                      }
+                    }}
+                    placeholder="장소명 또는 도로명 주소 검색 (Enter로 좌표 탐색)"
+                    className="w-full h-9.5 pl-8.5 pr-15 rounded-lg bg-white/[0.03] border border-white/[0.10] focus:border-white/28 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden transition-colors"
+                  />
+                  <div className="absolute right-1.5 flex items-center gap-0.5">
+                    {locationQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLocationQuery('');
+                          setResolvedGeo(null);
+                          setLocNotice(null);
+                        }}
+                        className="h-6.5 w-6.5 rounded-md inline-flex items-center justify-center text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.06] transition-colors cursor-pointer"
+                        title="장소 입력 지우기"
+                        aria-label="장소 입력 지우기"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleAutoResolveLocation()}
+                      disabled={isResolvingLoc}
+                      className="h-7 w-7 rounded-md inline-flex items-center justify-center text-neutral-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.10] disabled:opacity-50 transition-colors cursor-pointer"
+                      title="도로명 주소 및 위경도 자동 탐색 (Enter)"
+                      aria-label="도로명 주소 및 위경도 자동 탐색"
+                    >
+                      {isResolvingLoc ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Search className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {locNotice && (
+                  <p className="text-[11px] text-neutral-400 font-mono tabular-nums truncate">
+                    {locNotice}
+                  </p>
+                )}
+              </div>
+
+              {/* 5. 점진적 공개(Progressive Disclosure): 상세 메모 & 사전 체크리스트 */}
+              {!isDetailsExpanded ? (
+                <button
+                  type="button"
+                  onClick={() => setIsDetailsExpanded(true)}
+                  className="w-full h-9.5 px-3 rounded-lg border border-dashed border-white/[0.10] hover:border-white/[0.22] hover:bg-white/[0.025] text-xs text-neutral-400 hover:text-neutral-200 flex items-center justify-between gap-2 transition-colors cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-1.5 font-medium whitespace-nowrap">
+                    <Plus className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                    <span>메모 및 체크리스트 추가</span>
+                  </span>
+                  {optionalSummaryCount > 0 ? (
+                    <span className="text-[11px] font-mono tabular-nums text-neutral-300 whitespace-nowrap shrink-0">
+                      작성됨 ({optionalSummaryCount})
+                    </span>
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                  )}
+                </button>
+              ) : (
+                <div className="pt-3 border-t border-white/5 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11.5px] font-medium text-neutral-300 inline-flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                      <span>상세 메모 · 체크리스트</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsDetailsExpanded(false)}
+                      className="inline-flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <span>접기</span>
+                      <ChevronUp className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* 상세 메모 */}
+                  <textarea
+                    rows={2}
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    placeholder="담당자 연락처, 반입 동선, 특이사항 기록..."
+                    className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden resize-none leading-relaxed"
+                  />
+
+                  {/* 사전 체크리스트 */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative flex-1 min-w-0 flex items-center">
+                        <ListTodo className="pointer-events-none absolute left-2.5 w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                        <input
+                          type="text"
+                          value={newCheckText}
+                          onChange={(e) => setNewCheckText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+                              e.preventDefault();
+                              handleAddChecklistDraft();
+                            }
+                          }}
+                          placeholder="사전 준비 항목 입력 후 Enter"
+                          className="w-full h-8 pl-8 pr-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden transition-colors"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddChecklistDraft}
+                        className="h-8 px-2.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.11] border border-white/[0.08] text-xs text-neutral-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                        title="체크리스트 항목 추가"
+                      >
+                        <Plus className="w-3.5 h-3.5 shrink-0" />
+                        <span>추가</span>
+                      </button>
+                    </div>
+
+                    {checklist.length > 0 && (
+                      <ul className="max-h-24 overflow-y-auto divide-y divide-white/5">
+                        {checklist.map((item) => (
+                          <li
+                            key={item.id}
+                            className="flex items-center justify-between gap-2 py-1 px-1 text-xs text-neutral-200"
+                          >
+                            <span className="truncate">{item.text}</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setChecklist((prev) => prev.filter((c) => c.id !== item.id))
+                              }
+                              className="p-0.5 text-neutral-500 hover:text-rose-300 transition-colors cursor-pointer shrink-0"
+                              title="항목 삭제"
+                              aria-label="항목 삭제"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-
-            {liveConflict && (
-              <div className="pt-1 flex items-start justify-between gap-2 text-[11px] text-amber-300">
-                <span className="inline-flex items-start gap-1.5 leading-snug">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
-                  <span>{liveConflict.message}</span>
-                </span>
-                {liveConflict.suggestedSlots[0] && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStartTime(liveConflict.suggestedSlots[0].startTime);
-                      setEndTime(liveConflict.suggestedSlots[0].endTime);
-                    }}
-                    className="px-2 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 text-[10.5px] font-mono tabular-nums text-amber-200 whitespace-nowrap shrink-0 cursor-pointer"
-                  >
-                    {liveConflict.suggestedSlots[0].startTime}–{liveConflict.suggestedSlots[0].endTime} 적용
-                  </button>
-                )}
-              </div>
-            )}
           </div>
-
-          {/* 4. 소속 프로젝트 */}
-          <div className="flex items-center justify-between p-3 rounded-xl bg-[#161a24] border border-white/[0.06] text-xs gap-2">
-            <span className="font-medium text-neutral-300 flex items-center gap-2 shrink-0">
-              <FolderKanban className="w-4 h-4 text-neutral-400 shrink-0" />
-              <span>소속 프로젝트</span>
-            </span>
-            <select
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className="bg-[#0d1017] border border-white/[0.09] rounded-lg px-2.5 py-1.5 text-xs text-neutral-100 outline-hidden cursor-pointer hover:border-white/20 transition-colors max-w-[240px] truncate"
-            >
-              <option value="">(지정 안 됨 / 일반 일정)</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 5. 장소 및 도로명 주소 */}
-          <div className="p-3.5 rounded-xl bg-[#161a24] border border-white/[0.06] space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-neutral-300 flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                <span>장소 및 상세 주소</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => void handleAutoResolveLocation()}
-                disabled={isResolvingLoc}
-                className="h-6 px-2.5 rounded-md bg-white/[0.05] hover:bg-white/[0.10] disabled:opacity-50 border border-white/[0.09] text-[10.5px] text-neutral-200 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-              >
-                {isResolvingLoc ? (
-                  <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-                ) : (
-                  <Search className="w-3 h-3 shrink-0" />
-                )}
-                <span>{isResolvingLoc ? '탐색 중...' : '주소·위경도 자동 탐색'}</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="공식 장소·건물·호실명"
-                className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden"
-              />
-              <input
-                type="text"
-                value={locationAddress}
-                onChange={(e) => setLocationAddress(e.target.value)}
-                placeholder="시/도 시/군/구 도로명 상세 주소"
-                className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden"
-              />
-            </div>
-
-            {locNotice && <p className="text-[11px] text-neutral-400">{locNotice}</p>}
-          </div>
-
-          {/* 6. 상세 메모 */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-neutral-300 flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-              <span>상세 메모 · 파트너 정보</span>
-            </label>
-            <textarea
-              rows={2}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="담당자 연락처, 반입 동선, 특이사항 기록..."
-              className="w-full p-3 rounded-xl bg-[#161a24] border border-white/[0.06] focus:border-white/22 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden resize-y leading-relaxed"
-            />
-          </div>
-
-          {/* 7. 사전 체크리스트 */}
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-neutral-300 flex items-center gap-1.5">
-              <ListTodo className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-              <span>사전 준비 체크리스트</span>
-            </label>
-
-            {checklist.length > 0 && (
-              <div className="space-y-1 bg-[#161a24] p-2.5 rounded-xl border border-white/[0.06]">
-                {checklist.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-white/[0.02] text-xs text-neutral-200"
-                  >
-                    <span className="truncate">{item.text}</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setChecklist((prev) => prev.filter((c) => c.id !== item.id))
-                      }
-                      className="text-neutral-500 hover:text-rose-300 transition-colors cursor-pointer shrink-0"
-                      title="항목 삭제"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newCheckText}
-                onChange={(e) => setNewCheckText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
-                    e.preventDefault();
-                    handleAddChecklistDraft();
-                  }
-                }}
-                placeholder="준비 항목 입력 후 Enter (예: 빔프로젝터 HDMI 어댑터 확인)"
-                className="flex-1 h-8.5 px-3 rounded-lg bg-[#161a24] border border-white/[0.06] focus:border-white/22 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden"
-              />
-              <button
-                type="button"
-                onClick={handleAddChecklistDraft}
-                className="h-8.5 px-3 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs text-neutral-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5 shrink-0" />
-                <span>추가</span>
-              </button>
-            </div>
-          </div>
-
-          {formError && <p className="text-xs text-rose-300">{formError}</p>}
         </div>
 
-        {/* 푸터 */}
-        <div className="px-5 py-3 bg-[#0f121a] border-t border-white/[0.07] flex items-center justify-between gap-3 shrink-0">
-          <span className="text-[11px] text-neutral-500 font-mono hidden sm:inline">
-            ⌘/Ctrl + Enter 빠른 등록
-          </span>
-          <div className="flex items-center gap-2 ml-auto">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-8.5 px-3.5 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.08] text-xs text-neutral-300 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-            >
-              취소
-            </button>
-            <button
-              type="submit"
-              className="h-8.5 px-4 rounded-xl bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
-            >
-              일정 등록
-            </button>
-          </div>
+        {/* 푸터: 우측 정렬 주요 액션 버튼만 배치 */}
+        <div className="px-5 py-3 border-t border-white/[0.06] bg-white/[0.015] flex items-center justify-end gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            title="취소 (Esc)"
+            className="h-8.5 px-4 rounded-lg border border-white/[0.09] bg-white/[0.03] hover:bg-white/[0.08] text-xs font-medium text-neutral-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            취소
+          </button>
+          <button
+            type="submit"
+            title="일정 등록 (Ctrl + Enter / ⌘ + Enter)"
+            className="h-8.5 px-4 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            일정 등록
+          </button>
         </div>
       </form>
     </div>
   );
 };
+
