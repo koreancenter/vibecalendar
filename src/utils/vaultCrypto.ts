@@ -12,6 +12,7 @@ import {
   readStoredBiometricSlot,
   unlockDekWithBiometrics,
 } from './webauthnBiometrics';
+import { purgeCloudKeyStorageSync } from './cloudApiKeyStorage';
 
 export const VAULT_STORAGE_KEY = 'vibe_aes_gcm_vault_v1';
 export const LEGAL_CONSENT_STORAGE_KEY = 'vibe_legal_consent_v1';
@@ -833,6 +834,7 @@ export function disableEncryptedVault(bundle: VaultPlaintextBundle): void {
 
 export function factoryResetLocalWorkspace(): void {
   purgePlaintextWorkspaceStorage();
+  purgeCloudKeyStorageSync();
   setBrowseSessionActive(false);
   void clearBiometricSlot();
   try {

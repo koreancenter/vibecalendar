@@ -64,13 +64,9 @@ const MAX_CHAT_HISTORY_SANITIZED = 10;
 const MAX_PROJECTS_INPUT = 200;
 const MAX_PROJECTS_SANITIZED = 20;
 
-export const CloudModelIdSchema = z.enum([
-  'gemini-3.8-flash',
-  'gemini-3.1-flash-lite',
-  'gemini-flash-latest',
-]);
-
-export const ALLOWED_CLOUD_MODELS = new Set<string>(CloudModelIdSchema.options);
+const SAFE_CLOUD_MODEL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,79}$/i;
+const DEPRECATED_GEMINI_MODEL_PATTERN = /^gemini-(?:1\.0|1\.5|2\.0|pro$)/i;
+const SAFE_GEMINI_API_KEY_PATTERN = /^[A-Za-z0-9._-]{12,256}$/;
 
 export const CalendarCategorySchema = z.enum([
   '업무',
@@ -195,9 +191,43 @@ function normalizeTimeString(val: string | null | undefined, fallback: string): 
 }
 
 function resolveAllowedCloudModel(rawModelId: string | null | undefined): string {
-  const cleaned = sanitizeSingleLineText(rawModelId, 60);
-  const parsed = CloudModelIdSchema.safeParse(cleaned);
-  return parsed.success ? parsed.data : 'gemini-3.8-flash';
+  const cleaned = sanitizeSingleLineText(rawModelId, 90).replace(/^models\//i, '');
+  if (
+    cleaned &&
+    SAFE_CLOUD_MODEL_ID_PATTERN.test(cleaned) &&
+    !DEPRECATED_GEMINI_MODEL_PATTERN.test(cleaned)
+  ) {
+    return cleaned;
+  }
+  return 'gemini-flash-latest';
+}
+
+export function sanitizeClientGeminiApiKey(rawKey: unknown): string | undefined {
+  if (typeof rawKey !== 'string') return undefined;
+  const cleaned = stripUnsafeChars(rawKey).trim();
+  if (!SAFE_GEMINI_API_KEY_PATTERN.test(cleaned)) {
+    return undefined;
+  }
+  return cleaned;
+}
+
+export function validateVerifyCloudKeyRequest(
+  body: unknown,
+  headerKey?: unknown
+): ValidationResult<{ apiKey: string }> {
+  const bodyObj =
+    body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : {};
+  const candidate = bodyObj.apiKey ?? headerKey;
+  if (typeof candidate !== 'string' || !stripUnsafeChars(candidate).trim()) {
+    return { ok: false, status: 400, error: 'API Key 필요' };
+  }
+  const sanitized = sanitizeClientGeminiApiKey(candidate);
+  if (!sanitized) {
+    return { ok: false, status: 400, error: '유효하지 않은 API Key 형식입니다.' };
+  }
+  return { ok: true, value: { apiKey: sanitized } };
 }
 
 function resolveAllowedCategory(rawCategory: string | null | undefined): CalendarCategory {
@@ -1459,7 +1489,7 @@ export function toSafeErrorResponse(
     return {
       status: 503,
       error:
-        '클라우드 AI 연결을 위해 Settings > Secrets 패널에서 GEMINI_API_KEY를 설정하거나, 모델 선택기에서 로컬 모델(WebLLM · Ollama)로 전환해 주세요.',
+        'Cloud 모델을 사용하려면 모델 선택기(Cloud 탭)에서 API Key를 입력·검증하거나, 로컬 모델(Ollama · WebLLM)로 전환해 주세요.',
     };
   }
 
@@ -1474,7 +1504,7 @@ export function toSafeErrorResponse(
     return {
       status: 502,
       error:
-        'GEMINI_API_KEY 인증을 확인할 수 없습니다. Settings > Secrets 패널에 설정된 키가 유효한지 점검해 주세요.',
+        '입력된 API Key 인증을 확인할 수 없습니다. 모델 선택기(Cloud 탭)에서 키를 다시 검증해 주세요.',
     };
   }
 

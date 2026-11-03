@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronDown, Check, RefreshCw, Loader2, Copy } from 'lucide-react';
+import { ChevronDown, Check, RefreshCw, Loader2, Copy, X } from 'lucide-react';
 import { AiModelSelection, AiProviderType } from '../../types';
-import { CLOUD_MODEL_OPTIONS } from '../../services/agentApi';
+import { CloudModelOption, verifyCloudApiKey } from '../../services/agentApi';
+import {
+  clearSavedCloudApiKey,
+  ensureCloudKeyHydrated,
+  getCachedCloudApiKey,
+  getCachedCloudModels,
+  saveVerifiedCloudApiKey,
+  subscribeCloudKeyChanges,
+} from '../../utils/cloudApiKeyStorage';
 import {
   DEFAULT_OLLAMA_BASE_URL,
   fetchOllamaModels,
@@ -45,6 +53,14 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
   const [activeTab, setActiveTab] = useState<AiProviderType>(selection.provider);
   const [hoveredModelId, setHoveredModelId] = useState<string | null>(null);
 
+  const [cloudKeyInput, setCloudKeyInput] = useState<string>(() => getCachedCloudApiKey());
+  const [verifiedApiKey, setVerifiedApiKey] = useState<string>(() => getCachedCloudApiKey());
+  const [cloudModels, setCloudModels] = useState<CloudModelOption[]>(() =>
+    getCachedCloudModels()
+  );
+  const [isVerifyingCloudKey, setIsVerifyingCloudKey] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
+
   const [ollamaUrlInput, setOllamaUrlInput] = useState(
     selection.ollamaBaseUrl || DEFAULT_OLLAMA_BASE_URL
   );
@@ -58,6 +74,31 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
   const [cachedWebLlmIds, setCachedWebLlmIds] = useState<Set<string>>(new Set());
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    void ensureCloudKeyHydrated().then(({ apiKey, models }) => {
+      if (!mounted) return;
+      setVerifiedApiKey(apiKey);
+      setCloudModels(models);
+      setCloudKeyInput((prev) => (prev ? prev : apiKey));
+    });
+
+    const unsubscribe = subscribeCloudKeyChanges(() => {
+      const nextKey = getCachedCloudApiKey();
+      const nextModels = getCachedCloudModels();
+      setVerifiedApiKey(nextKey);
+      setCloudModels(nextModels);
+      if (!nextKey) {
+        setCloudKeyInput('');
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     setActiveTab(selection.provider);
@@ -131,6 +172,70 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
       showToast?.('CORS 허용 실행 명령어가 클립보드에 복사되었습니다.');
     } catch {
       showToast?.(`터미널에서 ${cmd} 명령으로 실행해 주세요.`);
+    }
+  };
+
+  const handleVerifyCloudKey = async () => {
+    const trimmed = cloudKeyInput.trim();
+    if (!trimmed) {
+      setCloudError('API Key 필요');
+      return;
+    }
+
+    setIsVerifyingCloudKey(true);
+    setCloudError(null);
+
+    try {
+      const res = await verifyCloudApiKey(trimmed);
+      if (!res.ok || res.models.length === 0) {
+        setCloudError(res.error || '유효하지 않은 API Key입니다');
+        return;
+      }
+
+      await saveVerifiedCloudApiKey(trimmed, res.models);
+      setVerifiedApiKey(trimmed);
+      setCloudModels(res.models);
+      setCloudKeyInput(trimmed);
+      setCloudError(null);
+
+      const matched =
+        selection.provider === 'cloud'
+          ? res.models.find((m) => m.id === selection.modelId)
+          : undefined;
+      const targetModel = matched || res.models[0];
+      if (targetModel) {
+        onChangeSelection({
+          provider: 'cloud',
+          modelId: targetModel.id,
+          displayName: targetModel.label,
+          ollamaBaseUrl: normalizeOllamaBaseUrl(ollamaUrlInput),
+        });
+      }
+
+      showToast?.('Gemini API Key 연결이 검증되어 안전하게 암호화 저장되었습니다.');
+    } catch {
+      setCloudError('API Key 연결 검증에 실패했습니다');
+    } finally {
+      setIsVerifyingCloudKey(false);
+    }
+  };
+
+  const handleClearCloudKey = async () => {
+    setCloudKeyInput('');
+    setCloudError(null);
+    if (verifiedApiKey || cloudModels.length > 0) {
+      await clearSavedCloudApiKey();
+      setVerifiedApiKey('');
+      setCloudModels([]);
+      if (selection.provider === 'cloud') {
+        onChangeSelection({
+          provider: 'cloud',
+          modelId: '',
+          displayName: 'API Key 필요',
+          ollamaBaseUrl: normalizeOllamaBaseUrl(ollamaUrlInput),
+        });
+      }
+      showToast?.('저장된 Cloud API Key가 삭제되었습니다.');
     }
   };
 
@@ -219,6 +324,17 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
   const isDownloadingCurrent =
     webllmProgress !== null && webllmProgress.percent < 100;
 
+  const isCurrentInputVerified =
+    Boolean(verifiedApiKey) &&
+    cloudKeyInput.trim() === verifiedApiKey &&
+    cloudModels.length > 0;
+
+  const triggerDisplayLabel =
+    selection.provider === 'cloud' &&
+    (!verifiedApiKey || cloudModels.length === 0 || !selection.modelId)
+      ? 'API Key 필요'
+      : selection.displayName || 'API Key 필요';
+
   return (
     <div className="relative flex items-center min-w-0" ref={containerRef}>
       {/* 평상시 무테(Borderless Ghost) 모델 선택 트리거 */}
@@ -237,7 +353,7 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
           <Loader2 className="w-3 h-3 animate-spin text-neutral-300 shrink-0" />
         )}
         <span className="truncate max-w-[112px] sm:max-w-[126px] lg:max-w-[140px] tracking-tight">
-          {selection.displayName}
+          {triggerDisplayLabel}
         </span>
         {isDownloadingCurrent && (
           <span className="text-[11px] text-neutral-400 font-mono tabular-nums">
@@ -309,28 +425,102 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
             <div className="flex-1 min-w-0 flex flex-col">
               {/* Cloud 탭 */}
               {activeTab === 'cloud' && (
-                <div className="space-y-0.5 overflow-y-auto no-scrollbar">
-                  {CLOUD_MODEL_OPTIONS.map((item) => {
-                    const isSelected =
-                      selection.provider === 'cloud' && selection.modelId === item.id;
-                    return (
+                <div className="flex-1 flex flex-col min-h-0 gap-1.5">
+                  <div className="h-8 px-2.5 rounded-[7px] bg-black/25 focus-within:bg-black/40 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] flex items-center gap-1.5 transition-colors shrink-0">
+                    <input
+                      type="password"
+                      value={cloudKeyInput}
+                      onChange={(e) => {
+                        setCloudKeyInput(e.target.value);
+                        if (cloudError) setCloudError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleVerifyCloudKey();
+                        }
+                      }}
+                      placeholder="API Key 입력"
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-label="Gemini API Key"
+                      className="flex-1 min-w-0 bg-transparent border-0 no-focus-outline text-[11px] font-mono text-neutral-100 placeholder-neutral-500"
+                    />
+                    {cloudKeyInput.length > 0 && !isVerifyingCloudKey && (
                       <button
-                        key={item.id}
                         type="button"
-                        onClick={() => handleSelectCloudModel(item.id, item.label)}
-                        className={`w-full h-[34px] px-2.5 rounded-[7px] text-left flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap ${
-                          isSelected
-                            ? 'bg-white/[0.09] text-white'
-                            : 'text-neutral-300/85 hover:bg-white/[0.05] hover:text-white'
+                        onClick={() => void handleClearCloudKey()}
+                        className="p-0.5 rounded text-neutral-500 hover:text-neutral-200 transition-colors cursor-pointer shrink-0"
+                        title="API Key 지우기"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleVerifyCloudKey()}
+                      disabled={isVerifyingCloudKey || !cloudKeyInput.trim()}
+                      className={`h-[22px] px-2 -mr-1 rounded-[5px] text-[10.5px] font-medium flex items-center gap-1 transition-colors shrink-0 whitespace-nowrap ${
+                        isVerifyingCloudKey || !cloudKeyInput.trim()
+                          ? 'bg-white/[0.04] text-neutral-500 cursor-not-allowed'
+                          : isCurrentInputVerified
+                          ? 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 cursor-pointer'
+                          : 'bg-white/[0.1] text-neutral-100 hover:bg-white/[0.18] hover:text-white cursor-pointer'
+                      }`}
+                      title="API Key 연결 검증 및 암호화 저장"
+                    >
+                      {isVerifyingCloudKey ? (
+                        <Loader2 className="w-2.5 h-2.5 animate-spin text-neutral-200 shrink-0" />
+                      ) : isCurrentInputVerified ? (
+                        <>
+                          <Check className="w-2.5 h-2.5 text-emerald-300 shrink-0" />
+                          <span>검증됨</span>
+                        </>
+                      ) : (
+                        <span>검증</span>
+                      )}
+                    </button>
+                  </div>
+
+                  {!isVerifyingCloudKey && !cloudError && cloudModels.length > 0 ? (
+                    <div className="flex-1 overflow-y-auto no-scrollbar space-y-0.5">
+                      {cloudModels.map((item) => {
+                        const isSelected =
+                          selection.provider === 'cloud' && selection.modelId === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleSelectCloudModel(item.id, item.label)}
+                            className={`w-full h-[34px] px-2.5 rounded-[7px] text-left flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap ${
+                              isSelected
+                                ? 'bg-white/[0.09] text-white'
+                                : 'text-neutral-300/85 hover:bg-white/[0.05] hover:text-white'
+                            }`}
+                          >
+                            <span className="text-xs truncate">{item.label}</span>
+                            {isSelected && (
+                              <Check className="w-3.5 h-3.5 text-neutral-100 shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center px-2">
+                      <p
+                        className={`text-[11px] text-center leading-relaxed ${
+                          cloudError && cloudError !== 'API Key 필요'
+                            ? 'text-rose-300/90'
+                            : 'text-neutral-400/85'
                         }`}
                       >
-                        <span className="text-xs truncate">{item.label}</span>
-                        {isSelected && (
-                          <Check className="w-3.5 h-3.5 text-neutral-100 shrink-0" />
-                        )}
-                      </button>
-                    );
-                  })}
+                        {isVerifyingCloudKey
+                          ? 'API Key를 검증하고 있습니다...'
+                          : cloudError || 'API Key 필요'}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -8,24 +8,61 @@ import {
 import { DEFAULT_OLLAMA_BASE_URL, executeOllamaAgentCommand } from './ollamaProvider';
 import { executeWebLlmAgentCommand, WebLlmLoadProgress } from './webllmProvider';
 import { shouldUseSearchGroundingForPlanning } from '../shared/scheduleUtils';
+import {
+  CloudModelOption,
+  ensureCloudKeyHydrated,
+} from '../utils/cloudApiKeyStorage';
 
-export interface CloudModelOption {
-  id: string;
-  label: string;
-}
-
-export const CLOUD_MODEL_OPTIONS: CloudModelOption[] = [
-  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
-  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
-  { id: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
-];
+export type { CloudModelOption };
 
 export const DEFAULT_AI_MODEL_SELECTION: AiModelSelection = {
   provider: 'cloud',
-  modelId: 'gemini-3.8-flash',
-  displayName: 'Gemini 3.8 Flash',
+  modelId: '',
+  displayName: 'API Key 필요',
   ollamaBaseUrl: DEFAULT_OLLAMA_BASE_URL,
 };
+
+export interface VerifyCloudApiKeyResponse {
+  ok: boolean;
+  models: CloudModelOption[];
+  error?: string;
+}
+
+export async function verifyCloudApiKey(apiKey: string): Promise<VerifyCloudApiKeyResponse> {
+  const trimmed = apiKey.trim();
+  if (!trimmed) {
+    return { ok: false, models: [], error: 'API Key 필요' };
+  }
+
+  try {
+    const res = await fetch('/api/agent/cloud-models', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ apiKey: trimmed }),
+    });
+    const data = (await res.json().catch(() => null)) as Partial<VerifyCloudApiKeyResponse> | null;
+    if (!res.ok || !data) {
+      return {
+        ok: false,
+        models: [],
+        error: data?.error || `검증 요청 오류 (${res.status})`,
+      };
+    }
+    return {
+      ok: Boolean(data.ok),
+      models: Array.isArray(data.models) ? data.models : [],
+      error: data.error,
+    };
+  } catch {
+    return {
+      ok: false,
+      models: [],
+      error: '서버와 통신할 수 없습니다',
+    };
+  }
+}
 
 export interface AgentContext {
   currentYear: number;
@@ -86,12 +123,16 @@ export async function sendAgentCommand(
   onWebLlmProgress?: (progress: WebLlmLoadProgress) => void,
   options?: SendAgentCommandOptions
 ): Promise<AgentCommandResponse> {
+  const { apiKey: clientCloudApiKey, models: verifiedCloudModels } =
+    await ensureCloudKeyHydrated();
+
   const wantsLiveWebGrounding =
     !image &&
     (!attachments || attachments.length === 0) &&
     shouldUseSearchGroundingForPlanning(prompt);
 
-  const canUseCloudGrounding = options?.cloudAvailable !== false;
+  const canUseCloudGrounding =
+    options?.cloudAvailable !== false && Boolean(clientCloudApiKey && verifiedCloudModels.length > 0);
   const routeToCloudForGrounding =
     modelSelection.provider !== 'cloud' && wantsLiveWebGrounding && canUseCloudGrounding;
 
@@ -121,10 +162,16 @@ export async function sendAgentCommand(
     }
   }
 
+  if (!clientCloudApiKey || verifiedCloudModels.length === 0) {
+    throw new Error(
+      'Cloud 모델을 사용하려면 모델 선택기(Cloud 탭)에서 Gemini API Key를 입력하고 검증해 주세요.'
+    );
+  }
+
   const effectiveCloudModelId =
-    modelSelection.provider === 'cloud'
+    modelSelection.provider === 'cloud' && modelSelection.modelId
       ? modelSelection.modelId
-      : DEFAULT_AI_MODEL_SELECTION.modelId;
+      : verifiedCloudModels[0]?.id || 'gemini-flash-latest';
 
   const requestBody = JSON.stringify({
     prompt,
@@ -134,12 +181,17 @@ export async function sendAgentCommand(
     attachments,
   });
 
+  const cloudAuthHeaders: Record<string, string> = clientCloudApiKey
+    ? { 'X-Gemini-Api-Key': clientCloudApiKey }
+    : {};
+
   if (options?.onStreamUpdate && typeof ReadableStream !== 'undefined') {
     const streamRes = await fetch('/api/agent/command-stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
+        ...cloudAuthHeaders,
       },
       body: requestBody,
     });
@@ -224,6 +276,7 @@ export async function sendAgentCommand(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...cloudAuthHeaders,
     },
     body: requestBody,
   });
@@ -250,10 +303,12 @@ export interface GroundedDateRequestParams {
 export async function requestGroundedDateSuggestions(
   params: GroundedDateRequestParams
 ): Promise<AgentCommandResponse> {
+  const { apiKey } = await ensureCloudKeyHydrated();
   const res = await fetch('/api/agent/grounding-dates', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(apiKey ? { 'X-Gemini-Api-Key': apiKey } : {}),
     },
     body: JSON.stringify(params),
   });
@@ -279,10 +334,12 @@ export async function resolveLocationDetails(params: {
   locationAddress?: string;
   modelId?: string;
 }): Promise<ResolveLocationResponse> {
+  const { apiKey } = await ensureCloudKeyHydrated();
   const res = await fetch('/api/agent/resolve-location', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(apiKey ? { 'X-Gemini-Api-Key': apiKey } : {}),
     },
     body: JSON.stringify(params),
   });
@@ -316,10 +373,15 @@ export async function enrichLocationsBatch(params: {
   if (!params.items.length) {
     return { items: [], groundingSources: [], searchQueries: [] };
   }
+  const { apiKey } = await ensureCloudKeyHydrated();
+  if (!apiKey) {
+    return { items: [], groundingSources: [], searchQueries: [] };
+  }
   const res = await fetch('/api/agent/enrich-locations', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-Gemini-Api-Key': apiKey,
     },
     body: JSON.stringify(params),
   });

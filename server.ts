@@ -17,6 +17,8 @@ import {
   validateEnrichLocationsRequest,
   sanitizeEnrichLocationsPayload,
   validateAndSanitizeOllamaProxyRequest,
+  sanitizeClientGeminiApiKey,
+  validateVerifyCloudKeyRequest,
   getHostHardwareMetrics,
   toSafeErrorResponse,
   logSafeServerError,
@@ -28,6 +30,7 @@ import {
   executeGroundedDateDiscoveryCommand,
   executeResolveLocationCommand,
   executeBatchEnrichLocationsCommand,
+  verifyAndListCloudModels,
   isGeminiConfigured,
 } from './src/server/geminiAgent';
 
@@ -46,6 +49,30 @@ app.get('/api/health', (_req, res) => {
     geminiEnabled: isGeminiConfigured(),
   });
 });
+
+// Cloud Gemini API Key 연결 검증 및 사용 가능 모델 목록 조회 엔드포인트
+app.post(
+  '/api/agent/cloud-models',
+  apiRateLimiter,
+  textCommandJsonParser,
+  async (req, res) => {
+    const validation = validateVerifyCloudKeyRequest(
+      req.body,
+      req.headers['x-gemini-api-key']
+    );
+    if (!validation.ok) {
+      res.status(200).json({
+        ok: false,
+        models: [],
+        error: validation.error,
+      });
+      return;
+    }
+
+    const result = await verifyAndListCloudModels(validation.value.apiKey);
+    res.status(200).json(result);
+  }
+);
 
 // 인라인 미디어/첨부 파일을 처리하는 엔드포인트: 인라인 첨부 포함 시에만 18MB 허용, 일반 텍스트 명령은 512KB 강제
 app.post(
@@ -71,7 +98,8 @@ app.post(
         return;
       }
 
-      const result = await executeGeminiAgentCommand(sanitizedPayload);
+      const customApiKey = sanitizeClientGeminiApiKey(req.headers['x-gemini-api-key']);
+      const result = await executeGeminiAgentCommand(sanitizedPayload, customApiKey);
       res.json(result);
     } catch (err: unknown) {
       logSafeServerError('Agent Command API', err);
@@ -121,9 +149,14 @@ app.post(
     };
 
     try {
-      const result = await executeGeminiAgentCommandStream(sanitizedPayload, (upd) => {
-        writeSse(upd.type, upd);
-      });
+      const customApiKey = sanitizeClientGeminiApiKey(req.headers['x-gemini-api-key']);
+      const result = await executeGeminiAgentCommandStream(
+        sanitizedPayload,
+        (upd) => {
+          writeSse(upd.type, upd);
+        },
+        customApiKey
+      );
       writeSse('done', result);
       if (!res.writableEnded) {
         res.end();
@@ -153,7 +186,8 @@ app.post(
       }
 
       const sanitizedPayload = sanitizeGroundingDatesPayload(validation.value);
-      const result = await executeGroundedDateDiscoveryCommand(sanitizedPayload);
+      const customApiKey = sanitizeClientGeminiApiKey(req.headers['x-gemini-api-key']);
+      const result = await executeGroundedDateDiscoveryCommand(sanitizedPayload, customApiKey);
       res.json(result);
     } catch (err: unknown) {
       logSafeServerError('Grounding Dates API', err);
@@ -182,7 +216,8 @@ app.post(
         return;
       }
 
-      const result = await executeResolveLocationCommand(sanitizedPayload);
+      const customApiKey = sanitizeClientGeminiApiKey(req.headers['x-gemini-api-key']);
+      const result = await executeResolveLocationCommand(sanitizedPayload, customApiKey);
       res.json(result);
     } catch (err: unknown) {
       logSafeServerError('Resolve Location API', err);
@@ -211,7 +246,8 @@ app.post(
         return;
       }
 
-      const result = await executeBatchEnrichLocationsCommand(sanitizedPayload);
+      const customApiKey = sanitizeClientGeminiApiKey(req.headers['x-gemini-api-key']);
+      const result = await executeBatchEnrichLocationsCommand(sanitizedPayload, customApiKey);
       res.json(result);
     } catch (err: unknown) {
       logSafeServerError('Enrich Locations API', err);

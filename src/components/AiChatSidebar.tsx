@@ -23,14 +23,16 @@ import {
 import {
   DEFAULT_AI_MODEL_SELECTION,
   enrichLocationsBatch,
-  fetchAgentHealth,
   sendAgentCommand,
 } from '../services/agentApi';
 import {
-  CURATED_WEBLLM_MODELS,
-  isWebGpuAvailable,
-  WebLlmLoadProgress,
-} from '../services/webllmProvider';
+  ensureCloudKeyHydrated,
+  getCachedCloudApiKey,
+  getCachedCloudModels,
+  hasVerifiedCloudApiKey,
+  subscribeCloudKeyChanges,
+} from '../utils/cloudApiKeyStorage';
+import { WebLlmLoadProgress } from '../services/webllmProvider';
 import {
   detectConflictAndSuggest,
   shouldUseSearchGroundingForPlanning,
@@ -144,11 +146,14 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
       const saved = localStorage.getItem('vibe_ai_model_selection_v1');
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<AiModelSelection>;
+        const savedOllamaUrl =
+          typeof parsed?.ollamaBaseUrl === 'string' && parsed.ollamaBaseUrl
+            ? parsed.ollamaBaseUrl
+            : DEFAULT_AI_MODEL_SELECTION.ollamaBaseUrl;
+
         if (
           parsed &&
-          (parsed.provider === 'cloud' ||
-            parsed.provider === 'ollama' ||
-            parsed.provider === 'webllm') &&
+          (parsed.provider === 'ollama' || parsed.provider === 'webllm') &&
           typeof parsed.modelId === 'string' &&
           parsed.modelId &&
           typeof parsed.displayName === 'string' &&
@@ -158,10 +163,26 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
             provider: parsed.provider,
             modelId: parsed.modelId,
             displayName: parsed.displayName,
-            ollamaBaseUrl:
-              typeof parsed.ollamaBaseUrl === 'string' && parsed.ollamaBaseUrl
-                ? parsed.ollamaBaseUrl
-                : DEFAULT_AI_MODEL_SELECTION.ollamaBaseUrl,
+            ollamaBaseUrl: savedOllamaUrl,
+          };
+        }
+
+        if (parsed && parsed.provider === 'cloud') {
+          const cachedModels = getCachedCloudModels();
+          const matched = cachedModels.find((m) => m.id === parsed.modelId);
+          if (hasVerifiedCloudApiKey() && matched) {
+            return {
+              provider: 'cloud',
+              modelId: matched.id,
+              displayName: matched.label,
+              ollamaBaseUrl: savedOllamaUrl,
+            };
+          }
+          return {
+            provider: 'cloud',
+            modelId: '',
+            displayName: 'API Key 필요',
+            ollamaBaseUrl: savedOllamaUrl,
           };
         }
       }
@@ -171,17 +192,68 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
     return DEFAULT_AI_MODEL_SELECTION;
   });
   const [webllmProgress, setWebllmProgress] = useState<WebLlmLoadProgress | null>(null);
-  const [geminiEnabled, setGeminiEnabled] = useState<boolean | null>(null);
+  const [geminiEnabled, setGeminiEnabled] = useState<boolean>(() => hasVerifiedCloudApiKey());
 
   useEffect(() => {
     let mounted = true;
-    void fetchAgentHealth().then(({ geminiEnabled: enabled }) => {
-      if (mounted) {
-        setGeminiEnabled(enabled);
-      }
+
+    const syncFromVault = (apiKey: string, models: Array<{ id: string; label: string }>) => {
+      if (!mounted) return;
+      const verified = Boolean(apiKey && models.length > 0);
+      setGeminiEnabled(verified);
+
+      setModelSelection((prev) => {
+        if (prev.provider !== 'cloud') return prev;
+        if (!verified) {
+          if (prev.modelId === '' && prev.displayName === 'API Key 필요') {
+            return prev;
+          }
+          return {
+            ...prev,
+            modelId: '',
+            displayName: 'API Key 필요',
+          };
+        }
+
+        let preferredId = prev.modelId;
+        if (!preferredId) {
+          try {
+            const rawSaved = localStorage.getItem('vibe_ai_model_selection_v1');
+            if (rawSaved) {
+              const parsedSaved = JSON.parse(rawSaved) as Partial<AiModelSelection>;
+              if (parsedSaved.provider === 'cloud' && typeof parsedSaved.modelId === 'string') {
+                preferredId = parsedSaved.modelId;
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        const matched = models.find((m) => m.id === preferredId) || models[0];
+        if (!matched) return prev;
+        if (prev.modelId === matched.id && prev.displayName === matched.label) {
+          return prev;
+        }
+        return {
+          ...prev,
+          modelId: matched.id,
+          displayName: matched.label,
+        };
+      });
+    };
+
+    void ensureCloudKeyHydrated().then(({ apiKey, models }) => {
+      syncFromVault(apiKey, models);
     });
+
+    const unsubscribe = subscribeCloudKeyChanges(() => {
+      syncFromVault(getCachedCloudApiKey(), getCachedCloudModels());
+    });
+
     return () => {
       mounted = false;
+      unsubscribe();
     };
   }, []);
 
@@ -908,37 +980,6 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
           </button>
         </div>
       </div>
-
-      {/* 1-1. Cloud API 키 미연결 시 절제된 인라인 안내 바 */}
-      {geminiEnabled === false && modelSelection.provider === 'cloud' && (
-        <div className="px-4 py-2 bg-[#141720] border-b border-amber-500/20 flex items-center justify-between gap-2 text-[11px] shrink-0">
-          <p className="text-neutral-300 leading-snug min-w-0">
-            <span className="text-amber-300 font-medium">Cloud 키 미설정</span>
-            <span aria-hidden="true" className="text-neutral-600 mx-1.5">·</span>
-            <span className="text-neutral-400">
-              Settings &gt; Secrets에 GEMINI_API_KEY 등록 또는 로컬 모델 이용
-            </span>
-          </p>
-          {isWebGpuAvailable() && CURATED_WEBLLM_MODELS[0] && (
-            <button
-              type="button"
-              onClick={() => {
-                const target = CURATED_WEBLLM_MODELS[0];
-                setModelSelection({
-                  provider: 'webllm',
-                  modelId: target.id,
-                  displayName: target.label,
-                  ollamaBaseUrl: modelSelection.ollamaBaseUrl,
-                });
-                showToast(`브라우저 온디바이스 모델(${target.label})로 전환했습니다.`);
-              }}
-              className="h-6 px-2 rounded-md bg-white/[0.08] hover:bg-white/[0.14] text-[10.5px] font-medium text-white transition-colors cursor-pointer whitespace-nowrap shrink-0"
-            >
-              WebLLM 전환
-            </button>
-          )}
-        </div>
-      )}
 
       {/* 1-2. 조건부 참조 문맥 바 (일정 선택 시에만 무채색 인라인 노출) */}
       {lastReferencedEvent && (

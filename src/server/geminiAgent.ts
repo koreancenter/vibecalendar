@@ -40,7 +40,19 @@ import {
 
 let aiClient: GoogleGenAI | null = null;
 
-export function getGeminiClient(): GoogleGenAI | null {
+export function getGeminiClient(customApiKey?: string): GoogleGenAI | null {
+  const trimmedCustom = customApiKey?.trim();
+  if (trimmedCustom) {
+    return new GoogleGenAI({
+      apiKey: trimmedCustom,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+
   if (!aiClient && process.env.GEMINI_API_KEY) {
     aiClient = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
@@ -56,6 +68,149 @@ export function getGeminiClient(): GoogleGenAI | null {
 
 export function isGeminiConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY);
+}
+
+export interface VerifiedCloudModelItem {
+  id: string;
+  label: string;
+}
+
+export interface VerifiedCloudModelsResult {
+  ok: boolean;
+  models: VerifiedCloudModelItem[];
+  error?: string;
+}
+
+const EXCLUDED_VERIFY_MODEL_ID_PATTERN =
+  /(?:^gemini-(?:1\.0|1\.5|2\.0|pro$)|embedding|tts|image|imagen|veo|lyria|aqa|robotics|computer-use|live|transcribe|translate|audio|vision|learnlm)/i;
+
+function scoreCloudModelCandidate(id: string): number {
+  const lower = id.toLowerCase();
+  let score = 0;
+  if (lower.startsWith('gemini-3.8')) score += 500;
+  else if (lower.startsWith('gemini-3.5')) score += 460;
+  else if (lower.startsWith('gemini-3.1')) score += 430;
+  else if (lower.startsWith('gemini-3')) score += 400;
+  else if (lower.startsWith('gemini-2.5')) score += 350;
+  else if (lower === 'gemini-flash-latest' || lower === 'gemini-pro-latest') score += 320;
+  else score += 150;
+
+  if (lower.includes('flash') && !lower.includes('lite')) score += 40;
+  else if (lower.includes('pro')) score += 30;
+  else if (lower.includes('lite')) score += 20;
+
+  // 정식 별칭을 날짜·포인트 스냅샷보다 우선 배치
+  if (/-(?:00\d|\d{2}-\d{4}|\d{4}-\d{2}|exp)/i.test(lower)) {
+    score -= 60;
+  }
+  return score;
+}
+
+export async function verifyAndListCloudModels(
+  apiKey: string
+): Promise<VerifiedCloudModelsResult> {
+  const cleanKey = apiKey.trim();
+  if (!cleanKey) {
+    return { ok: false, models: [], error: 'API Key 필요' };
+  }
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey: cleanKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    const pager = await ai.models.list({ config: { pageSize: 100 } });
+    const rawCandidates: VerifiedCloudModelItem[] = [];
+    const fallbackCandidates: VerifiedCloudModelItem[] = [];
+    const seenIds = new Set<string>();
+    let inspected = 0;
+
+    for await (const model of pager) {
+      inspected += 1;
+      if (inspected > 160) break;
+
+      const rawName = typeof model.name === 'string' ? model.name.trim() : '';
+      const id = rawName.replace(/^models\//i, '').trim();
+      if (!id || !/^gemini-/i.test(id) || seenIds.has(id)) continue;
+
+      const actions = Array.isArray(model.supportedActions) ? model.supportedActions : [];
+      if (actions.length > 0 && !actions.includes('generateContent')) {
+        continue;
+      }
+
+      if (/^gemini-(?:1\.0|1\.5|2\.0|pro$)/i.test(id)) {
+        continue;
+      }
+
+      seenIds.add(id);
+      const label = (typeof model.displayName === 'string' && model.displayName.trim())
+        ? model.displayName.trim()
+        : id;
+
+      fallbackCandidates.push({ id, label });
+      if (!EXCLUDED_VERIFY_MODEL_ID_PATTERN.test(id)) {
+        rawCandidates.push({ id, label });
+      }
+    }
+
+    const pool = rawCandidates.length > 0 ? rawCandidates : fallbackCandidates;
+    pool.sort(
+      (a, b) => scoreCloudModelCandidate(b.id) - scoreCloudModelCandidate(a.id) || a.id.localeCompare(b.id)
+    );
+
+    const dedupedByLabel: VerifiedCloudModelItem[] = [];
+    const seenLabels = new Set<string>();
+    for (const item of pool) {
+      const normLabel = item.label.toLowerCase();
+      if (seenLabels.has(normLabel)) continue;
+      seenLabels.add(normLabel);
+      dedupedByLabel.push(item);
+      if (dedupedByLabel.length >= 12) break;
+    }
+
+    if (dedupedByLabel.length === 0) {
+      return {
+        ok: false,
+        models: [],
+        error: '이 API Key로 사용할 수 있는 Gemini 모델이 없습니다',
+      };
+    }
+
+    return {
+      ok: true,
+      models: dedupedByLabel,
+    };
+  } catch (err: unknown) {
+    const rawMsg = err instanceof Error ? err.message.toLowerCase() : '';
+    const status =
+      err && typeof err === 'object' && 'status' in err && typeof (err as { status?: unknown }).status === 'number'
+        ? (err as { status: number }).status
+        : 0;
+
+    if (
+      status === 400 ||
+      status === 401 ||
+      status === 403 ||
+      rawMsg.includes('api_key_invalid') ||
+      rawMsg.includes('api key not valid') ||
+      rawMsg.includes('invalid api key') ||
+      rawMsg.includes('permission_denied') ||
+      rawMsg.includes('unauthenticated')
+    ) {
+      return { ok: false, models: [], error: '유효하지 않은 API Key입니다' };
+    }
+
+    if (status === 429 || rawMsg.includes('quota') || rawMsg.includes('rate limit')) {
+      return { ok: false, models: [], error: 'API 요청 한도를 초과했습니다' };
+    }
+
+    return { ok: false, models: [], error: 'API Key 연결 검증에 실패했습니다' };
+  }
 }
 
 /**
@@ -453,16 +608,17 @@ export interface BatchEnrichLocationsResult {
 }
 
 function createMissingGeminiKeyError(): Error {
-  const err = new Error('GEMINI_API_KEY가 서버 환경에 설정되어 있지 않습니다.');
+  const err = new Error('Cloud API Key가 설정되어 있지 않습니다.');
   (err as Error & { statusCode?: number; code?: string }).statusCode = 503;
   (err as Error & { statusCode?: number; code?: string }).code = 'GEMINI_KEY_MISSING';
   return err;
 }
 
 export async function executeBatchEnrichLocationsCommand(
-  reqData: ValidatedEnrichLocationsRequest
+  reqData: ValidatedEnrichLocationsRequest,
+  customApiKey?: string
 ): Promise<BatchEnrichLocationsResult> {
-  const ai = getGeminiClient();
+  const ai = getGeminiClient(customApiKey);
   if (!ai) {
     throw createMissingGeminiKeyError();
   }
@@ -484,7 +640,7 @@ export async function executeBatchEnrichLocationsCommand(
     ].join('\n');
 
     const gRes = await ai.models.generateContent({
-      model: reqData.modelId || 'gemini-3.8-flash',
+      model: reqData.modelId || 'gemini-flash-latest',
       contents: lookupPrompt,
       config: {
         tools: [{ googleSearch: {} }],
@@ -564,9 +720,10 @@ export interface ResolvedLocationResult {
 }
 
 export async function executeResolveLocationCommand(
-  reqData: ValidatedLocationResolveRequest
+  reqData: ValidatedLocationResolveRequest,
+  customApiKey?: string
 ): Promise<ResolvedLocationResult> {
-  const ai = getGeminiClient();
+  const ai = getGeminiClient(customApiKey);
   if (!ai) {
     throw createMissingGeminiKeyError();
   }
@@ -585,7 +742,7 @@ export async function executeResolveLocationCommand(
   ].join('\n');
 
   const gRes = await ai.models.generateContent({
-    model: reqData.modelId || 'gemini-3.8-flash',
+    model: reqData.modelId || 'gemini-flash-latest',
     contents: prompt,
     config: {
       tools: [{ googleSearch: {} }],
@@ -650,12 +807,13 @@ export async function executeResolveLocationCommand(
 }
 
 /**
- * Gemini 3.8 Flash 기반 일정 에이전트 실행
+ * Gemini 기반 일정 에이전트 실행
  */
 export async function executeGroundedDateDiscoveryCommand(
-  reqData: ValidatedGroundingDiscoveryRequest
+  reqData: ValidatedGroundingDiscoveryRequest,
+  customApiKey?: string
 ): Promise<AgentCommandResponse> {
-  const ai = getGeminiClient();
+  const ai = getGeminiClient(customApiKey);
   if (!ai) {
     throw createMissingGeminiKeyError();
   }
@@ -1006,9 +1164,10 @@ function parseRawGeminiAgentResponse(
 }
 
 export async function executeGeminiAgentCommand(
-  reqData: ValidatedAgentRequest
+  reqData: ValidatedAgentRequest,
+  customApiKey?: string
 ): Promise<AgentCommandResponse> {
-  const ai = getGeminiClient();
+  const ai = getGeminiClient(customApiKey);
   if (!ai) {
     throw createMissingGeminiKeyError();
   }
@@ -1024,7 +1183,7 @@ export async function executeGeminiAgentCommand(
     return executeGroundedDateDiscovery(ai, {
       topic: prompt,
       rangeMonths: inferredRangeMonths,
-      modelId: modelId || 'gemini-3.8-flash',
+      modelId: modelId || 'gemini-flash-latest',
       currentYear: context.currentYear,
       selectedDate: context.selectedDate,
       activeProjectName: activeProj?.name || context.activeProjectName,
@@ -1036,7 +1195,7 @@ export async function executeGeminiAgentCommand(
   const parts = buildAgentPromptParts(reqData);
 
   const response = await ai.models.generateContent({
-    model: modelId || 'gemini-3.8-flash',
+    model: modelId || 'gemini-flash-latest',
     contents: { parts },
     config: {
       systemInstruction: STATIC_SYSTEM_INSTRUCTION,
@@ -1057,9 +1216,10 @@ export interface AgentStreamProgressEvent {
 
 export async function executeGeminiAgentCommandStream(
   reqData: ValidatedAgentRequest,
-  onStreamUpdate: (event: AgentStreamProgressEvent) => void
+  onStreamUpdate: (event: AgentStreamProgressEvent) => void,
+  customApiKey?: string
 ): Promise<AgentCommandResponse> {
-  const ai = getGeminiClient();
+  const ai = getGeminiClient(customApiKey);
   if (!ai) {
     throw createMissingGeminiKeyError();
   }
@@ -1079,7 +1239,7 @@ export async function executeGeminiAgentCommandStream(
     return executeGroundedDateDiscovery(ai, {
       topic: prompt,
       rangeMonths: inferredRangeMonths,
-      modelId: modelId || 'gemini-3.8-flash',
+      modelId: modelId || 'gemini-flash-latest',
       currentYear: context.currentYear,
       selectedDate: context.selectedDate,
       activeProjectName: activeProj?.name || context.activeProjectName,
@@ -1099,7 +1259,7 @@ export async function executeGeminiAgentCommandStream(
   });
 
   const streamResponse = await ai.models.generateContentStream({
-    model: modelId || 'gemini-3.8-flash',
+    model: modelId || 'gemini-flash-latest',
     contents: { parts },
     config: {
       systemInstruction: STATIC_SYSTEM_INSTRUCTION,

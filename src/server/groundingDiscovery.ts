@@ -200,7 +200,7 @@ export async function executeGroundedDateDiscovery(
     .join('\n');
 
   const response = await ai.models.generateContent({
-    model: input.modelId || 'gemini-3.8-flash',
+    model: input.modelId || 'gemini-flash-latest',
     contents: userPrompt,
     config: {
       systemInstruction: GROUNDING_DATE_SYSTEM_INSTRUCTION,
