@@ -5,7 +5,13 @@ import {
 } from '../data/sampleEvents';
 import { INITIAL_PROJECTS, PROJECT_STATUS_MAP } from '../constants/projects';
 import { normalizePlaceAndAddress } from '../shared/locationUtils';
-import { CalendarEventItem, ProjectItem } from '../types';
+import {
+  CalendarEventItem,
+  NotificationEnginePreferences,
+  ProjectItem,
+  SavedCollabRoomItem,
+  VaultExternalSyncState,
+} from '../types';
 import {
   clearBiometricSlot,
   enrollBiometricForDek,
@@ -26,6 +32,9 @@ const PLAINTEXT_WORKSPACE_KEYS = [
   'vibe_calendar_projects_v1',
   'vibe_calendar_selected_project_ids_v2',
   'vibe_calendar_selected_project_id',
+  'vibe_external_sync_meta_v1',
+  'vibe_notification_prefs_v2',
+  'vibe_collab_rooms_v1',
 ] as const;
 
 const VAULT_AAD_LABEL_V1 = 'vibe-event-vault-v1';
@@ -40,6 +49,9 @@ export interface VaultPlaintextBundle {
   events: CalendarEventItem[];
   projects: ProjectItem[];
   selectedProjectIds: string[];
+  syncState?: VaultExternalSyncState;
+  notificationPrefs?: NotificationEnginePreferences;
+  collabRooms?: SavedCollabRoomItem[];
 }
 
 export interface LegacyEncryptedVaultEnvelopeV1 {
@@ -170,10 +182,66 @@ function normalizeDecodedBundle(parsed: Partial<VaultPlaintextBundle>): VaultPla
       )
     : [];
 
+  const syncState: VaultExternalSyncState | undefined =
+    parsed.syncState && typeof parsed.syncState === 'object'
+      ? {
+          accounts: Array.isArray(parsed.syncState.accounts) ? parsed.syncState.accounts : [],
+          pendingDeletions: Array.isArray(parsed.syncState.pendingDeletions)
+            ? parsed.syncState.pendingDeletions
+            : [],
+          conflicts: Array.isArray(parsed.syncState.conflicts) ? parsed.syncState.conflicts : [],
+        }
+      : undefined;
+
+  const notificationPrefs: NotificationEnginePreferences | undefined =
+    parsed.notificationPrefs && typeof parsed.notificationPrefs === 'object'
+      ? {
+          enabled: Boolean(parsed.notificationPrefs.enabled),
+          defaultLeadMinutes: Array.isArray(parsed.notificationPrefs.defaultLeadMinutes)
+            ? parsed.notificationPrefs.defaultLeadMinutes.filter(
+                (n): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 10080
+              )
+            : [10],
+          allDayNotifyHour:
+            typeof parsed.notificationPrefs.allDayNotifyHour === 'number' &&
+            parsed.notificationPrefs.allDayNotifyHour >= 0 &&
+            parsed.notificationPrefs.allDayNotifyHour <= 23
+              ? Math.round(parsed.notificationPrefs.allDayNotifyHour)
+              : null,
+          webPushEnabled: Boolean(parsed.notificationPrefs.webPushEnabled),
+          backgroundSyncEnabled:
+            parsed.notificationPrefs.backgroundSyncEnabled === undefined
+              ? true
+              : Boolean(parsed.notificationPrefs.backgroundSyncEnabled),
+          privacyMaskWhenEncrypted:
+            parsed.notificationPrefs.privacyMaskWhenEncrypted === undefined
+              ? true
+              : Boolean(parsed.notificationPrefs.privacyMaskWhenEncrypted),
+        }
+      : undefined;
+
+  const collabRooms: SavedCollabRoomItem[] | undefined = Array.isArray(parsed.collabRooms)
+    ? parsed.collabRooms.filter(
+        (r): r is SavedCollabRoomItem =>
+          Boolean(
+            r &&
+              typeof r === 'object' &&
+              typeof r.roomId === 'string' &&
+              (r.kind === 'proposal' ||
+                r.kind === 'runsheet' ||
+                r.kind === 'sharepass-crdt') &&
+              typeof r.localTitle === 'string'
+          )
+      )
+    : undefined;
+
   return {
     events,
     projects,
     selectedProjectIds,
+    syncState,
+    notificationPrefs,
+    collabRooms,
   };
 }
 
@@ -354,7 +422,86 @@ export function readPlaintextWorkspaceBundle(): VaultPlaintextBundle {
     // fallback
   }
 
-  return { events, projects, selectedProjectIds };
+  let syncState: VaultExternalSyncState | undefined;
+  try {
+    const savedSync = localStorage.getItem('vibe_external_sync_meta_v1');
+    if (savedSync) {
+      const parsed = JSON.parse(savedSync);
+      if (parsed && typeof parsed === 'object') {
+        syncState = {
+          accounts: Array.isArray(parsed.accounts) ? parsed.accounts : [],
+          pendingDeletions: Array.isArray(parsed.pendingDeletions) ? parsed.pendingDeletions : [],
+          conflicts: Array.isArray(parsed.conflicts) ? parsed.conflicts : [],
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  let notificationPrefs: NotificationEnginePreferences | undefined;
+  try {
+    const savedNotif = localStorage.getItem('vibe_notification_prefs_v2');
+    if (savedNotif) {
+      const parsed = JSON.parse(savedNotif);
+      if (parsed && typeof parsed === 'object') {
+        notificationPrefs = {
+          enabled: Boolean(parsed.enabled),
+          defaultLeadMinutes: Array.isArray(parsed.defaultLeadMinutes)
+            ? parsed.defaultLeadMinutes.filter(
+                (n: unknown): n is number =>
+                  typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 10080
+              )
+            : [10],
+          allDayNotifyHour:
+            typeof parsed.allDayNotifyHour === 'number' &&
+            parsed.allDayNotifyHour >= 0 &&
+            parsed.allDayNotifyHour <= 23
+              ? Math.round(parsed.allDayNotifyHour)
+              : null,
+          webPushEnabled: Boolean(parsed.webPushEnabled),
+          backgroundSyncEnabled:
+            parsed.backgroundSyncEnabled === undefined ? true : Boolean(parsed.backgroundSyncEnabled),
+          privacyMaskWhenEncrypted:
+            parsed.privacyMaskWhenEncrypted === undefined
+              ? true
+              : Boolean(parsed.privacyMaskWhenEncrypted),
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  let collabRooms: SavedCollabRoomItem[] | undefined;
+  try {
+    const savedCollab = localStorage.getItem('vibe_collab_rooms_v1');
+    if (savedCollab) {
+      const parsed = JSON.parse(savedCollab);
+      if (Array.isArray(parsed)) {
+        collabRooms = parsed.filter(
+          (r: unknown): r is SavedCollabRoomItem =>
+            Boolean(
+              r &&
+                typeof r === 'object' &&
+                typeof (r as SavedCollabRoomItem).roomId === 'string' &&
+                typeof (r as SavedCollabRoomItem).localTitle === 'string'
+            )
+        );
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return {
+    events,
+    projects,
+    selectedProjectIds,
+    syncState,
+    notificationPrefs,
+    collabRooms,
+  };
 }
 
 export function purgePlaintextWorkspaceStorage(): void {
@@ -377,6 +524,30 @@ export function restorePlaintextWorkspaceStorage(bundle: VaultPlaintextBundle): 
       'vibe_calendar_selected_project_ids_v2',
       JSON.stringify(bundle.selectedProjectIds)
     );
+    if (bundle.syncState) {
+      // Strip plaintext CalDAV appPassword when downgrading from encrypted vault to unencrypted browse storage
+      const strippedSyncState: VaultExternalSyncState = {
+        ...bundle.syncState,
+        accounts: bundle.syncState.accounts.map((acc) =>
+          acc.caldavConfig
+            ? {
+                ...acc,
+                caldavConfig: {
+                  ...acc.caldavConfig,
+                  appPassword: undefined,
+                },
+              }
+            : acc
+        ),
+      };
+      localStorage.setItem('vibe_external_sync_meta_v1', JSON.stringify(strippedSyncState));
+    }
+    if (bundle.notificationPrefs) {
+      localStorage.setItem('vibe_notification_prefs_v2', JSON.stringify(bundle.notificationPrefs));
+    }
+    if (bundle.collabRooms) {
+      localStorage.setItem('vibe_collab_rooms_v1', JSON.stringify(bundle.collabRooms));
+    }
   } catch {
     // ignore quota error
   }
@@ -841,6 +1012,19 @@ export function factoryResetLocalWorkspace(): void {
     localStorage.removeItem(VAULT_STORAGE_KEY);
     localStorage.removeItem('vibe_ai_model_selection_v1');
     localStorage.removeItem('vibe_pdf_export_theme_v1');
+    localStorage.removeItem('vibe_event_reminder_lead_v1');
+    localStorage.removeItem('vibe_push_client_id_v1');
+    localStorage.removeItem('vibe_collab_profile_v1');
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('vibe_e2ee_yjs_doc_v1:')) {
+        keysToRemove.push(k);
+      }
+    }
+    for (const k of keysToRemove) {
+      localStorage.removeItem(k);
+    }
   } catch {
     // ignore
   }

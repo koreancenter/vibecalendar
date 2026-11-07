@@ -311,6 +311,47 @@ export function buildGoogleMapsPinUrl(params: {
   return 'https://www.google.com/maps';
 }
 
+/**
+ * 네이버 지도(Naver Map) 바로가기 URL 생성
+ */
+export function buildNaverMapUrl(params: {
+  location?: string;
+  locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
+}): string {
+  const { location, locationAddress, locationLat, locationLng } = params;
+  const searchQuery = buildLocationSearchQuery(location, locationAddress);
+  if (searchQuery) {
+    return `https://map.naver.com/p/search/${encodeURIComponent(searchQuery)}`;
+  }
+  if (hasValidCoordinates(locationLat, locationLng)) {
+    return `https://map.naver.com/p/search/${encodeURIComponent(`${locationLat!.toFixed(6)},${locationLng!.toFixed(6)}`)}`;
+  }
+  return 'https://map.naver.com';
+}
+
+/**
+ * 카카오맵(KakaoMap) 바로가기 URL 생성
+ */
+export function buildKakaoMapUrl(params: {
+  location?: string;
+  locationAddress?: string;
+  locationLat?: number;
+  locationLng?: number;
+}): string {
+  const { location, locationAddress, locationLat, locationLng } = params;
+  const searchQuery = buildLocationSearchQuery(location, locationAddress);
+  if (searchQuery) {
+    return `https://map.kakao.com/link/search/${encodeURIComponent(searchQuery)}`;
+  }
+  if (hasValidCoordinates(locationLat, locationLng)) {
+    const label = location?.trim() || '목적지';
+    return `https://map.kakao.com/link/map/${encodeURIComponent(label)},${locationLat!.toFixed(6)},${locationLng!.toFixed(6)}`;
+  }
+  return 'https://map.kakao.com';
+}
+
 interface RegionalAnchor {
   pattern: RegExp;
   lat: number;

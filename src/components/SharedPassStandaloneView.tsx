@@ -9,6 +9,7 @@ import {
   Download,
   ExternalLink,
   FolderInput,
+  Lock,
   MapPin,
   Square,
 } from 'lucide-react';
@@ -37,6 +38,7 @@ interface SharedPassStandaloneViewProps {
   payload: SharedPassPayload;
   isPreviewMode?: boolean;
   onImportToWorkspace?: (payload: SharedPassPayload, selectedSlotIndex?: number) => void;
+  onUpgradeToLiveE2eeWorkspace?: (payload: SharedPassPayload) => Promise<void> | void;
   onExit: () => void;
 }
 
@@ -44,9 +46,11 @@ export const SharedPassStandaloneView: React.FC<SharedPassStandaloneViewProps> =
   payload,
   isPreviewMode = false,
   onImportToWorkspace,
+  onUpgradeToLiveE2eeWorkspace,
   onExit,
 }) => {
   const [theme, setTheme] = useState<ShareCardTheme>(payload.theme || 'obsidian');
+  const [isUpgradingToLive, setIsUpgradingToLive] = useState(false);
 
   useEffect(() => {
     if (!isPreviewMode) return;
@@ -220,6 +224,32 @@ export const SharedPassStandaloneView: React.FC<SharedPassStandaloneViewProps> =
               화이트
             </button>
           </div>
+
+          {!isPreviewMode && onUpgradeToLiveE2eeWorkspace && (
+            <button
+              type="button"
+              disabled={isUpgradingToLive}
+              onClick={async () => {
+                if (isUpgradingToLive) return;
+                setIsUpgradingToLive(true);
+                try {
+                  await onUpgradeToLiveE2eeWorkspace(payload);
+                } finally {
+                  setIsUpgradingToLive(false);
+                }
+              }}
+              className={`h-8 px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60 ${
+                isEditorial
+                  ? 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'
+                  : 'bg-white/[0.05] border-white/[0.12] text-neutral-100 hover:bg-white/[0.11]'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {isUpgradingToLive ? 'E2EE 전환 중...' : '실시간 E2EE 공동편집 전환'}
+              </span>
+            </button>
+          )}
 
           <button
             type="button"

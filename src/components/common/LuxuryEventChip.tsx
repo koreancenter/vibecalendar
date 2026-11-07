@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Lock } from 'lucide-react';
 import { CalendarEventItem } from '../../types';
 import { ResolvedEventTiming } from '../../shared/timeZoneUtils';
 import { EventLuxuryTheme } from '../../utils/eventTheme';
@@ -98,6 +98,9 @@ const LuxuryEventChipComponent: React.FC<LuxuryEventChipProps> = ({
 }) => {
   const proj = theme.project;
   const isCompleted = Boolean(event.isCompleted);
+  const isReadOnlyExternal = Boolean(event.externalSync?.readOnly);
+  const isMaskedExternal = Boolean(event.externalSync?.isMasked);
+  const canDrag = draggable && !isReadOnlyExternal;
   const { total: checklistTotal, done: checklistDone } = showChecklistBadge
     ? getEventChecklistStats(event)
     : { total: 0, done: 0 };
@@ -107,7 +110,7 @@ const LuxuryEventChipComponent: React.FC<LuxuryEventChipProps> = ({
       ? 'h-[27px] px-3 rounded-[7px] text-xs'
       : 'h-[25px] w-full text-left px-2.5 rounded-[6px] text-[11.5px] shrink-0';
 
-  const cursorClasses = draggable
+  const cursorClasses = canDrag
     ? 'cursor-grab active:cursor-grabbing'
     : 'cursor-pointer';
 
@@ -116,12 +119,12 @@ const LuxuryEventChipComponent: React.FC<LuxuryEventChipProps> = ({
 
   return (
     <div
-      draggable={draggable || undefined}
+      draggable={canDrag || undefined}
       data-dragging={isDragging ? 'true' : undefined}
       data-selected={isSelected && !isDragging ? 'true' : undefined}
       title={titleAttr}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+      onDragStart={canDrag ? onDragStart : undefined}
+      onDragEnd={canDrag ? onDragEnd : undefined}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onClick={onClick}
@@ -160,9 +163,13 @@ const LuxuryEventChipComponent: React.FC<LuxuryEventChipProps> = ({
         <CheckCircle className="relative z-10 w-3 h-3 text-emerald-300/90 shrink-0" />
       )}
 
+      {isMaskedExternal && (
+        <Lock className="relative z-10 w-2.5 h-2.5 text-white/38 shrink-0" />
+      )}
+
       <span
         className={`relative z-10 truncate ${
-          isCompleted ? 'line-through text-white/32' : 'text-[#f2f4f8]'
+          isCompleted ? 'line-through text-white/32' : isMaskedExternal ? 'text-white/65' : 'text-[#f2f4f8]'
         }`}
       >
         {event.title}

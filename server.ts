@@ -33,6 +33,16 @@ import {
   verifyAndListCloudModels,
   isGeminiConfigured,
 } from './src/server/geminiAgent';
+import { registerExternalSyncRoutes } from './src/server/externalSyncRoutes';
+import { registerPushRoutes } from './src/server/pushRoutes';
+import {
+  attachCollabWebSocketServer,
+  registerCollabRoutes,
+} from './src/server/collabWsServer';
+import {
+  attachYjsSharePassWebSocketServer,
+  registerYjsSharePassRoutes,
+} from './src/server/yjsE2eeWorkspaceServer';
 
 dotenv.config();
 
@@ -345,6 +355,18 @@ app.post(
   }
 );
 
+// 외부 캘린더(Microsoft Graph OAuth2 + PKCE 및 RFC 4791 CalDAV) 동기화 라우트 등록
+registerExternalSyncRoutes(app);
+
+// 제로 지식(Zero-Knowledge) Web Push VAPID 백그라운드 알림 깨우기 라우트 등록
+registerPushRoutes(app);
+
+// 실시간 멀티유저 협업 룸 · 시간대 투표(Proposals) · 공동 런시트 REST 라우트 등록
+registerCollabRoutes(app);
+
+// Phase 4: Zero-Knowledge E2EE Yjs CRDT 공동편집 SharePass 워크스페이스 라우트 등록
+registerYjsSharePassRoutes(app);
+
 // 정의되지 않은 /api 경로 요청 시 내부 스택 노출 없이 정갈한 JSON 404 반환
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: '요청한 API 경로를 찾을 수 없습니다.' });
@@ -355,6 +377,8 @@ app.use(apiErrorHandler);
 
 async function startServer() {
   const httpServer = createHttpServer(app);
+  attachCollabWebSocketServer(httpServer);
+  attachYjsSharePassWebSocketServer(httpServer);
 
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');

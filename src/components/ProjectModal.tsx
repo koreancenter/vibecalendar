@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Building2, Check, Hash, FileText, Send, ClipboardPaste } from 'lucide-react';
+import { Calendar, Building2, Check, Hash, FileText, Send, ClipboardPaste, X } from 'lucide-react';
 import { ProjectItem, ProjectStatus } from '../types';
 import { LUXURY_PROJECT_COLORS, PROJECT_STATUS_MAP } from '../constants/projects';
 import { parseProjectPrompt, generateProjectCode } from '../utils/projectAiParser';
@@ -134,17 +134,25 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs select-none animate-in fade-in duration-150"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg bg-[#0e1017] border border-white/[0.08] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-150"
+        className="luxury-glass-border relative w-full max-w-lg bg-gradient-to-b from-[#181c27]/96 via-[#11141d]/96 to-[#0c0e15]/98 backdrop-blur-xl border border-white/[0.08] rounded-2xl shadow-[0_28px_72px_-16px_rgba(0,0,0,0.85)] text-neutral-200 overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-150"
       >
         {/* 1. 모달 상단 헤더 */}
-        <div className="h-14 px-6 border-b border-white/[0.06] flex items-center justify-between bg-[#11131b] shrink-0">
+        <div className="h-14 px-6 border-b border-white/[0.06] flex items-center justify-between shrink-0">
           <h3 className="text-sm font-semibold text-white tracking-tight">
             {initialProject ? '프로젝트 정보 수정' : '새 프로젝트 등록'}
           </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="h-8 w-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* 2. 입력 폼 본문 */}

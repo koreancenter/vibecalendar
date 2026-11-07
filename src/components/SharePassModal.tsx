@@ -6,8 +6,10 @@ import {
   Eye,
   FileText,
   Link2,
+  Lock,
   MapPin,
   Share2,
+  Users,
   X,
 } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
@@ -53,6 +55,14 @@ interface SharePassModalProps {
   viewerTimeZone: string;
   onClose: () => void;
   onPreviewStandalone: (payload: SharedPassPayload) => void;
+  onLaunchE2eeSharePass?: (
+    payload: SharedPassPayload,
+    target: ShareModalTarget
+  ) => Promise<void> | void;
+  onLaunchLiveCollab?: (
+    target: ShareModalTarget,
+    proposedSlots: SharedProposedSlot[]
+  ) => Promise<void> | void;
   showToast: (msg: string) => void;
 }
 
@@ -63,8 +73,11 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
   viewerTimeZone,
   onClose,
   onPreviewStandalone,
+  onLaunchE2eeSharePass,
+  onLaunchLiveCollab,
   showToast,
 }) => {
+  const [shareMode, setShareMode] = useState<'live-crdt' | 'static-pass'>('live-crdt');
   const [theme, setTheme] = useState<ShareCardTheme>('obsidian');
   const [senderNote, setSenderNote] = useState('');
   const [includeMemo, setIncludeMemo] = useState(false);
@@ -76,13 +89,14 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
 
   useEffect(() => {
     if (!target) return;
+    setShareMode(onLaunchE2eeSharePass ? 'live-crdt' : 'static-pass');
     setSenderNote('');
     setIncludeMemo(false);
     setIncludeChecklist(false);
     setIncludeProposedSlots(false);
     setIncludeCompleted(true);
     setCopiedAction(null);
-  }, [target]);
+  }, [target, onLaunchE2eeSharePass]);
 
   useEffect(() => {
     if (!target) return;
@@ -757,6 +771,44 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
           {/* 우측: 브리핑 패스 구성 & 원클릭 전달 컨트롤 */}
           <div className="lg:col-span-5 p-5 flex flex-col justify-between gap-5 bg-[#0e1118]">
             <div className="space-y-4">
+              {/* 0. 공유 모드 전환: 실시간 E2EE 공동편집 vs 정적 브리핑 패스 */}
+              {onLaunchE2eeSharePass && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-neutral-300">패스 공유 방식</span>
+                    <span className="text-[11px] text-neutral-500">
+                      {shareMode === 'live-crdt'
+                        ? 'Yjs CRDT · 영지식 E2EE 실시간 동기화'
+                        : '원본 불변 스냅샷 · 카드 이미지'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[#151924] border border-white/[0.06]">
+                    <button
+                      type="button"
+                      onClick={() => setShareMode('live-crdt')}
+                      className={`h-8 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                        shareMode === 'live-crdt'
+                          ? 'bg-white text-slate-950 font-semibold'
+                          : 'text-neutral-400 hover:text-neutral-200'
+                      }`}
+                    >
+                      실시간 공동편집 (E2EE)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShareMode('static-pass')}
+                      className={`h-8 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                        shareMode === 'static-pass'
+                          ? 'bg-white/[0.12] text-white'
+                          : 'text-neutral-400 hover:text-neutral-200'
+                      }`}
+                    >
+                      정적 브리핑 · 이미지
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* 1. 카드 테마 선택 */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
@@ -791,13 +843,15 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
                 </div>
               </div>
 
-              {/* 2. 현장 전달 코멘트 (원본 일정 불변) */}
+              {/* 2. 현장 전달 코멘트 / 공동 메모 시드 */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <label htmlFor="share-sender-note" className="font-medium text-neutral-300">
-                    전달 한마디
+                    {shareMode === 'live-crdt' ? '초기 공동 브리핑 노트' : '전달 한마디'}
                   </label>
-                  <span className="text-[11px] text-neutral-500">패스에만 표시됨</span>
+                  <span className="text-[11px] text-neutral-500">
+                    {shareMode === 'live-crdt' ? '참여자 공동 편집 가능' : '패스에만 표시됨'}
+                  </span>
                 </div>
                 <div className="relative">
                   <input
@@ -894,93 +948,199 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
                   )}
                 </div>
                 <p className="text-[11px] text-neutral-500 leading-relaxed">
-                  체크하지 않은 내부 메모와 타 일정 데이터는 링크와 이미지 어디에도 포함되지 않습니다.
+                  {shareMode === 'live-crdt'
+                    ? '선택한 항목만 초기 Yjs CRDT 문서로 암호화되며, 마스터 키(#sk)는 서버로 절대 전송되지 않습니다.'
+                    : '체크하지 않은 내부 메모와 타 일정 데이터는 링크와 이미지 어디에도 포함되지 않습니다.'}
                 </p>
               </div>
             </div>
 
             {/* 4. 공유 액션 버튼 그룹 */}
             <div className="space-y-2 pt-2 border-t border-white/[0.06]">
-              {/* 대표 액션: 고해상도 카드 이미지 클립보드 복사 */}
-              <button
-                type="button"
-                onClick={handleCopyCardImage}
-                disabled={Boolean(busyAction)}
-                className="w-full h-10 px-4 rounded-xl bg-white hover:bg-neutral-200 text-neutral-950 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
-              >
-                {copiedAction === 'image' ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>카드 이미지 복사됨 (바로 붙여넣기)</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4 shrink-0" />
-                    <span>카드 이미지 복사 (카톡·메신저 붙여넣기)</span>
-                  </>
-                )}
-              </button>
+              {shareMode === 'live-crdt' && onLaunchE2eeSharePass ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!target) return;
+                      setBusyAction('e2ee-crdt');
+                      try {
+                        await onLaunchE2eeSharePass(payload, target);
+                      } finally {
+                        setBusyAction(null);
+                      }
+                    }}
+                    disabled={Boolean(busyAction)}
+                    className="w-full h-10 px-4 rounded-xl bg-white hover:bg-neutral-200 text-neutral-950 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
+                  >
+                    <Lock className="w-4 h-4 shrink-0" />
+                    <span>
+                      {busyAction === 'e2ee-crdt'
+                        ? '암호화 CRDT 스페이스 개설 중...'
+                        : '실시간 E2EE 공동편집 개설 · 링크 복사'}
+                    </span>
+                  </button>
 
-              {/* 보조 액션 2열 */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleCopyShareLink}
-                  disabled={Boolean(busyAction)}
-                  className="h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.07] text-neutral-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                >
-                  {copiedAction === 'link' ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  ) : (
-                    <Link2 className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCopyCardImage}
+                      disabled={Boolean(busyAction)}
+                      className="h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.07] text-neutral-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      {copiedAction === 'image' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                      )}
+                      <span>{copiedAction === 'image' ? '카드 복사됨' : '카드 이미지 복사'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCopyShareLink}
+                      disabled={Boolean(busyAction)}
+                      className="h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.07] text-neutral-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      {copiedAction === 'link' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Link2 className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                      )}
+                      <span>{copiedAction === 'link' ? '링크 복사됨' : '정적 스냅샷 링크'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadPng}
+                      disabled={Boolean(busyAction)}
+                      className="h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5 shrink-0" />
+                      <span>PNG 저장</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onPreviewStandalone(payload)}
+                      disabled={Boolean(busyAction)}
+                      className="h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Eye className="w-3.5 h-3.5 shrink-0" />
+                      <span>정적 수신자 미리보기</span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* 대표 액션: 고해상도 카드 이미지 클립보드 복사 */}
+                  <button
+                    type="button"
+                    onClick={handleCopyCardImage}
+                    disabled={Boolean(busyAction)}
+                    className="w-full h-10 px-4 rounded-xl bg-white hover:bg-neutral-200 text-neutral-950 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
+                  >
+                    {copiedAction === 'image' ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>카드 이미지 복사됨 (바로 붙여넣기)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4 shrink-0" />
+                        <span>카드 이미지 복사 (카톡·메신저 붙여넣기)</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* 보조 액션 2열 */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCopyShareLink}
+                      disabled={Boolean(busyAction)}
+                      className="h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.07] text-neutral-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      {copiedAction === 'link' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      ) : (
+                        <Link2 className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                      )}
+                      <span>{copiedAction === 'link' ? '링크 복사됨' : '전용 링크 복사'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleCopyBriefingText}
+                      disabled={Boolean(busyAction)}
+                      className="h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.07] text-neutral-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      {copiedAction === 'text' ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      ) : (
+                        <FileText className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
+                      )}
+                      <span>{copiedAction === 'text' ? '문구 복사됨' : '문구·링크 복사'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadPng}
+                      disabled={Boolean(busyAction)}
+                      className="h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5 shrink-0" />
+                      <span>PNG 저장</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onPreviewStandalone(payload)}
+                      disabled={Boolean(busyAction)}
+                      className="h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Eye className="w-3.5 h-3.5 shrink-0" />
+                      <span>수신자 화면 보기</span>
+                    </button>
+                  </div>
+
+                  {canUseNativeShare() && (
+                    <button
+                      type="button"
+                      onClick={handleNativeShare}
+                      disabled={Boolean(busyAction)}
+                      className="w-full h-9 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.07] text-neutral-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Share2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>기기 공유 시트 열기</span>
+                    </button>
                   )}
-                  <span>{copiedAction === 'link' ? '링크 복사됨' : '전용 링크 복사'}</span>
-                </button>
+                </>
+              )}
 
+              {onLaunchLiveCollab && (
                 <button
                   type="button"
-                  onClick={handleCopyBriefingText}
+                  onClick={async () => {
+                    if (!target) return;
+                    setBusyAction('collab');
+                    try {
+                      await onLaunchLiveCollab(target, candidateProposedSlots);
+                    } finally {
+                      setBusyAction(null);
+                    }
+                  }}
                   disabled={Boolean(busyAction)}
-                  className="h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.07] text-neutral-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                  className="w-full h-9 px-3 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/20 border border-indigo-400/25 text-indigo-200 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-60"
                 >
-                  {copiedAction === 'text' ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  ) : (
-                    <FileText className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                  )}
-                  <span>{copiedAction === 'text' ? '문구 복사됨' : '문구·링크 복사'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleDownloadPng}
-                  disabled={Boolean(busyAction)}
-                  className="h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                >
-                  <Download className="w-3.5 h-3.5 shrink-0" />
-                  <span>PNG 저장</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => onPreviewStandalone(payload)}
-                  disabled={Boolean(busyAction)}
-                  className="h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.06] text-neutral-300 hover:text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                >
-                  <Eye className="w-3.5 h-3.5 shrink-0" />
-                  <span>수신자 화면 보기</span>
-                </button>
-              </div>
-
-              {canUseNativeShare() && (
-                <button
-                  type="button"
-                  onClick={handleNativeShare}
-                  disabled={Boolean(busyAction)}
-                  className="w-full h-9 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.07] text-neutral-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                >
-                  <Share2 className="w-3.5 h-3.5 shrink-0" />
-                  <span>기기 공유 시트 열기</span>
+                  <Users className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
+                  <span>
+                    {busyAction === 'collab'
+                      ? '실시간 암호화 룸 개설 중...'
+                      : target.kind === 'event'
+                      ? '시간대 투표 전용 룸 개설 (Live Proposals)'
+                      : '공동 런시트 전용 룸 개설'}
+                  </span>
                 </button>
               )}
             </div>

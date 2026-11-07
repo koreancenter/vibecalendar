@@ -14,11 +14,9 @@ import {
 import { CalendarEventItem } from '../types';
 import {
   buildGoogleMapsPinUrl,
+  buildKakaoMapUrl,
+  buildNaverMapUrl,
   formatCombinedLocation,
-  formatCoordinateDMS,
-  formatCoordinatePairPlain,
-  formatLatitudeDecimal,
-  formatLongitudeDecimal,
   hasValidCoordinates,
   inferRegionalMapAnchor,
   isInternalOrVirtualLocation,
@@ -88,12 +86,12 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
     null
   );
 
-  const [copiedTarget, setCopiedTarget] = useState<'address' | 'coords' | null>(null);
+  const [isAddressCopied, setIsAddressCopied] = useState(false);
 
   useEffect(() => {
     setZoom(16);
     setPan({ x: 0, y: 0 });
-    setCopiedTarget(null);
+    setIsAddressCopied(false);
   }, [event.id, event.location, event.locationAddress, event.locationLat, event.locationLng]);
 
   const mapGeometry = useMemo(() => {
@@ -165,6 +163,28 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
     [event.location, event.locationAddress, event.locationLat, event.locationLng, event.isSample]
   );
 
+  const naverMapUrl = useMemo(
+    () =>
+      buildNaverMapUrl({
+        location: event.location,
+        locationAddress: event.locationAddress,
+        locationLat: event.locationLat,
+        locationLng: event.locationLng,
+      }),
+    [event.location, event.locationAddress, event.locationLat, event.locationLng]
+  );
+
+  const kakaoMapUrl = useMemo(
+    () =>
+      buildKakaoMapUrl({
+        location: event.location,
+        locationAddress: event.locationAddress,
+        locationLat: event.locationLat,
+        locationLng: event.locationLng,
+      }),
+    [event.location, event.locationAddress, event.locationLat, event.locationLng]
+  );
+
   const canSuggestAutoResolve =
     Boolean(onAutoResolve) &&
     !event.isSample &&
@@ -179,23 +199,9 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
     if (!targetText) return;
     try {
       await navigator.clipboard.writeText(targetText);
-      setCopiedTarget('address');
+      setIsAddressCopied(true);
       window.setTimeout(() => {
-        setCopiedTarget((prev) => (prev === 'address' ? null : prev));
-      }, 1600);
-    } catch {
-      // ignore clipboard restrictions
-    }
-  };
-
-  const handleCopyCoordinates = async () => {
-    if (!exactCoords) return;
-    const coordStr = formatCoordinatePairPlain(event.locationLat!, event.locationLng!);
-    try {
-      await navigator.clipboard.writeText(coordStr);
-      setCopiedTarget('coords');
-      window.setTimeout(() => {
-        setCopiedTarget((prev) => (prev === 'coords' ? null : prev));
+        setIsAddressCopied(false);
       }, 1600);
     } catch {
       // ignore clipboard restrictions
@@ -491,7 +497,7 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
         />
 
         {/* 좌측 상단: 핀 장소명 플로팅 콜아웃 */}
-        <div className="pointer-events-none absolute top-2.5 left-2.5 right-28 flex items-start">
+        <div className="pointer-events-none absolute top-2.5 left-2.5 max-w-[42%] sm:max-w-[48%] flex items-start z-10">
           <div className="px-2.5 py-1.5 rounded-lg bg-[#0e121b]/90 backdrop-blur-xs border border-white/[0.10] shadow-lg min-w-0 max-w-full">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${accentDotClass}`} />
@@ -499,27 +505,45 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
                 {event.location || event.locationAddress || '지정 위치'}
               </span>
             </div>
-            <p className="text-[10px] font-mono tabular-nums text-neutral-400 truncate mt-0.5">
-              {exactCoords
-                ? event.isSample
-                  ? `${formatCoordinatePairPlain(displayLat, displayLng)} · 샘플 가상 좌표`
-                  : `${formatCoordinatePairPlain(displayLat, displayLng)} · WGS84`
-                : `${regionalAnchor.regionLabel} · 정밀 좌표 미입력`}
+            <p className="text-[10px] text-neutral-400 truncate mt-0.5">
+              {event.locationAddress || regionalAnchor.regionLabel || '위치 확인'}
             </p>
           </div>
         </div>
 
-        {/* 우측 상단: 외부 Google 지도 실행 링크 */}
-        <a
-          href={googleMapsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="absolute top-2.5 right-2.5 h-7 px-2.5 rounded-lg bg-[#111520]/92 hover:bg-[#192030] border border-white/[0.12] hover:border-white/[0.24] text-[11px] font-medium text-neutral-100 inline-flex items-center gap-1 shadow-lg transition-colors whitespace-nowrap shrink-0"
-          title="Google 지도에서 해당 위치 열기"
-        >
-          <span>Google 지도</span>
-          <ExternalLink className="w-3 h-3 text-neutral-300 shrink-0" />
-        </a>
+        {/* 우측 상단: 외부 네이버 지도 / 카카오맵 / Google 지도 링크 */}
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10 flex-wrap justify-end">
+          <a
+            href={naverMapUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-7 px-2.5 rounded-lg bg-[#111520]/92 hover:bg-[#192030] border border-white/[0.12] hover:border-emerald-500/40 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 inline-flex items-center gap-1 shadow-lg transition-colors whitespace-nowrap shrink-0"
+            title="네이버 지도에서 해당 위치 열기"
+          >
+            <span>네이버 지도</span>
+            <ExternalLink className="w-2.5 h-2.5 text-emerald-400/80 shrink-0" />
+          </a>
+          <a
+            href={kakaoMapUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-7 px-2.5 rounded-lg bg-[#111520]/92 hover:bg-[#192030] border border-white/[0.12] hover:border-amber-400/40 text-[11px] font-medium text-amber-300 hover:text-amber-200 inline-flex items-center gap-1 shadow-lg transition-colors whitespace-nowrap shrink-0"
+            title="카카오맵에서 해당 위치 열기"
+          >
+            <span>카카오맵</span>
+            <ExternalLink className="w-2.5 h-2.5 text-amber-300/80 shrink-0" />
+          </a>
+          <a
+            href={googleMapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-7 px-2.5 rounded-lg bg-[#111520]/92 hover:bg-[#192030] border border-white/[0.12] hover:border-white/[0.24] text-[11px] font-medium text-neutral-100 inline-flex items-center gap-1 shadow-lg transition-colors whitespace-nowrap shrink-0"
+            title="Google 지도에서 해당 위치 열기"
+          >
+            <span>Google 지도</span>
+            <ExternalLink className="w-2.5 h-2.5 text-neutral-300 shrink-0" />
+          </a>
+        </div>
 
         {/* 좌측 하단: 축척(Scale) 표시 바 */}
         <div className="pointer-events-none absolute bottom-2.5 left-2.5 px-2 py-1 rounded-md bg-[#0e121b]/85 border border-white/[0.08] flex items-center gap-2">
@@ -578,7 +602,7 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
         </div>
       )}
 
-      {/* 하단 구조화 명세 테이블: [1] 공식 장소명 / [2] 상세 주소 (별도 출력) / [3] 위도·경도 (별도 2열 출력) */}
+      {/* 하단 구조화 명세 테이블: [1] 공식 장소명 / [2] 상세 주소 / [3] 지도 바로가기 */}
       <div className="divide-y divide-white/[0.06] select-text">
         {/* 1. 공식 장소명 */}
         <div className="px-3.5 py-2.5 space-y-0.5">
@@ -590,7 +614,7 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
           </p>
         </div>
 
-        {/* 2. 상세 주소 (별도 전용 행) */}
+        {/* 2. 상세 주소 */}
         <div className="px-3.5 py-2.5 space-y-1">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[10.5px] font-medium text-neutral-500">
@@ -604,12 +628,12 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
                 className="h-5 px-1.5 rounded bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] text-[10px] text-neutral-300 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none"
                 title="상세 주소 복사"
               >
-                {copiedTarget === 'address' ? (
+                {isAddressCopied ? (
                   <Check className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
                 ) : (
                   <Copy className="w-2.5 h-2.5 shrink-0" />
                 )}
-                <span>{copiedTarget === 'address' ? '복사됨' : '주소 복사'}</span>
+                <span>{isAddressCopied ? '복사됨' : '주소 복사'}</span>
               </button>
             )}
           </div>
@@ -625,80 +649,45 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
           )}
         </div>
 
-        {/* 3. 위도 · 경도 (별도 2열 고정폭 수치 출력) */}
-        <div className="bg-[#121620]/70">
-          <div className="px-3.5 py-2 border-b border-white/[0.05] flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0 truncate">
-              <span className="text-[10.5px] font-medium text-neutral-400 shrink-0">
-                위도 · 경도
-              </span>
-              {exactCoords && (
-                <>
-                  <span aria-hidden="true" className="text-neutral-600 shrink-0">
-                    ·
-                  </span>
-                  <span className="text-[10px] font-mono tabular-nums text-neutral-500 truncate">
-                    {formatCoordinateDMS(event.locationLat!, event.locationLng!)}
-                  </span>
-                </>
-              )}
-            </div>
-
-            {exactCoords ? (
-              <button
-                type="button"
-                onClick={handleCopyCoordinates}
-                className="h-5 px-1.5 rounded bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] text-[10px] text-neutral-300 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none"
-                title="위도, 경도 좌표 복사"
-              >
-                {copiedTarget === 'coords' ? (
-                  <Check className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
-                ) : (
-                  <Copy className="w-2.5 h-2.5 shrink-0" />
-                )}
-                <span>{copiedTarget === 'coords' ? '복사됨' : '좌표 복사'}</span>
-              </button>
-            ) : onEdit ? (
-              <button
-                type="button"
-                onClick={onEdit}
-                className="text-[10.5px] text-neutral-400 hover:text-neutral-200 underline underline-offset-2 cursor-pointer whitespace-nowrap shrink-0 select-none"
-              >
-                위경도 입력
-              </button>
-            ) : null}
-          </div>
-
-          <div className="grid grid-cols-2 divide-x divide-white/[0.06]">
-            <div className="px-3.5 py-2.5 space-y-0.5 min-w-0">
-              <span className="block text-[10px] font-mono text-neutral-500">
-                위도 (Latitude)
-              </span>
-              {exactCoords ? (
-                <p className="text-xs sm:text-[13px] font-mono tabular-nums font-medium text-neutral-100 truncate">
-                  {formatLatitudeDecimal(event.locationLat!)}
-                </p>
-              ) : (
-                <p className="text-xs font-mono tabular-nums text-neutral-500 truncate">
-                  미입력
-                </p>
-              )}
-            </div>
-
-            <div className="px-3.5 py-2.5 space-y-0.5 min-w-0">
-              <span className="block text-[10px] font-mono text-neutral-500">
-                경도 (Longitude)
-              </span>
-              {exactCoords ? (
-                <p className="text-xs sm:text-[13px] font-mono tabular-nums font-medium text-neutral-100 truncate">
-                  {formatLongitudeDecimal(event.locationLng!)}
-                </p>
-              ) : (
-                <p className="text-xs font-mono tabular-nums text-neutral-500 truncate">
-                  미입력
-                </p>
-              )}
-            </div>
+        {/* 3. 지도 앱 바로가기 (네이버 지도, 카카오맵, Google 지도) */}
+        <div className="px-3.5 py-2.5 bg-[#121620]/70 flex flex-wrap items-center justify-between gap-2.5">
+          <span className="text-[10.5px] font-medium text-neutral-400">
+            지도 앱 바로가기
+          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <a
+              href={naverMapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-7 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-xs font-medium text-emerald-300 hover:text-white inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+              title="네이버 지도에서 열기"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+              <span>네이버 지도</span>
+              <ExternalLink className="w-3 h-3 text-emerald-400/80 shrink-0" />
+            </a>
+            <a
+              href={kakaoMapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-7 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs font-medium text-amber-300 hover:text-white inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+              title="카카오맵에서 열기"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+              <span>카카오맵</span>
+              <ExternalLink className="w-3 h-3 text-amber-300/80 shrink-0" />
+            </a>
+            <a
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-7 px-3 rounded-lg bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.12] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+              title="Google 지도에서 열기"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+              <span>Google 지도</span>
+              <ExternalLink className="w-3 h-3 text-neutral-400 shrink-0" />
+            </a>
           </div>
         </div>
       </div>

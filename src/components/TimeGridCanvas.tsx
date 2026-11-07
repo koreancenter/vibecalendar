@@ -495,16 +495,29 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                       isAnyInteracting={Boolean(activeInteraction?.hasMoved)}
                       onDragMouseDown={(e) => {
                         onSelectDate?.(col.date);
+                        if (rawEv.externalSync?.readOnly) {
+                          e.stopPropagation();
+                          handleSelectProjectedEvent(ev);
+                          return;
+                        }
                         startTimelineInteraction(e, ev, 'drag', col.date);
                       }}
-                      onResizeTopMouseDown={(e) => {
-                        onSelectDate?.(col.date);
-                        startTimelineInteraction(e, ev, 'resize-top', col.date);
-                      }}
-                      onResizeBottomMouseDown={(e) => {
-                        onSelectDate?.(col.date);
-                        startTimelineInteraction(e, ev, 'resize-bottom', col.date);
-                      }}
+                      onResizeTopMouseDown={
+                        rawEv.externalSync?.readOnly
+                          ? undefined
+                          : (e) => {
+                              onSelectDate?.(col.date);
+                              startTimelineInteraction(e, ev, 'resize-top', col.date);
+                            }
+                      }
+                      onResizeBottomMouseDown={
+                        rawEv.externalSync?.readOnly
+                          ? undefined
+                          : (e) => {
+                              onSelectDate?.(col.date);
+                              startTimelineInteraction(e, ev, 'resize-bottom', col.date);
+                            }
+                      }
                     />
                   );
                 })}

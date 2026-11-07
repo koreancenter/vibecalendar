@@ -161,7 +161,8 @@ export function computeSmartScheduleRebalance(
       isInTargetScope(ev) &&
       !ev.isCompleted &&
       !ev.recurrence &&
-      !isMultiDay;
+      !isMultiDay &&
+      !ev.externalSync?.readOnly;
 
     if (ev.isAllDay) {
       if (

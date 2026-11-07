@@ -31,7 +31,11 @@ interface VaultControlMenuProps {
   onClearSampleData?: () => void;
   reminderLeadMinutes?: ReminderLeadMinutes;
   onChangeReminderLeadMinutes?: (lead: ReminderLeadMinutes) => void;
+  notificationSummaryLabel?: string;
+  onOpenNotificationSettings?: () => void;
   onOpenApiSettings?: () => void;
+  onOpenExternalSync?: () => void;
+  onOpenCollabHub?: () => void;
   onPwaInstalled?: () => void;
 }
 
@@ -52,7 +56,11 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
   onClearSampleData,
   reminderLeadMinutes = 0,
   onChangeReminderLeadMinutes,
+  notificationSummaryLabel,
+  onOpenNotificationSettings,
   onOpenApiSettings,
+  onOpenExternalSync,
+  onOpenCollabHub,
   onPwaInstalled,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -356,8 +364,9 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
                   <Bell className="w-3 h-3 text-neutral-400 shrink-0" />
                   <span>임박 일정 로컬 알림</span>
                 </span>
-                <span className="text-[10.5px] font-mono text-neutral-500 tabular-nums whitespace-nowrap">
-                  {reminderLeadMinutes === 0 ? '꺼짐' : `${reminderLeadMinutes}분 전`}
+                <span className="text-[10.5px] font-mono text-neutral-500 tabular-nums truncate max-w-[132px]">
+                  {notificationSummaryLabel ||
+                    (reminderLeadMinutes === 0 ? '꺼짐' : `${reminderLeadMinutes}분 전`)}
                 </span>
               </div>
               <div className="grid grid-cols-4 gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
@@ -386,21 +395,62 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
                   );
                 })}
               </div>
+              {onOpenNotificationSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onOpenNotificationSettings();
+                  }}
+                  className="w-full pt-0.5 flex items-center justify-between text-[11px] text-neutral-400 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <span>고급 리드타임 · 백그라운드 푸시 설정</span>
+                  <span className="font-mono text-neutral-500 tabular-nums">B</span>
+                </button>
+              )}
             </div>
           )}
 
-          {onOpenApiSettings && (
+          {(onOpenCollabHub || onOpenExternalSync || onOpenApiSettings) && (
             <div className="py-1 border-b border-white/[0.06]">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsOpen(false);
-                  onOpenApiSettings();
-                }}
-                className="w-full px-3.5 py-2 text-left hover:bg-white/[0.05] text-neutral-300 hover:text-white transition-colors duration-150 cursor-pointer whitespace-nowrap"
-              >
-                Cloud API 설정
-              </button>
+              {onOpenCollabHub && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onOpenCollabHub();
+                  }}
+                  className="w-full px-3.5 py-2 flex items-center justify-between hover:bg-white/[0.05] text-neutral-200 hover:text-white transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                >
+                  <span>라이브 협업 · 시간대 조율 허브</span>
+                  <span className="text-[11px] font-mono text-neutral-500 tabular-nums">R</span>
+                </button>
+              )}
+              {onOpenExternalSync && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onOpenExternalSync();
+                  }}
+                  className="w-full px-3.5 py-2 flex items-center justify-between hover:bg-white/[0.05] text-neutral-200 hover:text-white transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                >
+                  <span>외부 캘린더 · CalDAV 동기화</span>
+                  <span className="text-[11px] text-neutral-500 tabular-nums">S</span>
+                </button>
+              )}
+              {onOpenApiSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onOpenApiSettings();
+                  }}
+                  className="w-full px-3.5 py-2 text-left hover:bg-white/[0.05] text-neutral-300 hover:text-white transition-colors duration-150 cursor-pointer whitespace-nowrap"
+                >
+                  Cloud API 설정
+                </button>
+              )}
             </div>
           )}
 

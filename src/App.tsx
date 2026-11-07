@@ -25,9 +25,21 @@ import {
 } from './components/vault/LegalAndColophonDrawer';
 import { EventHistoryPopover } from './components/EventHistoryPopover';
 import { ApiSettingsModal } from './components/ApiSettingsModal';
+import { ExternalSyncHubModal } from './components/sync/ExternalSyncHubModal';
+import { OutboundSyncConfirmModal } from './components/sync/OutboundSyncConfirmModal';
+import { NotificationSettingsModal } from './components/notifications/NotificationSettingsModal';
+import { CollabHubModal } from './components/collab/CollabHubModal';
+import { LiveCollabRoomView } from './components/collab/LiveCollabRoomView';
+import { SharePassCollaborativeWorkspace } from './components/collab/SharePassCollaborativeWorkspace';
+import { createE2eeSharePassWorkspace } from './services/sharePassWorkspaceClient';
+import { purgeAllNotificationIdbData } from './services/notifications/notificationIdb';
 import { subscribeCloudKeyUnauthorized } from './utils/cloudApiKeyStorage';
 import { useToast } from './hooks/useToast';
 import { useCalendarEvents, VaultEventsSyncConfig } from './hooks/useCalendarEvents';
+import {
+  useExternalCalendarSync,
+  VaultSyncStateConfig,
+} from './hooks/useExternalCalendarSync';
 import { EventHistoryProvider } from './hooks/useEventHistory';
 import { useProjects, VaultProjectsSyncConfig } from './hooks/useProjects';
 import {
@@ -35,21 +47,51 @@ import {
   useCalendarEventViewModels,
 } from './hooks/useCalendarEventViewModels';
 import { useTimeZonePreferences } from './hooks/useTimeZonePreferences';
-import { useEventReminders } from './hooks/useEventReminders';
+import {
+  useEventReminders,
+  VaultNotificationPrefsConfig,
+} from './hooks/useEventReminders';
+import {
+  persistCollabProfile,
+  readOrCreateCollabProfile,
+  readPlaintextSavedRooms,
+  useCollabWorkspace,
+  VaultCollabRoomsConfig,
+} from './hooks/useCollabWorkspace';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { LUXURY_PROJECT_COLORS } from './constants/projects';
-import { CalendarEventItem, CalendarViewMode, ProjectItem } from './types';
+import {
+  CalendarEventItem,
+  CalendarViewMode,
+  NotificationEnginePreferences,
+  ProjectItem,
+  SavedCollabRoomItem,
+  VaultExternalSyncState,
+} from './types';
 import { addDays } from './shared/dateUtils';
 import {
   parseOccurrenceIdentity,
   RECURRENCE_OCCURRENCE_SEP,
   resolveMasterEventId,
 } from './shared/recurrenceUtils';
-import { hasEventConflict } from './shared/scheduleUtils';
+import { hasEventConflict, timeToMinutes } from './shared/scheduleUtils';
+import { CollabProposalSlot, CollabRoomSnapshot } from './shared/collabSchema';
+import { CollaborativeSharePassView } from './shared/yjsCollabProtocol';
 import {
+  extractCollabInviteFromLocation,
+  ParsedCollabUrlInvite,
+} from './utils/collabCrypto';
+import {
+  extractE2eeSharePassFromLocation,
+  ParsedE2eeSharePassInvite,
+} from './utils/yjsE2eeCrypto';
+import {
+  buildProjectSharePayload,
+  buildSingleEventSharePayload,
   decodeSharePayload,
   extractShareTokenFromLocation,
   SharedPassPayload,
+  SharedProposedSlot,
   sharedEventToCalendarItem,
 } from './utils/shareCodec';
 import { getEmptyCalendarGuideText } from './utils/emptyStateGuide';
@@ -106,6 +148,32 @@ interface PendingSharedImport {
   selectedSlotIndex?: number;
 }
 
+type PendingCollabAction =
+  | {
+      kind: 'save_only';
+      invite: ParsedCollabUrlInvite;
+    }
+  | {
+      kind: 'import_proposal';
+      invite: ParsedCollabUrlInvite;
+      room: CollabRoomSnapshot;
+      chosenSlot: CollabProposalSlot;
+    }
+  | {
+      kind: 'import_runsheet';
+      invite: ParsedCollabUrlInvite;
+      room: CollabRoomSnapshot;
+    }
+  | {
+      kind: 'save_sharepass_crdt';
+      invite: ParsedE2eeSharePassInvite;
+    }
+  | {
+      kind: 'sync_sharepass_crdt';
+      invite: ParsedE2eeSharePassInvite;
+      view: CollaborativeSharePassView;
+    };
+
 interface WorkspaceContentProps {
   isVaultEncrypted: boolean;
   isBiometricEnabled: boolean;
@@ -116,6 +184,8 @@ interface WorkspaceContentProps {
   onConsumeToastNotice?: () => void;
   pendingSharedImport?: PendingSharedImport | null;
   onConsumePendingSharedImport?: () => void;
+  pendingCollabAction?: PendingCollabAction | null;
+  onConsumePendingCollabAction?: () => void;
   autoLockMinutes: AutoLockMinutesOption;
   onChangeAutoLockMinutes: (minutes: AutoLockMinutesOption) => void;
   onToggleBiometrics: (enable: boolean) => Promise<void>;
@@ -141,6 +211,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   onConsumeToastNotice,
   pendingSharedImport,
   onConsumePendingSharedImport,
+  pendingCollabAction,
+  onConsumePendingCollabAction,
   autoLockMinutes,
   onChangeAutoLockMinutes,
   onToggleBiometrics,
@@ -171,6 +243,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           events: bootstrapBundle?.events ?? [],
           projects: bootstrapBundle?.projects ?? [],
           selectedProjectIds: bootstrapBundle?.selectedProjectIds ?? [],
+          syncState: bootstrapBundle?.syncState,
+          notificationPrefs: bootstrapBundle?.notificationPrefs,
+          collabRooms: bootstrapBundle?.collabRooms,
         }
       : null
   );
@@ -181,6 +256,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         events: latestBundleRef.current?.events ?? [],
         projects: nextProjects,
         selectedProjectIds: nextSelectedIds,
+        syncState: latestBundleRef.current?.syncState,
+        notificationPrefs: latestBundleRef.current?.notificationPrefs,
+        collabRooms: latestBundleRef.current?.collabRooms,
       };
       latestBundleRef.current = nextBundle;
       onPersistEncryptedBundle(nextBundle);
@@ -194,6 +272,57 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         events: nextEvents,
         projects: latestBundleRef.current?.projects ?? [],
         selectedProjectIds: latestBundleRef.current?.selectedProjectIds ?? [],
+        syncState: latestBundleRef.current?.syncState,
+        notificationPrefs: latestBundleRef.current?.notificationPrefs,
+        collabRooms: latestBundleRef.current?.collabRooms,
+      };
+      latestBundleRef.current = nextBundle;
+      onPersistEncryptedBundle(nextBundle);
+    },
+    [onPersistEncryptedBundle]
+  );
+
+  const handleEncryptedSyncStateChange = useCallback(
+    (nextSyncState: VaultExternalSyncState) => {
+      const nextBundle: VaultPlaintextBundle = {
+        events: latestBundleRef.current?.events ?? [],
+        projects: latestBundleRef.current?.projects ?? [],
+        selectedProjectIds: latestBundleRef.current?.selectedProjectIds ?? [],
+        syncState: nextSyncState,
+        notificationPrefs: latestBundleRef.current?.notificationPrefs,
+        collabRooms: latestBundleRef.current?.collabRooms,
+      };
+      latestBundleRef.current = nextBundle;
+      onPersistEncryptedBundle(nextBundle);
+    },
+    [onPersistEncryptedBundle]
+  );
+
+  const handleEncryptedNotificationPrefsChange = useCallback(
+    (nextNotificationPrefs: NotificationEnginePreferences) => {
+      const nextBundle: VaultPlaintextBundle = {
+        events: latestBundleRef.current?.events ?? [],
+        projects: latestBundleRef.current?.projects ?? [],
+        selectedProjectIds: latestBundleRef.current?.selectedProjectIds ?? [],
+        syncState: latestBundleRef.current?.syncState,
+        notificationPrefs: nextNotificationPrefs,
+        collabRooms: latestBundleRef.current?.collabRooms,
+      };
+      latestBundleRef.current = nextBundle;
+      onPersistEncryptedBundle(nextBundle);
+    },
+    [onPersistEncryptedBundle]
+  );
+
+  const handleEncryptedCollabRoomsChange = useCallback(
+    (nextCollabRooms: SavedCollabRoomItem[]) => {
+      const nextBundle: VaultPlaintextBundle = {
+        events: latestBundleRef.current?.events ?? [],
+        projects: latestBundleRef.current?.projects ?? [],
+        selectedProjectIds: latestBundleRef.current?.selectedProjectIds ?? [],
+        syncState: latestBundleRef.current?.syncState,
+        notificationPrefs: latestBundleRef.current?.notificationPrefs,
+        collabRooms: nextCollabRooms,
       };
       latestBundleRef.current = nextBundle;
       onPersistEncryptedBundle(nextBundle);
@@ -222,6 +351,51 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     };
   }, [bootstrapReleased, getInitialVaultBundle, handleEncryptedEventsChange, isVaultEncrypted]);
 
+  const vaultSyncConfig = useMemo<VaultSyncStateConfig | undefined>(() => {
+    if (!isVaultEncrypted) return undefined;
+    const initialBundle = bootstrapReleased ? null : (getInitialVaultBundle?.() ?? null);
+    return {
+      isEncrypted: true,
+      initialSyncState: initialBundle?.syncState,
+      onEncryptedSyncStateChange: handleEncryptedSyncStateChange,
+    };
+  }, [
+    bootstrapReleased,
+    getInitialVaultBundle,
+    handleEncryptedSyncStateChange,
+    isVaultEncrypted,
+  ]);
+
+  const vaultNotificationPrefsConfig = useMemo<VaultNotificationPrefsConfig | undefined>(() => {
+    if (!isVaultEncrypted) return undefined;
+    const initialBundle = bootstrapReleased ? null : (getInitialVaultBundle?.() ?? null);
+    return {
+      isEncrypted: true,
+      initialPrefs: initialBundle?.notificationPrefs,
+      onEncryptedPrefsChange: handleEncryptedNotificationPrefsChange,
+    };
+  }, [
+    bootstrapReleased,
+    getInitialVaultBundle,
+    handleEncryptedNotificationPrefsChange,
+    isVaultEncrypted,
+  ]);
+
+  const vaultCollabRoomsConfig = useMemo<VaultCollabRoomsConfig | undefined>(() => {
+    if (!isVaultEncrypted) return undefined;
+    const initialBundle = bootstrapReleased ? null : (getInitialVaultBundle?.() ?? null);
+    return {
+      isEncrypted: true,
+      initialRooms: initialBundle?.collabRooms,
+      onEncryptedRoomsChange: handleEncryptedCollabRoomsChange,
+    };
+  }, [
+    bootstrapReleased,
+    getInitialVaultBundle,
+    handleEncryptedCollabRoomsChange,
+    isVaultEncrypted,
+  ]);
+
   const {
     projects,
     setProjects,
@@ -237,6 +411,11 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     updateProject,
     deleteProject,
   } = useProjects(showToast, vaultProjectsConfig);
+
+  const onExternalSyncedEventDeletedRef = useRef<((ev: CalendarEventItem) => void) | null>(null);
+  const handleBeforeDeleteEvent = useCallback((ev: CalendarEventItem) => {
+    onExternalSyncedEventDeletedRef.current?.(ev);
+  }, []);
 
   const {
     events,
@@ -285,13 +464,96 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     selectedProjectIds,
     viewerTimeZone: tzPrefs.viewerTimeZone,
     vaultEventsConfig,
+    onBeforeDeleteEvent: handleBeforeDeleteEvent,
   });
 
-  const { reminderLeadMinutes, setReminderLeadMinutes } = useEventReminders({
+  const externalSync = useExternalCalendarSync({
     events,
     viewerTimeZone: tzPrefs.viewerTimeZone,
-    onInAppReminder: (msg) => showToast(msg),
+    applyEventsWithHistory,
+    showToast,
+    vaultSyncConfig,
   });
+  onExternalSyncedEventDeletedRef.current = externalSync.recordLocalSyncedDeletion;
+
+  const handleFocusEventFromNotification = useCallback(
+    (targetEventId: string, targetDate?: string) => {
+      const { masterId, occurrenceDate } = parseOccurrenceIdentity(targetEventId);
+      const found = events.find((e) => e.id === targetEventId || e.id === masterId);
+      const effectiveDate =
+        targetDate && /^\d{4}-\d{2}-\d{2}$/.test(targetDate)
+          ? targetDate
+          : occurrenceDate || found?.date;
+
+      if (effectiveDate) {
+        jumpToDate(effectiveDate);
+      }
+      if (found) {
+        setSelectedEvent(found);
+      }
+    },
+    [events, jumpToDate, setSelectedEvent]
+  );
+
+  const handleCompleteEventFromNotification = useCallback(
+    (targetEventId: string) => {
+      const { masterId, occurrenceDate } = parseOccurrenceIdentity(targetEventId);
+      const master = events.find((e) => e.id === masterId);
+      if (!master) return;
+
+      if (master.recurrence) {
+        const occDate = occurrenceDate || master.date;
+        const completedSet = new Set(
+          master.completedDates || (master.isCompleted ? [master.date] : [])
+        );
+        if (completedSet.has(occDate)) return;
+      } else if (master.isCompleted) {
+        return;
+      }
+
+      handleToggleComplete(targetEventId);
+    },
+    [events, handleToggleComplete]
+  );
+
+  const reminders = useEventReminders({
+    events,
+    viewerTimeZone: tzPrefs.viewerTimeZone,
+    vaultPrefsConfig: vaultNotificationPrefsConfig,
+    onInAppReminder: (msg) => showToast(msg),
+    onFocusEvent: handleFocusEventFromNotification,
+    onCompleteEvent: handleCompleteEventFromNotification,
+    onExecuteBackgroundSync: async () => {
+      if (externalSync.stats.accountCount > 0) {
+        await externalSync.syncAccounts();
+      }
+    },
+  });
+  const { reminderLeadMinutes, setReminderLeadMinutes } = reminders;
+
+  // 앱 종료 상태에서 시스템 알림 클릭으로 진입한 딥링크(?focusEvent=...&date=...) 처리
+  const handledUrlDeepLinkRef = useRef(false);
+  useEffect(() => {
+    if (handledUrlDeepLinkRef.current || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const focusEventId = params.get('focusEvent');
+    if (!focusEventId) return;
+
+    const focusDate = params.get('date') || undefined;
+    const { masterId } = parseOccurrenceIdentity(focusEventId);
+    const matched = events.find((e) => e.id === focusEventId || e.id === masterId);
+    if (!matched && events.length === 0) {
+      return;
+    }
+
+    handledUrlDeepLinkRef.current = true;
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('focusEvent');
+    cleanUrl.searchParams.delete('date');
+    window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+
+    handleFocusEventFromNotification(focusEventId, focusDate);
+  }, [events, handleFocusEventFromNotification]);
 
   const handleImportSharedPassPayload = useCallback(
     (payload: SharedPassPayload, selectedSlotIndex?: number) => {
@@ -479,6 +741,636 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     handleImportSharedPassPayload(queued.payload, queued.selectedSlotIndex);
   }, [handleImportSharedPassPayload, onConsumePendingSharedImport, pendingSharedImport]);
 
+  const collab = useCollabWorkspace(tzPrefs.viewerTimeZone, vaultCollabRoomsConfig);
+
+  const handleApplyProposalToWorkspace = useCallback(
+    (params: {
+      room: CollabRoomSnapshot;
+      chosenSlot: CollabProposalSlot;
+      linkedEventId?: string;
+    }) => {
+      const { room, chosenSlot, linkedEventId } = params;
+      const savedEntry = collab.savedRooms.find((r) => r.roomId === room.roomId);
+      const effectiveLinkedId = linkedEventId || savedEntry?.linkedEventId;
+      const matchedLocalEvent = effectiveLinkedId
+        ? events.find((e) => e.id === effectiveLinkedId)
+        : undefined;
+
+      if (matchedLocalEvent) {
+        handleUpdateEventFields(
+          matchedLocalEvent.id,
+          {
+            date: chosenSlot.date,
+            endDate: undefined,
+            startTime: chosenSlot.startTime,
+            endTime: chosenSlot.endTime,
+            timeZone: chosenSlot.timeZone,
+            isAllDay: false,
+          },
+          `협업 확정 시간대(${chosenSlot.date.slice(5)} ${chosenSlot.startTime})가 '${matchedLocalEvent.title}' 일정에 반영되었습니다.`
+        );
+        jumpToDate(chosenSlot.date);
+        return;
+      }
+
+      const nowStamp = Date.now();
+      const targetProjId =
+        selectedProjectId && selectedProjectId !== 'all'
+          ? selectedProjectId
+          : selectedProjectIds.length === 1
+          ? selectedProjectIds[0]
+          : undefined;
+
+      const createdEvent: CalendarEventItem = {
+        id: `collab-evt-${nowStamp}-${Math.random().toString(36).slice(2, 6)}`,
+        title: room.title,
+        date: chosenSlot.date,
+        startTime: chosenSlot.startTime,
+        endTime: chosenSlot.endTime,
+        timeZone: chosenSlot.timeZone,
+        isAllDay: false,
+        category: room.category || '업무',
+        location: room.location,
+        content: room.subtitle,
+        projectId: targetProjId,
+      };
+
+      const prevEvents = events;
+      const didRecord = applyEventsWithHistory((curr) => [...curr, createdEvent], {
+        kind: 'import',
+        label: `라이브 조율 확정 일정 '${createdEvent.title}' 반영`,
+        detail: `${chosenSlot.date.slice(5)} ${chosenSlot.startTime}~${chosenSlot.endTime}`,
+        targetEventId: createdEvent.id,
+        targetEventTitle: createdEvent.title,
+        focusDate: createdEvent.date,
+      });
+
+      collab.upsertSavedRoom({
+        roomId: room.roomId,
+        kind: 'proposal',
+        localTitle: room.title,
+        isE2ee: room.isE2ee,
+        linkedEventId: createdEvent.id,
+        createdAt: room.createdAt,
+        lastOpenedAt: new Date().toISOString(),
+      });
+
+      setSelectedEvent(createdEvent);
+      jumpToDate(createdEvent.date);
+      showToast(
+        `확정 일정 '${createdEvent.title}'(${chosenSlot.date.slice(5)} ${chosenSlot.startTime})이 내 캘린더에 등록되었습니다.`,
+        () => {
+          if (didRecord) {
+            eventHistory.undoStep();
+          } else {
+            setEvents(prevEvents);
+          }
+        }
+      );
+    },
+    [
+      applyEventsWithHistory,
+      collab,
+      eventHistory,
+      events,
+      handleUpdateEventFields,
+      jumpToDate,
+      selectedProjectId,
+      selectedProjectIds,
+      setEvents,
+      setSelectedEvent,
+      showToast,
+    ]
+  );
+
+  const handlePullRunsheetToWorkspace = useCallback(
+    (params: { room: CollabRoomSnapshot; linkedProjectId?: string }) => {
+      const { room, linkedProjectId } = params;
+      if (room.events.length === 0) {
+        showToast('공동 런시트에 반영할 일정 항목이 없습니다.');
+        return;
+      }
+
+      const prevProjects = projects;
+      const prevEvents = events;
+      const prevSelectedIds = selectedProjectIds;
+      const nowStamp = Date.now();
+
+      const savedEntry = collab.savedRooms.find((r) => r.roomId === room.roomId);
+      const effectiveProjId = linkedProjectId || savedEntry?.linkedProjectId;
+
+      let targetProject =
+        (effectiveProjId ? projects.find((p) => p.id === effectiveProjId) : undefined) ||
+        projects.find(
+          (p) => p.name.trim().toLowerCase() === room.title.trim().toLowerCase()
+        );
+
+      let createdNewProject = false;
+      if (!targetProject) {
+        const palette =
+          LUXURY_PROJECT_COLORS[projects.length % LUXURY_PROJECT_COLORS.length];
+        targetProject = {
+          id: `proj-collab-${nowStamp}`,
+          name: room.title,
+          description: room.subtitle,
+          color: palette.hex,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+        };
+        createdNewProject = true;
+      }
+
+      const finalProjId = targetProject.id;
+      let updatedCount = 0;
+      let addedCount = 0;
+
+      const didRecord = applyEventsWithHistory(
+        (curr) => {
+          const nextList = [...curr];
+          for (let idx = 0; idx < room.events.length; idx++) {
+            const sharedEv = room.events[idx];
+            const existingIndex = nextList.findIndex(
+              (localEv) =>
+                (sharedEv.sourceLocalEventId && localEv.id === sharedEv.sourceLocalEventId) ||
+                localEv.id === sharedEv.id
+            );
+
+            if (existingIndex >= 0) {
+              const prevLocal = nextList[existingIndex];
+              nextList[existingIndex] = {
+                ...prevLocal,
+                title: sharedEv.title,
+                date: sharedEv.date,
+                endDate: sharedEv.endDate,
+                startTime: sharedEv.startTime,
+                endTime: sharedEv.endTime,
+                timeZone: sharedEv.timeZone,
+                isAllDay: sharedEv.isAllDay,
+                category: sharedEv.category,
+                location: sharedEv.location ?? prevLocal.location,
+                content: sharedEv.content ?? prevLocal.content,
+                isCompleted: sharedEv.isCompleted,
+                checklist: sharedEv.checklist.map((c) => ({
+                  id: c.id,
+                  text: c.text,
+                  done: c.done,
+                })),
+              };
+              updatedCount += 1;
+            } else {
+              nextList.push({
+                id:
+                  sharedEv.sourceLocalEventId &&
+                  !nextList.some((item) => item.id === sharedEv.sourceLocalEventId)
+                    ? sharedEv.sourceLocalEventId
+                    : `collab-run-${nowStamp}-${idx}`,
+                title: sharedEv.title,
+                date: sharedEv.date,
+                endDate: sharedEv.endDate,
+                startTime: sharedEv.startTime,
+                endTime: sharedEv.endTime,
+                timeZone: sharedEv.timeZone,
+                isAllDay: sharedEv.isAllDay,
+                category: sharedEv.category,
+                location: sharedEv.location,
+                content: sharedEv.content,
+                projectId: finalProjId,
+                isCompleted: sharedEv.isCompleted,
+                checklist: sharedEv.checklist.map((c) => ({
+                  id: c.id,
+                  text: c.text,
+                  done: c.done,
+                })),
+              });
+              addedCount += 1;
+            }
+          }
+          return nextList;
+        },
+        {
+          kind: 'import',
+          label: `라이브 공동 런시트 '${room.title}' 동기화`,
+          detail: `갱신 ${updatedCount}건 · 신규 ${addedCount}건`,
+          focusDate: room.events[0]?.date,
+        }
+      );
+
+      if (createdNewProject) {
+        setProjects((curr) => [...curr, targetProject!]);
+      }
+
+      collab.upsertSavedRoom({
+        roomId: room.roomId,
+        kind: 'runsheet',
+        localTitle: room.title,
+        isE2ee: room.isE2ee,
+        linkedProjectId: finalProjId,
+        createdAt: room.createdAt,
+        lastOpenedAt: new Date().toISOString(),
+      });
+
+      setSelectedProjectId(finalProjId);
+      if (room.events[0]?.date) {
+        jumpToDate(room.events[0].date);
+      }
+
+      showToast(
+        `공동 런시트 '${room.title}' 변경분(체크리스트·완료 상태)이 내 워크스페이스에 반영되었습니다.`,
+        () => {
+          setProjects(prevProjects);
+          setSelectedProjectIds(prevSelectedIds);
+          if (didRecord) {
+            eventHistory.undoStep();
+          } else {
+            setEvents(prevEvents);
+          }
+        }
+      );
+    },
+    [
+      applyEventsWithHistory,
+      collab,
+      eventHistory,
+      events,
+      jumpToDate,
+      projects,
+      selectedProjectIds,
+      setEvents,
+      setProjects,
+      setSelectedProjectId,
+      setSelectedProjectIds,
+      showToast,
+    ]
+  );
+
+  const handleSyncYjsWorkspaceToLocalVault = useCallback(
+    (params: {
+      docId: string;
+      view: CollaborativeSharePassView;
+      linkedEventId?: string;
+      linkedProjectId?: string;
+      silent?: boolean;
+    }) => {
+      const { docId, view, linkedEventId, linkedProjectId, silent = false } = params;
+      if (view.events.length === 0) {
+        if (!silent) {
+          showToast('공동편집 워크스페이스에 반영할 일정 항목이 없습니다.');
+        }
+        return;
+      }
+
+      const savedEntry = collab.savedRooms.find((r) => r.roomId === docId);
+      const effectiveLinkedEventId = linkedEventId || savedEntry?.linkedEventId;
+      const effectiveLinkedProjectId = linkedProjectId || savedEntry?.linkedProjectId;
+
+      let resolvedProjectId: string | undefined = effectiveLinkedProjectId;
+      let createdNewProject: ProjectItem | null = null;
+
+      if (view.kind === 'project') {
+        const matchedProj =
+          (effectiveLinkedProjectId
+            ? projects.find((p) => p.id === effectiveLinkedProjectId)
+            : undefined) ||
+          projects.find(
+            (p) => p.name.trim().toLowerCase() === view.title.trim().toLowerCase()
+          );
+
+        if (matchedProj) {
+          resolvedProjectId = matchedProj.id;
+        } else {
+          const deterministicProjId = `proj-sp-${docId}`;
+          const alreadyCreated = projects.find((p) => p.id === deterministicProjId);
+          if (alreadyCreated) {
+            resolvedProjectId = alreadyCreated.id;
+          } else {
+            const palette =
+              LUXURY_PROJECT_COLORS[projects.length % LUXURY_PROJECT_COLORS.length];
+            createdNewProject = {
+              id: deterministicProjId,
+              name: view.title,
+              code: view.projectCode,
+              clientOrOrg: view.clientOrOrg,
+              description: view.subtitle || undefined,
+              startDate: view.startDate,
+              endDate: view.endDate,
+              color: palette.hex,
+              status: 'active',
+              createdAt: new Date().toISOString(),
+            };
+            resolvedProjectId = createdNewProject.id;
+          }
+        }
+      } else if (!resolvedProjectId) {
+        resolvedProjectId =
+          selectedProjectId && selectedProjectId !== 'all'
+            ? selectedProjectId
+            : selectedProjectIds.length === 1
+            ? selectedProjectIds[0]
+            : undefined;
+      }
+
+      const reconcileEventsList = (
+        curr: CalendarEventItem[]
+      ): { nextList: CalendarEventItem[]; updatedCount: number; addedCount: number } => {
+        let updatedCount = 0;
+        let addedCount = 0;
+        let mutated = false;
+        const nextList = [...curr];
+
+        for (let idx = 0; idx < view.events.length; idx++) {
+          const sharedEv = view.events[idx];
+          const deterministicId = `sp-sync-${docId}-${sharedEv.id}`;
+          const existingIndex = nextList.findIndex(
+            (localEv) =>
+              (idx === 0 && effectiveLinkedEventId && localEv.id === effectiveLinkedEventId) ||
+              (sharedEv.sourceLocalEventId && localEv.id === sharedEv.sourceLocalEventId) ||
+              localEv.id === deterministicId ||
+              localEv.id === sharedEv.id
+          );
+
+          const nextChecklist = sharedEv.checklist.map((c) => ({
+            id: c.id,
+            text: c.text,
+            done: c.done,
+          }));
+
+          if (existingIndex >= 0) {
+            const prevLocal = nextList[existingIndex];
+            const prevChkJson = JSON.stringify(prevLocal.checklist || []);
+            const nextChkJson = JSON.stringify(nextChecklist);
+            const nextLoc = sharedEv.location || prevLocal.location;
+            const nextAddr = sharedEv.locationAddress || prevLocal.locationAddress;
+            const nextContent =
+              sharedEv.content !== undefined && sharedEv.content !== ''
+                ? sharedEv.content
+                : prevLocal.content;
+
+            const hasDiff =
+              prevLocal.title !== sharedEv.title ||
+              prevLocal.date !== sharedEv.date ||
+              (prevLocal.endDate || undefined) !== (sharedEv.endDate || undefined) ||
+              prevLocal.startTime !== sharedEv.startTime ||
+              prevLocal.endTime !== sharedEv.endTime ||
+              prevLocal.timeZone !== sharedEv.timeZone ||
+              Boolean(prevLocal.isAllDay) !== Boolean(sharedEv.isAllDay) ||
+              prevLocal.category !== sharedEv.category ||
+              prevLocal.location !== nextLoc ||
+              prevLocal.locationAddress !== nextAddr ||
+              prevLocal.content !== nextContent ||
+              Boolean(prevLocal.isCompleted) !== Boolean(sharedEv.isCompleted) ||
+              prevChkJson !== nextChkJson;
+
+            if (hasDiff) {
+              nextList[existingIndex] = {
+                ...prevLocal,
+                title: sharedEv.title,
+                date: sharedEv.date,
+                endDate: sharedEv.endDate,
+                startTime: sharedEv.startTime,
+                endTime: sharedEv.endTime,
+                timeZone: sharedEv.timeZone,
+                isAllDay: sharedEv.isAllDay,
+                category: sharedEv.category,
+                location: nextLoc,
+                locationAddress: nextAddr,
+                locationLat: sharedEv.locationLat ?? prevLocal.locationLat,
+                locationLng: sharedEv.locationLng ?? prevLocal.locationLng,
+                content: nextContent,
+                isCompleted: sharedEv.isCompleted,
+                checklist: nextChecklist,
+              };
+              updatedCount += 1;
+              mutated = true;
+            }
+          } else {
+            const preferredNewId =
+              sharedEv.sourceLocalEventId &&
+              !nextList.some((item) => item.id === sharedEv.sourceLocalEventId)
+                ? sharedEv.sourceLocalEventId
+                : deterministicId;
+            nextList.push({
+              id: preferredNewId,
+              title: sharedEv.title,
+              date: sharedEv.date,
+              endDate: sharedEv.endDate,
+              startTime: sharedEv.startTime,
+              endTime: sharedEv.endTime,
+              timeZone: sharedEv.timeZone,
+              isAllDay: sharedEv.isAllDay,
+              category: sharedEv.category,
+              location: sharedEv.location,
+              locationAddress: sharedEv.locationAddress,
+              locationLat: sharedEv.locationLat,
+              locationLng: sharedEv.locationLng,
+              content: sharedEv.content || undefined,
+              projectId: resolvedProjectId,
+              isCompleted: sharedEv.isCompleted,
+              checklist: nextChecklist,
+            });
+            addedCount += 1;
+            mutated = true;
+          }
+        }
+
+        return {
+          nextList: mutated ? nextList : curr,
+          updatedCount,
+          addedCount,
+        };
+      };
+
+      if (silent) {
+        if (createdNewProject) {
+          setProjects((curr) =>
+            curr.some((p) => p.id === createdNewProject!.id)
+              ? curr
+              : [...curr, createdNewProject!]
+          );
+        }
+        setEvents((curr) => reconcileEventsList(curr).nextList);
+        return;
+      }
+
+      const prevProjects = projects;
+      const prevEvents = events;
+      const prevSelectedIds = selectedProjectIds;
+
+      if (createdNewProject) {
+        setProjects((curr) =>
+          curr.some((p) => p.id === createdNewProject!.id)
+            ? curr
+            : [...curr, createdNewProject!]
+        );
+      }
+
+      let summaryUpdated = 0;
+      let summaryAdded = 0;
+      const didRecord = applyEventsWithHistory(
+        (curr) => {
+          const res = reconcileEventsList(curr);
+          summaryUpdated = res.updatedCount;
+          summaryAdded = res.addedCount;
+          return res.nextList;
+        },
+        {
+          kind: 'import',
+          label: `E2EE 공동편집 '${view.title}' 캘린더 반영`,
+          detail: `갱신 ${summaryUpdated}건 · 신규 ${summaryAdded}건`,
+          focusDate: view.events[0]?.date,
+        }
+      );
+
+      if (savedEntry) {
+        collab.upsertSavedRoom({
+          ...savedEntry,
+          localTitle: view.title || savedEntry.localTitle,
+          linkedEventId: effectiveLinkedEventId,
+          linkedProjectId:
+            view.kind === 'project' ? resolvedProjectId : effectiveLinkedProjectId,
+          lastOpenedAt: new Date().toISOString(),
+        });
+      }
+
+      if (view.kind === 'project' && resolvedProjectId) {
+        setSelectedProjectId(resolvedProjectId);
+      }
+      if (view.events[0]?.date) {
+        jumpToDate(view.events[0].date);
+      }
+
+      showToast(
+        `E2EE 공동편집 '${view.title}' 변경분이 내 암호화 워크스페이스에 반영되었습니다.`,
+        () => {
+          setProjects(prevProjects);
+          setSelectedProjectIds(prevSelectedIds);
+          if (didRecord) {
+            eventHistory.undoStep();
+          } else {
+            setEvents(prevEvents);
+          }
+        }
+      );
+    },
+    [
+      applyEventsWithHistory,
+      collab,
+      eventHistory,
+      events,
+      jumpToDate,
+      projects,
+      selectedProjectId,
+      selectedProjectIds,
+      setEvents,
+      setProjects,
+      setSelectedProjectId,
+      setSelectedProjectIds,
+      showToast,
+    ]
+  );
+
+  useEffect(() => {
+    if (!pendingCollabAction) return;
+    const action = pendingCollabAction;
+    onConsumePendingCollabAction?.();
+
+    const nowIso = new Date().toISOString();
+    if (action.kind === 'save_only') {
+      collab.upsertSavedRoom({
+        roomId: action.invite.roomId,
+        kind: 'proposal',
+        localTitle: `협업 룸 (${action.invite.roomId.slice(-6)})`,
+        isE2ee: Boolean(action.invite.roomKeyBase64Url),
+        roomKeyBase64Url: action.invite.roomKeyBase64Url,
+        createdAt: nowIso,
+        lastOpenedAt: nowIso,
+      });
+      return;
+    }
+
+    if (action.kind === 'save_sharepass_crdt') {
+      const existing = collab.savedRooms.find((r) => r.roomId === action.invite.docId);
+      collab.upsertSavedRoom({
+        roomId: action.invite.docId,
+        kind: 'sharepass-crdt',
+        shareKind: existing?.shareKind || 'event',
+        localTitle:
+          existing?.localTitle || `E2EE 공동편집 패스 (${action.invite.docId.slice(-6)})`,
+        isE2ee: true,
+        roomKeyBase64Url: action.invite.masterKeyB64u,
+        linkedEventId: existing?.linkedEventId,
+        linkedProjectId: existing?.linkedProjectId,
+        autoSyncToVault: existing?.autoSyncToVault ?? false,
+        createdAt: existing?.createdAt || nowIso,
+        lastOpenedAt: nowIso,
+      });
+      return;
+    }
+
+    if (action.kind === 'sync_sharepass_crdt') {
+      const existing = collab.savedRooms.find((r) => r.roomId === action.invite.docId);
+      collab.upsertSavedRoom({
+        roomId: action.invite.docId,
+        kind: 'sharepass-crdt',
+        shareKind: action.view.kind,
+        localTitle: action.view.title || 'E2EE 공동편집 패스',
+        isE2ee: true,
+        roomKeyBase64Url: action.invite.masterKeyB64u,
+        linkedEventId: existing?.linkedEventId,
+        linkedProjectId: existing?.linkedProjectId,
+        autoSyncToVault: existing?.autoSyncToVault ?? true,
+        createdAt: existing?.createdAt || nowIso,
+        lastOpenedAt: nowIso,
+      });
+      handleSyncYjsWorkspaceToLocalVault({
+        docId: action.invite.docId,
+        view: action.view,
+        linkedEventId: existing?.linkedEventId,
+        linkedProjectId: existing?.linkedProjectId,
+        silent: false,
+      });
+      return;
+    }
+
+    if (action.kind === 'import_proposal') {
+      collab.upsertSavedRoom({
+        roomId: action.invite.roomId,
+        kind: 'proposal',
+        localTitle: action.room.title,
+        isE2ee: action.room.isE2ee,
+        roomKeyBase64Url: action.invite.roomKeyBase64Url,
+        createdAt: action.room.createdAt,
+        lastOpenedAt: nowIso,
+      });
+      handleApplyProposalToWorkspace({
+        room: action.room,
+        chosenSlot: action.chosenSlot,
+      });
+      return;
+    }
+
+    if (action.kind === 'import_runsheet') {
+      collab.upsertSavedRoom({
+        roomId: action.invite.roomId,
+        kind: 'runsheet',
+        localTitle: action.room.title,
+        isE2ee: action.room.isE2ee,
+        roomKeyBase64Url: action.invite.roomKeyBase64Url,
+        createdAt: action.room.createdAt,
+        lastOpenedAt: nowIso,
+      });
+      handlePullRunsheetToWorkspace({
+        room: action.room,
+      });
+    }
+  }, [
+    collab,
+    handleApplyProposalToWorkspace,
+    handlePullRunsheetToWorkspace,
+    handleSyncYjsWorkspaceToLocalVault,
+    onConsumePendingCollabAction,
+    pendingCollabAction,
+  ]);
+
   const workspaceViewModels = useCalendarEventViewModels({
     events,
     projects,
@@ -597,6 +1489,22 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [composerSeed, setComposerSeed] = useState<EventComposerSeed | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isExternalSyncHubOpen, setIsExternalSyncHubOpen] = useState(false);
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
+  const [isCollabHubOpen, setIsCollabHubOpen] = useState(false);
+  const [activeCollabRoom, setActiveCollabRoom] = useState<{
+    roomId: string;
+    roomKeyBase64Url?: string;
+    hostSecret?: string;
+    linkedEventId?: string;
+    linkedProjectId?: string;
+  } | null>(null);
+  const [activeYjsWorkspace, setActiveYjsWorkspace] = useState<{
+    docId: string;
+    masterKeyB64u?: string;
+    linkedEventId?: string;
+    linkedProjectId?: string;
+  } | null>(null);
   const [historyOpenTick, setHistoryOpenTick] = useState(0);
   const [externalPromptRequest, setExternalPromptRequest] = useState<{
     id: number;
@@ -671,6 +1579,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         events,
         projects,
         selectedProjectIds,
+        syncState: externalSync.syncState,
+        notificationPrefs: reminders.prefs,
+        collabRooms: collab.savedRooms,
       };
     }
 
@@ -749,6 +1660,138 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   const handleShareEvent = useCallback((ev: CalendarEventItem) => {
     setShareTarget({ kind: 'event', event: ev });
   }, []);
+
+  const handleLaunchE2eeSharePass = useCallback(
+    async (payload: SharedPassPayload, target: ShareModalTarget) => {
+      try {
+        const linkedEventId = target.kind === 'event' ? target.event.id : undefined;
+        const linkedProjectId = target.kind === 'project' ? target.project.id : undefined;
+
+        const { docId, masterKeyB64u, inviteUrl, record } =
+          await createE2eeSharePassWorkspace({
+            payload,
+            host: {
+              participantId: collab.profile.participantId,
+              displayName: collab.profile.displayName,
+              colorHex: collab.profile.colorHex,
+              timeZone: tzPrefs.viewerTimeZone,
+            },
+            linkedEventId,
+            linkedProjectId,
+          });
+
+        collab.upsertSavedRoom(record);
+        try {
+          await navigator.clipboard.writeText(inviteUrl);
+        } catch {
+          // ignore clipboard restrictions
+        }
+
+        setShareTarget(null);
+        setIsCollabHubOpen(false);
+        setActiveYjsWorkspace({
+          docId,
+          masterKeyB64u,
+          linkedEventId,
+          linkedProjectId,
+        });
+        showToast(
+          '실시간 E2EE 공동편집 스페이스가 개설되었으며 영지식 암호화 링크(#sk)가 복사되었습니다.'
+        );
+      } catch (err: unknown) {
+        showToast(
+          err instanceof Error && err.message
+            ? err.message
+            : '실시간 E2EE 공동편집 스페이스 개설 중 오류가 발생했습니다.'
+        );
+      }
+    },
+    [collab, showToast, tzPrefs.viewerTimeZone]
+  );
+
+  const handleLaunchLiveCollabFromShareModal = useCallback(
+    async (target: ShareModalTarget, proposedSlots: SharedProposedSlot[]) => {
+      try {
+        if (target.kind === 'event') {
+          const ev = target.event;
+          const startMin = timeToMinutes(ev.startTime || '10:00');
+          const endMin = timeToMinutes(ev.endTime || '11:00');
+          const durationMinutes = ev.isAllDay
+            ? 60
+            : Math.max(30, endMin > startMin ? endMin - startMin : 60);
+
+          const { record, inviteUrl } = await collab.createProposalRoom({
+            title: ev.title,
+            subtitle: ev.content,
+            location: ev.location,
+            category: ev.category,
+            durationMinutes,
+            isE2ee: true,
+            linkedEventId: ev.id,
+            existingEvents: events,
+            seedEvent: ev,
+            customSlots:
+              proposedSlots.length > 0
+                ? proposedSlots.map((s) => ({
+                    date: s.date,
+                    startTime: s.startTime,
+                    endTime: s.endTime,
+                    label: s.label,
+                  }))
+                : undefined,
+          });
+
+          try {
+            await navigator.clipboard.writeText(inviteUrl);
+          } catch {
+            // ignore clipboard permission errors
+          }
+
+          setShareTarget(null);
+          setActiveCollabRoom({
+            roomId: record.roomId,
+            roomKeyBase64Url: record.roomKeyBase64Url,
+            hostSecret: record.hostSecret,
+            linkedEventId: record.linkedEventId,
+          });
+          showToast('종단간 암호화(E2EE) 시간대 조율 룸이 개설되어 초대 링크가 복사되었습니다.');
+          return;
+        }
+
+        const proj = target.project;
+        const projEvents = events.filter((e) => e.projectId === proj.id);
+        const { record, inviteUrl } = await collab.createRunsheetRoom({
+          title: proj.name,
+          subtitle: proj.description,
+          project: proj,
+          events: projEvents.length > 0 ? projEvents : filteredEvents,
+          isE2ee: true,
+        });
+
+        try {
+          await navigator.clipboard.writeText(inviteUrl);
+        } catch {
+          // ignore
+        }
+
+        setShareTarget(null);
+        setActiveCollabRoom({
+          roomId: record.roomId,
+          roomKeyBase64Url: record.roomKeyBase64Url,
+          hostSecret: record.hostSecret,
+          linkedProjectId: record.linkedProjectId,
+        });
+        showToast('실시간 공동 런시트 룸이 개설되어 초대 링크가 복사되었습니다.');
+      } catch (err: unknown) {
+        showToast(
+          err instanceof Error && err.message
+            ? err.message
+            : '실시간 협업 룸 개설 중 오류가 발생했습니다.'
+        );
+      }
+    },
+    [collab, events, filteredEvents, showToast]
+  );
 
   const emptyGuideText = useMemo(
     () =>
@@ -1081,6 +2124,12 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
       const hasBlockingOverlay =
         Boolean(composerSeed) ||
         isCommandPaletteOpen ||
+        isExternalSyncHubOpen ||
+        isNotificationSettingsOpen ||
+        isCollabHubOpen ||
+        Boolean(activeCollabRoom) ||
+        Boolean(activeYjsWorkspace) ||
+        Boolean(externalSync.pendingOutboundPlan) ||
         Boolean(selectedEvent && viewMode !== 'agenda' && viewMode !== 'ops') ||
         isProjectModalOpen ||
         isProjectManagementOpen ||
@@ -1116,19 +2165,34 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
       } else if (lowerKey === 'h') {
         e.preventDefault();
         setHistoryOpenTick(Date.now());
+      } else if (lowerKey === 's') {
+        e.preventDefault();
+        setIsExternalSyncHubOpen(true);
+      } else if (lowerKey === 'b') {
+        e.preventDefault();
+        setIsNotificationSettingsOpen(true);
+      } else if (lowerKey === 'r') {
+        e.preventDefault();
+        setIsCollabHubOpen(true);
       }
     };
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [
+    activeCollabRoom,
+    activeYjsWorkspace,
     apiSettingsModal.isOpen,
     composerSeed,
     deleteModalState.isOpen,
     eventHistory,
+    externalSync.pendingOutboundPlan,
     handleOpenCreateEvent,
     handleToday,
+    isCollabHubOpen,
     isCommandPaletteOpen,
+    isExternalSyncHubOpen,
+    isNotificationSettingsOpen,
     isProjectManagementOpen,
     isProjectModalOpen,
     isVaultEncrypted,
@@ -1172,6 +2236,15 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         onChangeViewMode={setViewMode}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onOpenCreateEvent={() => handleOpenCreateEvent()}
+        onOpenExternalSync={() => setIsExternalSyncHubOpen(true)}
+        syncedAccountCount={externalSync.stats.accountCount}
+        syncConflictCount={externalSync.stats.conflictCount}
+        isExternalSyncing={externalSync.isSyncing}
+        onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
+        isNotificationEnabled={reminders.prefs.enabled}
+        scheduledAlertCount={reminders.upcomingAlerts.length}
+        onOpenCollabHub={() => setIsCollabHubOpen(true)}
+        collabRoomCount={collab.savedRooms.length}
         onImportIcsFile={(file) => void handleImportIcsFile(file)}
         onExportWorkspaceJson={handleExportWorkspaceJson}
         onImportWorkspaceJsonFile={(file) => void handleImportWorkspaceJsonFile(file)}
@@ -1251,6 +2324,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                     events,
                     projects,
                     selectedProjectIds,
+                    syncState: externalSync.syncState,
+                    notificationPrefs: reminders.prefs,
+                    collabRooms: collab.savedRooms,
                   },
                   enableBioAfter
                 );
@@ -1263,6 +2339,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                   events,
                   projects,
                   selectedProjectIds,
+                  syncState: externalSync.syncState,
+                  notificationPrefs: reminders.prefs,
+                  collabRooms: collab.savedRooms,
                 });
               }}
               onOpenLegalDrawer={(tab) => setLegalDrawer({ isOpen: true, tab })}
@@ -1278,6 +2357,10 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                     : `일정 시작 ${lead}분 전 로컬 알림이 활성화되었습니다.`
                 );
               }}
+              notificationSummaryLabel={reminders.summaryLabel}
+              onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
+              onOpenExternalSync={() => setIsExternalSyncHubOpen(true)}
+              onOpenCollabHub={() => setIsCollabHubOpen(true)}
               onOpenApiSettings={() =>
                 setApiSettingsModal({ isOpen: true, alertMessage: null })
               }
@@ -1597,6 +2680,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
               : `일정 시작 ${lead}분 전 로컬 알림이 활성화되었습니다.`
           );
         }}
+        notificationSummaryLabel={reminders.summaryLabel}
+        onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
         canInstallPwa={!pwaInstall.isInstalled && pwaInstall.isInstallable}
         onInstallPwa={() => {
           void pwaInstall.install().then((accepted) => {
@@ -1606,6 +2691,13 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           });
         }}
         onOpenHistoryPopover={() => setHistoryOpenTick(Date.now())}
+        onOpenExternalSync={() => setIsExternalSyncHubOpen(true)}
+        onSyncAllExternal={() => {
+          void externalSync.syncAccounts();
+        }}
+        syncedAccountCount={externalSync.stats.accountCount}
+        onOpenCollabHub={() => setIsCollabHubOpen(true)}
+        collabRoomCount={collab.savedRooms.length}
       />
 
       {/* 5. 프로젝트 등록/수정 모달 */}
@@ -1649,7 +2741,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         onShareProject={(proj) => setShareTarget({ kind: 'project', project: proj })}
       />
 
-      {/* 6-2. 일정·프로젝트 브리핑 패스 공유 모달 */}
+      {/* 6-2. 일정·프로젝트 브리핑 패스 공유 모달 (정적 스냅샷 + 실시간 Yjs E2EE 공동편집) */}
       <SharePassModal
         target={shareTarget}
         events={events}
@@ -1657,6 +2749,8 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         viewerTimeZone={tzPrefs.viewerTimeZone}
         onClose={() => setShareTarget(null)}
         onPreviewStandalone={(payload) => setPreviewSharedPayload(payload)}
+        onLaunchE2eeSharePass={handleLaunchE2eeSharePass}
+        onLaunchLiveCollab={handleLaunchLiveCollabFromShareModal}
         showToast={showToast}
       />
 
@@ -1691,6 +2785,258 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         showToast={showToast}
       />
 
+      {/* 6-6. 외부 캘린더 & CalDAV 통합 동기화 허브 모달 */}
+      <ExternalSyncHubModal
+        isOpen={isExternalSyncHubOpen}
+        onClose={() => setIsExternalSyncHubOpen(false)}
+        isVaultEncrypted={isVaultEncrypted}
+        projects={projects}
+        syncState={externalSync.syncState}
+        googleConfigured={externalSync.stats.googleConfigured}
+        hasGoogleSessionToken={externalSync.stats.hasGoogleSessionToken}
+        microsoftStatus={externalSync.microsoftStatus}
+        isSyncing={externalSync.isSyncing}
+        syncingAccountId={externalSync.syncingAccountId}
+        hasCalDavPasswordInMemory={externalSync.hasCalDavPasswordInMemory}
+        onConnectGoogle={externalSync.connectGoogleAccount}
+        onConnectMicrosoft={externalSync.connectMicrosoftAccount}
+        onConnectCalDav={externalSync.connectCalDavAccount}
+        onDisconnectAccount={externalSync.disconnectAccount}
+        onUpdateCalendar={externalSync.updateSubscribedCalendar}
+        onSetSessionCalDavPassword={externalSync.setSessionCalDavPassword}
+        onSyncAll={() => externalSync.syncAccounts()}
+        onSyncAccount={(accId) => externalSync.syncAccounts(accId)}
+        onResolveConflict={externalSync.resolveSyncConflict}
+      />
+
+      {/* 6-7. 외부 클라우드 캘린더 원격 반영(생성·수정·삭제) 사전 승인 확인 모달 */}
+      <OutboundSyncConfirmModal
+        plan={externalSync.pendingOutboundPlan}
+        isExecuting={externalSync.isExecutingOutbound}
+        onConfirm={() => {
+          void externalSync.confirmAndExecuteOutboundPlan();
+        }}
+        onCancel={externalSync.cancelOutboundPlan}
+      />
+
+      {/* 6-8. 고급 알림 엔진 · 커스텀 리드타임 · 백그라운드 푸시 설정 모달 */}
+      <NotificationSettingsModal
+        isOpen={isNotificationSettingsOpen}
+        onClose={() => setIsNotificationSettingsOpen(false)}
+        isVaultEncrypted={isVaultEncrypted}
+        prefs={reminders.prefs}
+        notificationPermission={reminders.notificationPermission}
+        capabilities={reminders.capabilities}
+        upcomingAlerts={reminders.upcomingAlerts}
+        isWebPushSubscribed={reminders.isWebPushSubscribed}
+        isPushBusy={reminders.isPushBusy}
+        pendingOfflineSyncCount={reminders.pendingOfflineSyncCount}
+        onUpdatePrefs={reminders.updateNotificationPrefs}
+        onToggleDefaultLeadMinute={reminders.toggleDefaultLeadMinute}
+        onAddCustomDefaultLeadMinute={reminders.addCustomDefaultLeadMinute}
+        onRequestPermission={reminders.requestBrowserNotificationPermission}
+        onEnableWebPush={reminders.enableWebPushSubscription}
+        onDisableWebPush={reminders.disableWebPushSubscription}
+        onSendTestAlert={reminders.sendTestBackgroundNotification}
+        onSnoozeAlert={reminders.snoozeScheduledAlert}
+        onDismissAlert={reminders.dismissScheduledAlert}
+        onSelectScheduledEvent={(evId, evDate) => {
+          handleFocusEventFromNotification(evId, evDate);
+        }}
+        showToast={showToast}
+      />
+
+      {/* 6-9. 실시간 다자간 협업 룸 허브 (E2EE SharePass CRDT · Proposals · 공동 런시트) */}
+      <CollabHubModal
+        isOpen={isCollabHubOpen}
+        onClose={() => setIsCollabHubOpen(false)}
+        events={events}
+        projects={projects}
+        selectedDate={selectedDate}
+        selectedProjectId={selectedProjectId}
+        profile={collab.profile}
+        onUpdateDisplayName={collab.updateDisplayName}
+        savedRooms={collab.savedRooms}
+        isCreatingRoom={collab.isCreatingRoom}
+        onOpenRoom={(rm) => {
+          const existing = collab.savedRooms.find((s) => s.roomId === rm.roomId);
+          const resolvedKind = rm.kind || existing?.kind || 'proposal';
+          collab.upsertSavedRoom({
+            roomId: rm.roomId,
+            kind: resolvedKind,
+            shareKind: existing?.shareKind,
+            localTitle:
+              existing?.localTitle || `협업 룸 (${rm.roomId.slice(-6)})`,
+            isE2ee: Boolean(rm.roomKeyBase64Url || existing?.isE2ee),
+            roomKeyBase64Url: rm.roomKeyBase64Url || existing?.roomKeyBase64Url,
+            hostSecret: rm.hostSecret || existing?.hostSecret,
+            linkedEventId: rm.linkedEventId || existing?.linkedEventId,
+            linkedProjectId: rm.linkedProjectId || existing?.linkedProjectId,
+            autoSyncToVault: existing?.autoSyncToVault,
+            createdAt: existing?.createdAt || new Date().toISOString(),
+            lastOpenedAt: new Date().toISOString(),
+          });
+          setIsCollabHubOpen(false);
+          if (resolvedKind === 'sharepass-crdt') {
+            setActiveYjsWorkspace({
+              docId: rm.roomId,
+              masterKeyB64u: rm.roomKeyBase64Url || existing?.roomKeyBase64Url,
+              linkedEventId: rm.linkedEventId || existing?.linkedEventId,
+              linkedProjectId: rm.linkedProjectId || existing?.linkedProjectId,
+            });
+          } else {
+            setActiveCollabRoom(rm);
+          }
+        }}
+        onJoinRoomByInvite={(roomId, roomKeyBase64Url) => {
+          const existing = collab.savedRooms.find((s) => s.roomId === roomId);
+          const nowIso = new Date().toISOString();
+          collab.upsertSavedRoom({
+            roomId,
+            kind: existing?.kind || 'proposal',
+            localTitle: existing?.localTitle || `참여 협업 룸 (${roomId.slice(-6)})`,
+            isE2ee: Boolean(roomKeyBase64Url || existing?.isE2ee),
+            roomKeyBase64Url: roomKeyBase64Url || existing?.roomKeyBase64Url,
+            hostSecret: existing?.hostSecret,
+            linkedEventId: existing?.linkedEventId,
+            linkedProjectId: existing?.linkedProjectId,
+            createdAt: existing?.createdAt || nowIso,
+            lastOpenedAt: nowIso,
+          });
+          setIsCollabHubOpen(false);
+          setActiveCollabRoom({
+            roomId,
+            roomKeyBase64Url: roomKeyBase64Url || existing?.roomKeyBase64Url,
+            hostSecret: existing?.hostSecret,
+            linkedEventId: existing?.linkedEventId,
+            linkedProjectId: existing?.linkedProjectId,
+          });
+        }}
+        onJoinSharePassByInvite={(docId, masterKeyB64u) => {
+          const existing = collab.savedRooms.find((s) => s.roomId === docId);
+          const nowIso = new Date().toISOString();
+          collab.upsertSavedRoom({
+            roomId: docId,
+            kind: 'sharepass-crdt',
+            shareKind: existing?.shareKind || 'event',
+            localTitle: existing?.localTitle || `E2EE 공동편집 (${docId.slice(-6)})`,
+            isE2ee: true,
+            roomKeyBase64Url: masterKeyB64u,
+            linkedEventId: existing?.linkedEventId,
+            linkedProjectId: existing?.linkedProjectId,
+            autoSyncToVault: existing?.autoSyncToVault ?? false,
+            createdAt: existing?.createdAt || nowIso,
+            lastOpenedAt: nowIso,
+          });
+          setIsCollabHubOpen(false);
+          setActiveYjsWorkspace({
+            docId,
+            masterKeyB64u,
+            linkedEventId: existing?.linkedEventId,
+            linkedProjectId: existing?.linkedProjectId,
+          });
+        }}
+        onCreateSharePassWorkspace={async ({ scope, event, project }) => {
+          if (scope === 'event' && event) {
+            const projName = event.projectId
+              ? projects.find((p) => p.id === event.projectId)?.name
+              : undefined;
+            const payload = buildSingleEventSharePayload({
+              event,
+              viewerTimeZone: tzPrefs.viewerTimeZone,
+              projectName: projName,
+              theme: 'obsidian',
+              includeMemo: true,
+              includeChecklist: true,
+            });
+            await handleLaunchE2eeSharePass(payload, { kind: 'event', event });
+            return;
+          }
+          if (scope === 'project' && project) {
+            const payload = buildProjectSharePayload({
+              project,
+              events,
+              viewerTimeZone: tzPrefs.viewerTimeZone,
+              theme: 'obsidian',
+              includeMemo: true,
+              includeCompleted: true,
+            });
+            await handleLaunchE2eeSharePass(payload, { kind: 'project', project });
+          }
+        }}
+        onRemoveSavedRoom={collab.removeSavedRoom}
+        onCreateProposalRoom={(params) =>
+          collab.createProposalRoom({
+            ...params,
+            existingEvents: events,
+            linkedEventId: params.seedEvent?.id,
+          })
+        }
+        onCreateRunsheetRoom={(params) => collab.createRunsheetRoom(params)}
+        showToast={showToast}
+      />
+
+      {/* 6-10. 실시간 라이브 협업 스튜디오 모달 (WebSocket + E2EE Proposals / Runsheet) */}
+      {activeCollabRoom && (
+        <LiveCollabRoomView
+          mode="modal"
+          roomId={activeCollabRoom.roomId}
+          roomKeyBase64Url={activeCollabRoom.roomKeyBase64Url}
+          hostSecret={activeCollabRoom.hostSecret}
+          linkedEventId={activeCollabRoom.linkedEventId}
+          linkedProjectId={activeCollabRoom.linkedProjectId}
+          linkedProjectEvents={
+            activeCollabRoom.linkedProjectId
+              ? events.filter((e) => e.projectId === activeCollabRoom.linkedProjectId)
+              : undefined
+          }
+          participantId={collab.profile.participantId}
+          displayName={collab.profile.displayName}
+          colorHex={collab.profile.colorHex}
+          viewerTimeZone={tzPrefs.viewerTimeZone}
+          onUpdateDisplayName={collab.updateDisplayName}
+          onClose={() => setActiveCollabRoom(null)}
+          onApplyProposalToWorkspace={handleApplyProposalToWorkspace}
+          onPullRunsheetToWorkspace={handlePullRunsheetToWorkspace}
+          showToast={showToast}
+        />
+      )}
+
+      {/* 6-11. 실시간 E2EE 공동편집 SharePass 워크스페이스 모달 (Yjs CRDT + AES-256-GCM) */}
+      {activeYjsWorkspace && (
+        <SharePassCollaborativeWorkspace
+          mode="modal"
+          docId={activeYjsWorkspace.docId}
+          masterKeyB64u={activeYjsWorkspace.masterKeyB64u}
+          linkedEventId={activeYjsWorkspace.linkedEventId}
+          linkedProjectId={activeYjsWorkspace.linkedProjectId}
+          autoSyncToVault={
+            collab.savedRooms.find((r) => r.roomId === activeYjsWorkspace.docId)
+              ?.autoSyncToVault ?? false
+          }
+          onToggleAutoSyncToVault={(enabled) => {
+            const existing = collab.savedRooms.find(
+              (r) => r.roomId === activeYjsWorkspace.docId
+            );
+            if (existing) {
+              collab.upsertSavedRoom({
+                ...existing,
+                autoSyncToVault: enabled,
+                lastOpenedAt: new Date().toISOString(),
+              });
+            }
+          }}
+          participantId={collab.profile.participantId}
+          displayName={collab.profile.displayName}
+          colorHex={collab.profile.colorHex}
+          viewerTimeZone={tzPrefs.viewerTimeZone}
+          onUpdateDisplayName={collab.updateDisplayName}
+          onClose={() => setActiveYjsWorkspace(null)}
+          onSyncWorkspaceToLocalVault={handleSyncYjsWorkspaceToLocalVault}
+          showToast={showToast}
+        />
+      )}
+
       {/* 7. 하단 알림 토스트 & 실행 취소 배너 */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-[80] flex items-center gap-3 bg-[#1e222b] text-neutral-100 text-xs px-4 py-2.5 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md">
@@ -1713,7 +3059,117 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
   );
 };
 
+interface StandaloneCollabScreenProps {
+  invite: ParsedCollabUrlInvite;
+  onExitToWorkspace: () => void;
+  onImportProposal: (room: CollabRoomSnapshot, chosenSlot: CollabProposalSlot) => void;
+  onImportRunsheet: (room: CollabRoomSnapshot) => void;
+}
+
+const StandaloneCollabScreen: React.FC<StandaloneCollabScreenProps> = ({
+  invite,
+  onExitToWorkspace,
+  onImportProposal,
+  onImportRunsheet,
+}) => {
+  const { toastMessage, showToast } = useToast();
+  const [profile, setProfile] = useState(() => readOrCreateCollabProfile());
+  const localHostRecord = useMemo(
+    () => readPlaintextSavedRooms().find((r) => r.roomId === invite.roomId),
+    [invite.roomId]
+  );
+
+  const handleUpdateDisplayName = useCallback((nextName: string) => {
+    const clean = nextName.trim().slice(0, 40);
+    if (!clean) return;
+    setProfile((prev) => {
+      const updated = { ...prev, displayName: clean };
+      persistCollabProfile(updated);
+      return updated;
+    });
+  }, []);
+
+  return (
+    <>
+      <LiveCollabRoomView
+        mode="standalone"
+        roomId={invite.roomId}
+        roomKeyBase64Url={invite.roomKeyBase64Url || localHostRecord?.roomKeyBase64Url}
+        hostSecret={localHostRecord?.hostSecret}
+        participantId={profile.participantId}
+        displayName={profile.displayName}
+        colorHex={profile.colorHex}
+        onUpdateDisplayName={handleUpdateDisplayName}
+        onClose={onExitToWorkspace}
+        onApplyProposalToWorkspace={({ room, chosenSlot }) => onImportProposal(room, chosenSlot)}
+        onPullRunsheetToWorkspace={({ room }) => onImportRunsheet(room)}
+        showToast={showToast}
+      />
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-[80] flex items-center gap-3 bg-[#1e222b] text-neutral-100 text-xs px-4 py-2.5 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md">
+          <span>{toastMessage}</span>
+        </div>
+      )}
+    </>
+  );
+};
+
+interface StandaloneYjsSharePassScreenProps {
+  invite: ParsedE2eeSharePassInvite;
+  onExitToWorkspace: () => void;
+  onImportWorkspaceView: (view: CollaborativeSharePassView) => void;
+}
+
+const StandaloneYjsSharePassScreen: React.FC<StandaloneYjsSharePassScreenProps> = ({
+  invite,
+  onExitToWorkspace,
+  onImportWorkspaceView,
+}) => {
+  const { toastMessage, showToast } = useToast();
+  const [profile, setProfile] = useState(() => readOrCreateCollabProfile());
+
+  const handleUpdateDisplayName = useCallback((nextName: string) => {
+    const clean = nextName.trim().slice(0, 40);
+    if (!clean) return;
+    setProfile((prev) => {
+      const updated = { ...prev, displayName: clean };
+      persistCollabProfile(updated);
+      return updated;
+    });
+  }, []);
+
+  return (
+    <>
+      <SharePassCollaborativeWorkspace
+        mode="standalone"
+        docId={invite.docId}
+        masterKeyB64u={invite.masterKeyB64u}
+        participantId={profile.participantId}
+        displayName={profile.displayName}
+        colorHex={profile.colorHex}
+        onUpdateDisplayName={handleUpdateDisplayName}
+        onClose={onExitToWorkspace}
+        onSyncWorkspaceToLocalVault={({ view }) => onImportWorkspaceView(view)}
+        showToast={showToast}
+      />
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-[80] flex items-center gap-3 bg-[#1e222b] text-neutral-100 text-xs px-4 py-2.5 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md">
+          <span>{toastMessage}</span>
+        </div>
+      )}
+    </>
+  );
+};
+
 export default function App() {
+  const [urlE2eeSharePass, setUrlE2eeSharePass] =
+    useState<ParsedE2eeSharePassInvite | null>(() => extractE2eeSharePassFromLocation());
+  const [urlCollabInvite, setUrlCollabInvite] = useState<ParsedCollabUrlInvite | null>(() =>
+    extractCollabInviteFromLocation()
+  );
+  const [pendingCollabAction, setPendingCollabAction] = useState<PendingCollabAction | null>(
+    null
+  );
   const [urlSharedPayload, setUrlSharedPayload] = useState<SharedPassPayload | null>(null);
   const [pendingSharedImport, setPendingSharedImport] = useState<PendingSharedImport | null>(
     null
@@ -1842,6 +3298,126 @@ export default function App() {
     };
   }, []);
 
+  // 실시간 E2EE 공동편집 SharePass(?spass=sp_...#sk=...) 및 협업 룸(?collab=rm_...#rk=...) 감지 — 볼트 잠금 해제 없이 즉시 협업 참여 보장
+  useEffect(() => {
+    const syncCollabFromLocation = () => {
+      setUrlE2eeSharePass(extractE2eeSharePassFromLocation());
+      setUrlCollabInvite(extractCollabInviteFromLocation());
+    };
+    window.addEventListener('popstate', syncCollabFromLocation);
+    window.addEventListener('hashchange', syncCollabFromLocation);
+    return () => {
+      window.removeEventListener('popstate', syncCollabFromLocation);
+      window.removeEventListener('hashchange', syncCollabFromLocation);
+    };
+  }, []);
+
+  const clearE2eeSharePassUrlParams = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('spass');
+      if (cleanUrl.hash.includes('sk=') || cleanUrl.hash.includes('spass=')) {
+        cleanUrl.hash = '';
+      }
+      window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+    }
+    setUrlE2eeSharePass(null);
+  }, []);
+
+  const handleExitUrlE2eeSharePassToWorkspace = useCallback(() => {
+    const activeInvite = urlE2eeSharePass;
+    clearE2eeSharePassUrlParams();
+    if (activeInvite) {
+      setPendingCollabAction({ kind: 'save_sharepass_crdt', invite: activeInvite });
+    }
+  }, [clearE2eeSharePassUrlParams, urlE2eeSharePass]);
+
+  const handleImportFromStandaloneE2eeSharePass = useCallback(
+    (view: CollaborativeSharePassView) => {
+      const activeInvite = urlE2eeSharePass;
+      clearE2eeSharePassUrlParams();
+      if (activeInvite) {
+        setPendingCollabAction({
+          kind: 'sync_sharepass_crdt',
+          invite: activeInvite,
+          view,
+        });
+      }
+      if (gateStateRef.current.mode === 'onboarding') {
+        saveLegalConsent();
+        setBrowseSessionActive(true);
+        setGateState({
+          mode: 'unlocked_browse',
+          sessionId: Date.now(),
+        });
+      }
+    },
+    [clearE2eeSharePassUrlParams, urlE2eeSharePass]
+  );
+
+  const clearCollabUrlParams = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('collab');
+      if (cleanUrl.hash.includes('rk=') || cleanUrl.hash.includes('collab=')) {
+        cleanUrl.hash = '';
+      }
+      window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+    }
+    setUrlCollabInvite(null);
+  }, []);
+
+  const handleExitUrlCollabToWorkspace = useCallback(() => {
+    const activeInvite = urlCollabInvite;
+    clearCollabUrlParams();
+    if (activeInvite) {
+      setPendingCollabAction({ kind: 'save_only', invite: activeInvite });
+    }
+  }, [clearCollabUrlParams, urlCollabInvite]);
+
+  const handleImportProposalFromStandaloneCollab = useCallback(
+    (room: CollabRoomSnapshot, chosenSlot: CollabProposalSlot) => {
+      const activeInvite = urlCollabInvite || { roomId: room.roomId };
+      clearCollabUrlParams();
+      setPendingCollabAction({
+        kind: 'import_proposal',
+        invite: activeInvite,
+        room,
+        chosenSlot,
+      });
+      if (gateStateRef.current.mode === 'onboarding') {
+        saveLegalConsent();
+        setBrowseSessionActive(true);
+        setGateState({
+          mode: 'unlocked_browse',
+          sessionId: Date.now(),
+        });
+      }
+    },
+    [clearCollabUrlParams, urlCollabInvite]
+  );
+
+  const handleImportRunsheetFromStandaloneCollab = useCallback(
+    (room: CollabRoomSnapshot) => {
+      const activeInvite = urlCollabInvite || { roomId: room.roomId };
+      clearCollabUrlParams();
+      setPendingCollabAction({
+        kind: 'import_runsheet',
+        invite: activeInvite,
+        room,
+      });
+      if (gateStateRef.current.mode === 'onboarding') {
+        saveLegalConsent();
+        setBrowseSessionActive(true);
+        setGateState({
+          mode: 'unlocked_browse',
+          sessionId: Date.now(),
+        });
+      }
+    },
+    [clearCollabUrlParams, urlCollabInvite]
+  );
+
   const handleExitUrlShareMode = useCallback(() => {
     if (typeof window !== 'undefined') {
       const cleanUrl = new URL(window.location.href);
@@ -1853,6 +3429,41 @@ export default function App() {
     }
     setUrlSharedPayload(null);
   }, []);
+
+  const handleUpgradeUrlSharePassToLiveE2ee = useCallback(
+    async (payload: SharedPassPayload) => {
+      const profile = readOrCreateCollabProfile();
+      const viewerZone =
+        Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul';
+      const { docId, masterKeyB64u, inviteUrl } = await createE2eeSharePassWorkspace({
+        payload,
+        host: {
+          participantId: profile.participantId,
+          displayName: profile.displayName,
+          colorHex: profile.colorHex,
+          timeZone: viewerZone,
+        },
+      });
+
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+      } catch {
+        // ignore clipboard failure
+      }
+
+      if (typeof window !== 'undefined') {
+        const nextUrl = new URL(inviteUrl);
+        window.history.replaceState(
+          {},
+          '',
+          nextUrl.pathname + nextUrl.search + nextUrl.hash
+        );
+      }
+      setUrlSharedPayload(null);
+      setUrlE2eeSharePass({ docId, masterKeyB64u });
+    },
+    []
+  );
 
   const handleImportFromUrlSharePass = useCallback(
     (payload: SharedPassPayload, selectedSlotIndex?: number) => {
@@ -2029,6 +3640,7 @@ export default function App() {
   const handleFactoryResetVault = useCallback(() => {
     clearActiveSessionMemory();
     factoryResetLocalWorkspace();
+    void purgeAllNotificationIdbData();
     setIsBiometricEnabled(false);
     setGateState({ mode: 'onboarding' });
   }, [clearActiveSessionMemory]);
@@ -2148,6 +3760,33 @@ export default function App() {
     );
   }
 
+  if (urlE2eeSharePass) {
+    return (
+      <>
+        <StandaloneYjsSharePassScreen
+          invite={urlE2eeSharePass}
+          onExitToWorkspace={handleExitUrlE2eeSharePassToWorkspace}
+          onImportWorkspaceView={handleImportFromStandaloneE2eeSharePass}
+        />
+        <OfflineStatusBanner />
+      </>
+    );
+  }
+
+  if (urlCollabInvite) {
+    return (
+      <>
+        <StandaloneCollabScreen
+          invite={urlCollabInvite}
+          onExitToWorkspace={handleExitUrlCollabToWorkspace}
+          onImportProposal={handleImportProposalFromStandaloneCollab}
+          onImportRunsheet={handleImportRunsheetFromStandaloneCollab}
+        />
+        <OfflineStatusBanner />
+      </>
+    );
+  }
+
   if (urlSharedPayload) {
     return (
       <>
@@ -2155,6 +3794,7 @@ export default function App() {
           payload={urlSharedPayload}
           isPreviewMode={false}
           onImportToWorkspace={handleImportFromUrlSharePass}
+          onUpgradeToLiveE2eeWorkspace={handleUpgradeUrlSharePassToLiveE2ee}
           onExit={handleExitUrlShareMode}
         />
         <OfflineStatusBanner />
@@ -2163,11 +3803,20 @@ export default function App() {
   }
 
   if (gateState.mode === 'onboarding' || gateState.mode === 'locked') {
+    const hasPendingImportAction =
+      Boolean(pendingSharedImport) ||
+      Boolean(
+        pendingCollabAction &&
+          pendingCollabAction.kind !== 'save_only' &&
+          pendingCollabAction.kind !== 'save_sharepass_crdt'
+      );
     return (
       <>
-        {pendingSharedImport && gateState.mode === 'locked' && (
+        {hasPendingImportAction && gateState.mode === 'locked' && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[80] px-4 py-2 rounded-xl bg-[#13161f]/95 border border-white/[0.12] text-xs text-neutral-200 shadow-2xl backdrop-blur-md whitespace-nowrap">
-            암호화 볼트 잠금을 해제하면 공유 브리핑 패스가 내 워크스페이스에 자동 반영됩니다.
+            {pendingCollabAction
+              ? '암호화 볼트 잠금을 해제하면 실시간 E2EE 공동편집 일정이 내 워크스페이스에 자동 반영됩니다.'
+              : '암호화 볼트 잠금을 해제하면 공유 브리핑 패스가 내 워크스페이스에 자동 반영됩니다.'}
           </div>
         )}
         <VaultIntroGate
@@ -2205,6 +3854,8 @@ export default function App() {
         onConsumeToastNotice={() => setTransitionNotice(null)}
         pendingSharedImport={pendingSharedImport}
         onConsumePendingSharedImport={() => setPendingSharedImport(null)}
+        pendingCollabAction={pendingCollabAction}
+        onConsumePendingCollabAction={() => setPendingCollabAction(null)}
         autoLockMinutes={autoLockMinutes}
         onChangeAutoLockMinutes={handleChangeAutoLockMinutes}
         onToggleBiometrics={handleToggleBiometrics}

@@ -51,6 +51,7 @@ import {
   MAX_EVENT_HISTORY_STACK,
   RecordEventHistoryMeta,
 } from './useEventHistory';
+import { normalizeLeadMinutesList } from '../shared/notificationSchema';
 
 export interface VaultEventsSyncConfig {
   isEncrypted: boolean;
@@ -64,6 +65,7 @@ export interface UseCalendarEventsOptions {
   selectedProjectIds?: string[];
   viewerTimeZone?: string;
   vaultEventsConfig?: VaultEventsSyncConfig;
+  onBeforeDeleteEvent?: (event: CalendarEventItem) => void;
 }
 
 export interface ManualEventDraft {
@@ -83,6 +85,7 @@ export interface ManualEventDraft {
   content?: string;
   checklist?: ChecklistItem[];
   recurrence?: RecurrenceRule;
+  reminderMinutes?: number[];
 }
 
 const STORAGE_KEY_EVENTS = 'ai_smart_calendar_events_v4';
@@ -119,6 +122,11 @@ function normalizeStoredEventList(raw: unknown): CalendarEventItem[] | null {
             (d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)
           )
         : undefined;
+      const normalizedReminders = Array.isArray(ev.reminderMinutes)
+        ? ev.reminderMinutes.length === 0
+          ? []
+          : normalizeLeadMinutesList(ev.reminderMinutes)
+        : undefined;
       const cleaned: CalendarEventItem = {
         ...ev,
         location,
@@ -126,6 +134,7 @@ function normalizeStoredEventList(raw: unknown): CalendarEventItem[] | null {
         locationLat,
         locationLng,
         recurrence: normalizeRecurrenceRule(ev.recurrence),
+        reminderMinutes: normalizedReminders,
         excludedDates: excludedDates && excludedDates.length > 0 ? excludedDates : undefined,
         completedDates: completedDates && completedDates.length > 0 ? completedDates : undefined,
       };
@@ -141,6 +150,7 @@ export function useCalendarEvents({
   selectedProjectIds,
   viewerTimeZone,
   vaultEventsConfig,
+  onBeforeDeleteEvent,
 }: UseCalendarEventsOptions) {
   const effectiveViewerZone = useMemo(
     () =>
@@ -568,6 +578,12 @@ export function useCalendarEvents({
       const { masterId, occurrenceDate } = parseOccurrenceIdentity(eventId);
       const master = prevSnapshot.find((e) => e.id === masterId);
       if (!master) return;
+      if (master.externalSync?.readOnly) {
+        showToast(
+          '읽기 전용 외부 일정입니다. 동기화 허브(S)에서 양방향 하이브리드로 전환하면 일시를 이동할 수 있습니다.'
+        );
+        return;
+      }
 
       // 반복 일정 회차를 드래그 이동하면 해당 회차만 개별 일정으로 자동 분리(Detach)
       if (master.recurrence) {
@@ -767,6 +783,12 @@ export function useCalendarEvents({
       const { masterId, occurrenceDate } = parseOccurrenceIdentity(eventId);
       const target = prevSnapshot.find((e) => e.id === masterId);
       if (!target) return;
+      if (target.externalSync?.readOnly) {
+        showToast(
+          '읽기 전용 외부 마스킹 일정입니다. 동기화 허브(S)에서 캘린더 구독을 해제하거나 모드를 변경해 주세요.'
+        );
+        return;
+      }
 
       if (scope === 'single' && target.recurrence) {
         const occDate =
@@ -807,6 +829,8 @@ export function useCalendarEvents({
         return;
       }
 
+      onBeforeDeleteEvent?.(target);
+
       const nextEvents = prevSnapshot.filter((e) => e.id !== masterId);
       eventsRef.current = nextEvents;
       setEvents(nextEvents);
@@ -836,7 +860,7 @@ export function useCalendarEvents({
         }
       );
     },
-    [recordEventsTransition, selectedEvent, showToast]
+    [onBeforeDeleteEvent, recordEventsTransition, selectedEvent, showToast]
   );
 
   const handleToggleComplete = useCallback(
@@ -1195,11 +1219,12 @@ export function useCalendarEvents({
 
         if (patchMap.size > 0) {
           workingEvents = workingEvents.map((e) => {
+            if (e.externalSync?.readOnly) return e;
             const patch = patchMap.get(e.id);
             return patch ? { ...e, ...patch } : e;
           });
           setSelectedEvent((prev) => {
-            if (!prev) return prev;
+            if (!prev || prev.externalSync?.readOnly) return prev;
             const patch = patchMap.get(resolveMasterEventId(prev.id));
             return patch ? { ...prev, ...patch } : prev;
           });
@@ -1207,9 +1232,18 @@ export function useCalendarEvents({
       }
 
       if (deleteMasterSet.size > 0) {
-        workingEvents = workingEvents.filter((e) => !deleteMasterSet.has(e.id));
+        for (const e of workingEvents) {
+          if (deleteMasterSet.has(e.id) && !e.externalSync?.readOnly) {
+            onBeforeDeleteEvent?.(e);
+          }
+        }
+        workingEvents = workingEvents.filter(
+          (e) => !deleteMasterSet.has(e.id) || Boolean(e.externalSync?.readOnly)
+        );
         setSelectedEvent((prev) =>
-          prev && deleteMasterSet.has(resolveMasterEventId(prev.id)) ? null : prev
+          prev && deleteMasterSet.has(resolveMasterEventId(prev.id)) && !prev.externalSync?.readOnly
+            ? null
+            : prev
         );
       }
 
@@ -1289,6 +1323,7 @@ export function useCalendarEvents({
     [
       effectiveViewerZone,
       jumpToDate,
+      onBeforeDeleteEvent,
       primaryProjectId,
       recordEventsTransition,
       selectedDate,
@@ -1444,6 +1479,12 @@ export function useCalendarEvents({
       const masterId = resolveMasterEventId(eventId);
       const target = prevSnapshot.find((e) => e.id === masterId);
       if (!target) return;
+      if (target.externalSync?.readOnly) {
+        showToast(
+          '읽기 전용 외부 일정입니다. 동기화 허브(S)에서 양방향 하이브리드로 전환하면 시간을 수정할 수 있습니다.'
+        );
+        return;
+      }
 
       const timing = projectEventToViewerTimeZone(target, effectiveViewerZone);
       const converted = convertLocalSlotToEventZone(
@@ -1505,7 +1546,7 @@ export function useCalendarEvents({
       const prevSnapshot = eventsRef.current;
       const masterId = resolveMasterEventId(eventId);
       const target = prevSnapshot.find((e) => e.id === masterId);
-      if (!target) return;
+      if (!target || target.externalSync?.readOnly) return;
 
       const validTz = nextTimeZone && isValidTimeZone(nextTimeZone) ? nextTimeZone : undefined;
       if (target.timeZone === validTz) return;
@@ -1589,7 +1630,7 @@ export function useCalendarEvents({
       const prevSnapshot = eventsRef.current;
       const masterId = resolveMasterEventId(eventId);
       const target = prevSnapshot.find((e) => e.id === masterId);
-      if (!target) return;
+      if (!target || target.externalSync?.readOnly) return;
 
       const { location, locationAddress } = normalizePlaceAndAddress(rawLocation, rawAddress);
       const { locationLat, locationLng } =
@@ -1698,6 +1739,11 @@ export function useCalendarEvents({
         isCompleted: false,
         checklist: cleanedChecklist && cleanedChecklist.length > 0 ? cleanedChecklist : undefined,
         recurrence: normalizeRecurrenceRule(draft.recurrence),
+        reminderMinutes: Array.isArray(draft.reminderMinutes)
+          ? draft.reminderMinutes.length === 0
+            ? []
+            : normalizeLeadMinutesList(draft.reminderMinutes)
+          : undefined,
       };
 
       const nextEvents = [newEvent, ...prevSnapshot];
@@ -1738,6 +1784,12 @@ export function useCalendarEvents({
       const { masterId, occurrenceDate, isVirtualOccurrence } = parseOccurrenceIdentity(eventId);
       const target = prevSnapshot.find((e) => e.id === masterId);
       if (!target) return;
+      if (target.externalSync?.readOnly) {
+        showToast(
+          '읽기 전용 외부 일정입니다. 동기화 허브(S)에서 양방향 하이브리드로 전환하면 편집할 수 있습니다.'
+        );
+        return;
+      }
 
       const sanitizedUpdates: Partial<CalendarEventItem> = { ...updates };
 
@@ -1790,6 +1842,14 @@ export function useCalendarEvents({
           merged.excludedDates = undefined;
           merged.completedDates = undefined;
         }
+      }
+
+      if ('reminderMinutes' in sanitizedUpdates) {
+        merged.reminderMinutes = Array.isArray(sanitizedUpdates.reminderMinutes)
+          ? sanitizedUpdates.reminderMinutes.length === 0
+            ? []
+            : normalizeLeadMinutesList(sanitizedUpdates.reminderMinutes)
+          : undefined;
       }
 
       if (areSingleEventsEqual(target, merged)) return;

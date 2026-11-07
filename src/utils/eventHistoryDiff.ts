@@ -32,6 +32,8 @@ export function cloneEventItem(ev: CalendarEventItem): CalendarEventItem {
     recurrence: ev.recurrence ? { ...ev.recurrence } : undefined,
     excludedDates: ev.excludedDates ? [...ev.excludedDates] : undefined,
     completedDates: ev.completedDates ? [...ev.completedDates] : undefined,
+    reminderMinutes: ev.reminderMinutes ? [...ev.reminderMinutes] : undefined,
+    externalSync: ev.externalSync ? { ...ev.externalSync } : undefined,
   };
 }
 
@@ -45,6 +47,16 @@ function areStringArraysEqual(a?: string[], b?: string[]): boolean {
   if (lenA !== lenB) return false;
   if (!a || !b) return true;
   for (let i = 0; i < lenA; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function areReminderArraysEqual(a?: number[], b?: number[]): boolean {
+  if (a === undefined && b === undefined) return true;
+  if (a === undefined || b === undefined) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
     if (a[i] !== b[i]) return false;
   }
   return true;
@@ -64,6 +76,27 @@ function areChecklistsEqual(
     }
   }
   return true;
+}
+
+function areExternalSyncEqual(
+  a?: CalendarEventItem['externalSync'],
+  b?: CalendarEventItem['externalSync']
+): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    a.accountId === b.accountId &&
+    a.calendarId === b.calendarId &&
+    a.provider === b.provider &&
+    a.remoteUid === b.remoteUid &&
+    a.remoteIcalUid === b.remoteIcalUid &&
+    a.remoteEtag === b.remoteEtag &&
+    a.remoteHref === b.remoteHref &&
+    a.syncMode === b.syncMode &&
+    Boolean(a.readOnly) === Boolean(b.readOnly) &&
+    Boolean(a.isMasked) === Boolean(b.isMasked) &&
+    a.baseSnapshotHash === b.baseSnapshotHash
+  );
 }
 
 export function areSingleEventsEqual(a: CalendarEventItem, b: CalendarEventItem): boolean {
@@ -89,7 +122,9 @@ export function areSingleEventsEqual(a: CalendarEventItem, b: CalendarEventItem)
     a.recurrence?.count === b.recurrence?.count &&
     areStringArraysEqual(a.excludedDates, b.excludedDates) &&
     areStringArraysEqual(a.completedDates, b.completedDates) &&
-    areChecklistsEqual(a.checklist, b.checklist)
+    areReminderArraysEqual(a.reminderMinutes, b.reminderMinutes) &&
+    areChecklistsEqual(a.checklist, b.checklist) &&
+    areExternalSyncEqual(a.externalSync, b.externalSync)
   );
 }
 
@@ -187,6 +222,16 @@ export function describeEventFieldChanges(
     const beforeTotal = (before.checklist || []).length;
     const afterTotal = (after.checklist || []).length;
     diffs.push(`체크리스트 ${beforeDone}/${beforeTotal} → ${afterDone}/${afterTotal}`);
+  }
+
+  if (!areReminderArraysEqual(before.reminderMinutes, after.reminderMinutes)) {
+    if (after.reminderMinutes === undefined) {
+      diffs.push('알림 기본 설정 복원');
+    } else if (after.reminderMinutes.length === 0) {
+      diffs.push('개별 알림 해제');
+    } else {
+      diffs.push(`개별 알림 ${after.reminderMinutes.map((m) => (m === 0 ? '정각' : `${m}분 전`)).join('·')}`);
+    }
   }
 
   return diffs.slice(0, 2).join(' · ') || '세부 항목 변경';

@@ -23,6 +23,10 @@ import {
   Repeat,
   History,
   RotateCcw,
+  Lock,
+  RefreshCw,
+  Bell,
+  BellOff,
 } from 'lucide-react';
 import {
   CalendarCategory,
@@ -48,6 +52,14 @@ import {
   RECURRENCE_OPTIONS,
   resolveMasterEventId,
 } from '../shared/recurrenceUtils';
+import {
+  formatLeadMinutesLabel,
+  LEAD_TIME_PRESET_OPTIONS,
+  MAX_CUSTOM_LEAD_MINUTES,
+  MAX_LEAD_TIMES_PER_ITEM,
+  normalizeLeadMinutesList,
+  summarizeLeadMinutesList,
+} from '../shared/notificationSchema';
 import { useEventHistoryOptional } from '../hooks/useEventHistory';
 import {
   describeEventFieldChanges,
@@ -110,6 +122,22 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
   const theme = resolveEventLuxuryTheme(event, projects);
   const currentProject = theme.project;
   const isPanel = variant === 'panel';
+  const isReadOnlyExternal = Boolean(event.externalSync?.readOnly);
+  const isMaskedExternal = Boolean(event.externalSync?.isMasked);
+  const effectiveUpdateEventFields = isReadOnlyExternal ? undefined : onUpdateEventFields;
+  const effectiveUpdateLocation = isReadOnlyExternal ? undefined : onUpdateLocation;
+  const effectiveUpdateTimeZone = isReadOnlyExternal ? undefined : onUpdateTimeZone;
+  const effectiveAddChecklistItem = isReadOnlyExternal ? undefined : onAddChecklistItem;
+  const effectiveUpdateChecklistItemText = isReadOnlyExternal ? undefined : onUpdateChecklistItemText;
+  const effectiveDeleteChecklistItem = isReadOnlyExternal ? undefined : onDeleteChecklistItem;
+
+  const externalProviderLabel = event.externalSync
+    ? event.externalSync.provider === 'google'
+      ? 'Google Calendar'
+      : event.externalSync.provider === 'microsoft'
+      ? 'Microsoft Outlook'
+      : 'CalDAV'
+    : null;
 
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [locDraft, setLocDraft] = useState(event.location || '');
@@ -148,6 +176,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
   const [editingCheckId, setEditingCheckId] = useState<string | null>(null);
   const [editingCheckText, setEditingCheckText] = useState('');
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+  const [customLeadInput, setCustomLeadInput] = useState('');
 
   const historyApi = useEventHistoryOptional();
   const masterEventId = useMemo(() => resolveMasterEventId(event.id), [event.id]);
@@ -214,6 +243,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
     setEditingCheckId(null);
     setEditingCheckText('');
     setIsHistoryExpanded(false);
+    setCustomLeadInput('');
   }, [event.id]);
 
   const safeViewerZone = useMemo(
@@ -471,11 +501,11 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
               </span>
             </>
           )}
-          {onUpdateEventFields ? (
+          {effectiveUpdateEventFields ? (
             <select
               value={event.category}
               onChange={(e) =>
-                onUpdateEventFields(
+                effectiveUpdateEventFields(
                   event.id,
                   { category: e.target.value as CalendarCategory },
                   `분류가 '${e.target.value}'(으)로 변경되었습니다.`
@@ -492,6 +522,29 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
             </select>
           ) : (
             <span className="text-neutral-300 shrink-0">{event.category}</span>
+          )}
+
+          {externalProviderLabel && (
+            <>
+              <span aria-hidden="true" className="text-neutral-600 shrink-0">
+                ·
+              </span>
+              <span className="inline-flex items-center gap-1 text-neutral-400 truncate">
+                {isMaskedExternal ? (
+                  <Lock className="w-3 h-3 text-neutral-500 shrink-0" />
+                ) : (
+                  <RefreshCw className="w-3 h-3 text-neutral-500 shrink-0" />
+                )}
+                <span className="truncate">
+                  {externalProviderLabel}
+                  {isMaskedExternal
+                    ? ' · 마스킹'
+                    : isReadOnlyExternal
+                    ? ' · 읽기 전용'
+                    : ' · 하이브리드'}
+                </span>
+              </span>
+            </>
           )}
 
           {hasConflict && (
@@ -565,14 +618,16 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
           >
             <Download className="w-4 h-4" />
           </button>
-          <button
-            type="button"
-            onClick={() => onDelete(event.id)}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-            title="일정 삭제"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {!isReadOnlyExternal && (
+            <button
+              type="button"
+              onClick={() => onDelete(event.id)}
+              className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+              title="일정 삭제"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -829,7 +884,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
               <div className="flex items-start justify-between gap-2">
                 <h3
                   onDoubleClick={() => {
-                    if (onUpdateEventFields) setIsEditingCore(true);
+                    if (effectiveUpdateEventFields) setIsEditingCore(true);
                   }}
                   className={`text-base sm:text-lg font-bold leading-snug break-words ${
                     event.isCompleted ? 'line-through text-neutral-500' : 'text-neutral-100'
@@ -838,7 +893,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                   {event.title}
                 </h3>
 
-                {onUpdateEventFields && (
+                {effectiveUpdateEventFields && (
                   <button
                     type="button"
                     onClick={() => setIsEditingCore(true)}
@@ -869,10 +924,10 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                 </span>
 
                 {!event.isAllDay &&
-                  (onUpdateTimeZone ? (
+                  (effectiveUpdateTimeZone ? (
                     <select
                       value={timing.sourceTimeZone}
-                      onChange={(e) => onUpdateTimeZone(event.id, e.target.value)}
+                      onChange={(e) => effectiveUpdateTimeZone(event.id, e.target.value)}
                       aria-label="일정 기준 시간대"
                       title="일정 시간의 기준 시간대 선택"
                       className="ml-0.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.18] rounded-md px-1.5 py-0.5 text-[11px] font-mono text-neutral-200 outline-hidden cursor-pointer transition-colors whitespace-nowrap shrink-0"
@@ -920,6 +975,15 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
           </div>
         )}
 
+        {isMaskedExternal && (
+          <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.07] text-xs text-neutral-400 leading-relaxed flex items-start gap-2.5 select-none">
+            <Lock className="w-3.5 h-3.5 text-neutral-400 shrink-0 mt-0.5" />
+            <span>
+              읽기 전용 가용시간 마스킹 모드로 동기화된 외부 일정입니다. 프라이버시 보호를 위해 원본 제목·장소·참석자·메모는 로컬 볼트에 저장되지 않으며 가용성(Busy) 시간대만 차단합니다.
+            </span>
+          </div>
+        )}
+
         {/* 소속 프로젝트 */}
         <div className="flex items-center justify-between p-3 rounded-xl bg-[#161a24] border border-white/[0.06] text-xs gap-2">
           <div className="flex items-center gap-2 shrink-0">
@@ -953,6 +1017,191 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
           )}
         </div>
 
+        {/* 개별 일정 알림 리드타임 (기본 따름 · 알림 끔 · 다중 프리셋 · 분 단위 직접 추가) */}
+        <div className="p-3 rounded-xl bg-[#161a24] border border-white/[0.06] space-y-2.5 text-xs select-none">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 shrink-0">
+              {Array.isArray(event.reminderMinutes) && event.reminderMinutes.length === 0 ? (
+                <BellOff className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+              ) : (
+                <Bell className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+              )}
+              <span className="font-medium text-neutral-300 whitespace-nowrap">일정 알림 리드타임</span>
+            </div>
+            <span className="text-[11px] font-mono tabular-nums text-neutral-400 truncate">
+              {event.reminderMinutes === undefined
+                ? '기본 설정 따름'
+                : event.reminderMinutes.length === 0
+                ? '이 일정 알림 끔'
+                : summarizeLeadMinutesList(event.reminderMinutes)}
+            </span>
+          </div>
+
+          {effectiveUpdateEventFields && (
+            <div className="space-y-2 pt-0.5">
+              <div className="flex items-center gap-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() =>
+                    effectiveUpdateEventFields(
+                      event.id,
+                      { reminderMinutes: undefined },
+                      '일정 알림이 워크스페이스 기본 설정으로 복원되었습니다.'
+                    )
+                  }
+                  className={`h-6.5 px-2 rounded-md text-[11px] border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    event.reminderMinutes === undefined
+                      ? 'bg-white/[0.12] border-white/[0.24] text-white font-medium'
+                      : 'bg-transparent border-white/[0.07] text-neutral-400 hover:text-neutral-200 hover:border-white/[0.16]'
+                  }`}
+                >
+                  기본 설정
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    effectiveUpdateEventFields(
+                      event.id,
+                      { reminderMinutes: [] },
+                      '이 일정의 로컬·백그라운드 알림이 해제되었습니다.'
+                    )
+                  }
+                  className={`h-6.5 px-2 rounded-md text-[11px] border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    Array.isArray(event.reminderMinutes) && event.reminderMinutes.length === 0
+                      ? 'bg-white/[0.12] border-white/[0.24] text-white font-medium'
+                      : 'bg-transparent border-white/[0.07] text-neutral-400 hover:text-neutral-200 hover:border-white/[0.16]'
+                  }`}
+                >
+                  알림 끔
+                </button>
+
+                {LEAD_TIME_PRESET_OPTIONS.map((preset) => {
+                  const activeList = Array.isArray(event.reminderMinutes)
+                    ? event.reminderMinutes
+                    : [];
+                  const isSelected = activeList.includes(preset.minutes);
+                  return (
+                    <button
+                      key={preset.minutes}
+                      type="button"
+                      onClick={() => {
+                        const base = Array.isArray(event.reminderMinutes)
+                          ? event.reminderMinutes
+                          : [];
+                        const nextList = isSelected
+                          ? base.filter((m) => m !== preset.minutes)
+                          : normalizeLeadMinutesList([...base, preset.minutes]).slice(
+                              0,
+                              MAX_LEAD_TIMES_PER_ITEM
+                            );
+                        effectiveUpdateEventFields(
+                          event.id,
+                          { reminderMinutes: nextList },
+                          nextList.length === 0
+                            ? '이 일정의 알림이 해제되었습니다.'
+                            : `일정 알림이 '${summarizeLeadMinutesList(nextList)}'(으)로 설정되었습니다.`
+                        );
+                      }}
+                      className={`h-6.5 px-2 rounded-md text-[11px] font-mono tabular-nums border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                        isSelected
+                          ? 'bg-white/[0.12] border-white/[0.24] text-white font-medium'
+                          : 'bg-transparent border-white/[0.07] text-neutral-400 hover:text-neutral-200 hover:border-white/[0.16]'
+                      }`}
+                    >
+                      {preset.shortLabel}
+                    </button>
+                  );
+                })}
+
+                {Array.isArray(event.reminderMinutes) &&
+                  event.reminderMinutes
+                    .filter(
+                      (m) => !LEAD_TIME_PRESET_OPTIONS.some((preset) => preset.minutes === m)
+                    )
+                    .map((customMin) => (
+                      <button
+                        key={`custom-${customMin}`}
+                        type="button"
+                        onClick={() => {
+                          const nextList = (event.reminderMinutes || []).filter(
+                            (m) => m !== customMin
+                          );
+                          effectiveUpdateEventFields(
+                            event.id,
+                            { reminderMinutes: nextList },
+                            nextList.length === 0
+                              ? '이 일정의 알림이 해제되었습니다.'
+                              : `일정 알림이 '${summarizeLeadMinutesList(nextList)}'(으)로 변경되었습니다.`
+                          );
+                        }}
+                        title="클릭하여 커스텀 리드타임 제거"
+                        className="h-6.5 px-2 rounded-md text-[11px] font-mono tabular-nums bg-white/[0.12] border border-white/[0.24] text-white font-medium inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                      >
+                        <span>{formatLeadMinutesLabel(customMin, true)}</span>
+                        <X className="w-2.5 h-2.5 text-neutral-300" />
+                      </button>
+                    ))}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_CUSTOM_LEAD_MINUTES}
+                  value={customLeadInput}
+                  onChange={(e) => setCustomLeadInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const num = Number(customLeadInput);
+                      if (Number.isFinite(num) && num >= 0 && num <= MAX_CUSTOM_LEAD_MINUTES) {
+                        const base = Array.isArray(event.reminderMinutes)
+                          ? event.reminderMinutes
+                          : [];
+                        const nextList = normalizeLeadMinutesList([...base, Math.round(num)]).slice(
+                          0,
+                          MAX_LEAD_TIMES_PER_ITEM
+                        );
+                        effectiveUpdateEventFields(
+                          event.id,
+                          { reminderMinutes: nextList },
+                          `일정 알림에 '${formatLeadMinutesLabel(Math.round(num), true)}' 리드타임이 추가되었습니다.`
+                        );
+                        setCustomLeadInput('');
+                      }
+                    }
+                  }}
+                  placeholder="커스텀 분 입력 (예: 25, 45, 90)"
+                  className="h-7 flex-1 min-w-0 px-2.5 rounded-lg bg-[#0e1118] border border-white/[0.08] focus:border-white/22 text-[11px] font-mono tabular-nums text-neutral-100 placeholder:text-neutral-500 outline-hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const num = Number(customLeadInput);
+                    if (!Number.isFinite(num) || num < 0 || num > MAX_CUSTOM_LEAD_MINUTES) return;
+                    const base = Array.isArray(event.reminderMinutes) ? event.reminderMinutes : [];
+                    const nextList = normalizeLeadMinutesList([...base, Math.round(num)]).slice(
+                      0,
+                      MAX_LEAD_TIMES_PER_ITEM
+                    );
+                    effectiveUpdateEventFields(
+                      event.id,
+                      { reminderMinutes: nextList },
+                      `일정 알림에 '${formatLeadMinutesLabel(Math.round(num), true)}' 리드타임이 추가되었습니다.`
+                    );
+                    setCustomLeadInput('');
+                  }}
+                  className="h-7 px-2.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.11] border border-white/[0.08] text-[11px] text-neutral-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Plus className="w-3 h-3 shrink-0" />
+                  <span>분 전 추가</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* 핀 위치 미리보기 & 상세 주소 · 위경도 분리 섹션 및 인라인 편집 */}
         {isEditingLocation ? (
           <form
@@ -962,7 +1211,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                <span>장소명 · 상세 주소 · 위경도 편집</span>
+                <span>장소명 및 상세 주소 편집</span>
               </span>
 
               <button
@@ -970,14 +1219,14 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                 onClick={handleAutoResolveInEditor}
                 disabled={isResolvingLocation}
                 className="h-6 px-2.5 rounded-md bg-white/[0.05] hover:bg-white/[0.10] disabled:opacity-50 border border-white/[0.09] text-[10.5px] text-neutral-200 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                title="장소명 또는 주소로 도로명 주소와 WGS84 위경도를 자동 검색합니다"
+                title="장소명 또는 주소로 도로명 주소를 자동 검색합니다"
               >
                 {isResolvingLocation ? (
                   <Loader2 className="w-3 h-3 animate-spin shrink-0" />
                 ) : (
                   <Search className="w-3 h-3 shrink-0" />
                 )}
-                <span>{isResolvingLocation ? '탐색 중...' : '주소·위경도 자동 탐색'}</span>
+                <span>{isResolvingLocation ? '탐색 중...' : '주소 자동 탐색'}</span>
               </button>
             </div>
 
@@ -1004,90 +1253,38 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                   type="text"
                   value={addrDraft}
                   onChange={(e) => setAddrDraft(e.target.value)}
-                  placeholder="예: 서울특별시 중구 노바센트럴로 88"
+                  placeholder="예: 서울특별시 성동구 에테르대로 142"
                   className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-600 outline-hidden"
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] text-neutral-400 mb-1 font-mono">
-                    위도 (Latitude)
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={latDraft}
-                    onChange={(e) => handleCoordinateInputChange('lat', e.target.value)}
-                    placeholder="예: 37.566535"
-                    className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-hidden"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-neutral-400 mb-1 font-mono">
-                    경도 (Longitude)
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={lngDraft}
-                    onChange={(e) => handleCoordinateInputChange('lng', e.target.value)}
-                    placeholder="예: 126.977969"
-                    className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-hidden"
-                  />
-                </div>
-              </div>
             </div>
 
-            {coordError ? (
+            {coordError && (
               <p className="text-[11px] text-rose-300 leading-snug">{coordError}</p>
-            ) : (
-              <p className="text-[10.5px] text-neutral-500 leading-snug">
-                &apos;37.566535, 126.977969&apos; 형식을 붙여넣으면 위도·경도가 자동 분리되며, &apos;~인근&apos; 수식어는 저장 시 정제됩니다.
-              </p>
             )}
 
-            <div className="flex items-center justify-between gap-2 pt-0.5">
-              {(latDraft || lngDraft) ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLatDraft('');
-                    setLngDraft('');
-                    setCoordError(null);
-                  }}
-                  className="text-[11px] text-neutral-400 hover:text-neutral-200 underline underline-offset-2 cursor-pointer whitespace-nowrap"
-                >
-                  좌표 비우기
-                </button>
-              ) : (
-                <span />
-              )}
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLocDraft(event.location || '');
-                    setAddrDraft(event.locationAddress || '');
-                    const valid = hasValidCoordinates(event.locationLat, event.locationLng);
-                    setLatDraft(valid ? event.locationLat!.toFixed(6) : '');
-                    setLngDraft(valid ? event.locationLng!.toFixed(6) : '');
-                    setCoordError(null);
-                    setIsEditingLocation(false);
-                  }}
-                  className="h-8 px-3 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] text-xs text-neutral-300 transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  취소
-                </button>
-                <button
-                  type="submit"
-                  className="h-8 px-3.5 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  저장
-                </button>
-              </div>
+            <div className="flex items-center justify-end gap-1.5 pt-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setLocDraft(event.location || '');
+                  setAddrDraft(event.locationAddress || '');
+                  const valid = hasValidCoordinates(event.locationLat, event.locationLng);
+                  setLatDraft(valid ? event.locationLat!.toFixed(6) : '');
+                  setLngDraft(valid ? event.locationLng!.toFixed(6) : '');
+                  setCoordError(null);
+                  setIsEditingLocation(false);
+                }}
+                className="h-8 px-3 rounded-lg border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] text-xs text-neutral-300 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                className="h-8 px-3.5 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+              >
+                저장
+              </button>
             </div>
           </form>
         ) : hasAnyLocationData ? (
@@ -1098,10 +1295,10 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
             compact={isPanel}
             isAutoResolving={isResolvingLocation}
             autoResolveNotice={resolveNotice}
-            onEdit={onUpdateLocation ? () => setIsEditingLocation(true) : undefined}
-            onAutoResolve={onUpdateLocation ? handleAutoResolveInView : undefined}
+            onEdit={effectiveUpdateLocation ? () => setIsEditingLocation(true) : undefined}
+            onAutoResolve={effectiveUpdateLocation ? handleAutoResolveInView : undefined}
           />
-        ) : onUpdateLocation ? (
+        ) : effectiveUpdateLocation ? (
           <button
             type="button"
             onClick={() => setIsEditingLocation(true)}
@@ -1156,7 +1353,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                 <FileText className="w-3.5 h-3.5 text-neutral-400" />
                 <span>상세 메모 및 파트너 정보</span>
               </span>
-              {onUpdateEventFields && (
+              {effectiveUpdateEventFields && (
                 <button
                   type="button"
                   onClick={() => setIsEditingContent(true)}
@@ -1171,7 +1368,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
               {event.content}
             </div>
           </div>
-        ) : onUpdateEventFields ? (
+        ) : effectiveUpdateEventFields ? (
           <button
             type="button"
             onClick={() => setIsEditingContent(true)}
@@ -1183,7 +1380,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
         ) : null}
 
         {/* 체크리스트 (조회 · 토글 · 인라인 항목 추가/수정/삭제) */}
-        {((event.checklist && event.checklist.length > 0) || Boolean(onAddChecklistItem)) && (
+        {((event.checklist && event.checklist.length > 0) || Boolean(effectiveAddChecklistItem)) && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-neutral-400 flex items-center gap-1.5">
@@ -1253,9 +1450,9 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                           </span>
                         </button>
 
-                        {(onUpdateChecklistItemText || onDeleteChecklistItem) && (
+                        {(effectiveUpdateChecklistItemText || effectiveDeleteChecklistItem) && (
                           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                            {onUpdateChecklistItemText && (
+                            {effectiveUpdateChecklistItemText && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1268,10 +1465,10 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                                 <Pencil className="w-3 h-3" />
                               </button>
                             )}
-                            {onDeleteChecklistItem && (
+                            {effectiveDeleteChecklistItem && (
                               <button
                                 type="button"
-                                onClick={() => onDeleteChecklistItem(event.id, item.id)}
+                                onClick={() => effectiveDeleteChecklistItem(event.id, item.id)}
                                 className="p-1 rounded text-neutral-500 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer"
                                 title="항목 삭제"
                               >
@@ -1286,7 +1483,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                 );
               })}
 
-              {onAddChecklistItem && (
+              {effectiveAddChecklistItem && (
                 <div className="flex items-center gap-1.5 pt-1">
                   <input
                     type="text"

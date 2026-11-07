@@ -38,6 +38,128 @@ export interface ChecklistItem {
   done: boolean;
 }
 
+export type ExternalProviderType = 'google' | 'microsoft' | 'caldav';
+
+export type CalendarSyncMode = 'read_only_masking' | 'bidirectional_hybrid';
+
+export type SyncConflictPolicy = 'manual_review' | 'prefer_remote' | 'prefer_local';
+
+export interface ExternalEventSyncMeta {
+  accountId: string;
+  calendarId: string;
+  calendarName: string;
+  provider: ExternalProviderType;
+  remoteUid: string;
+  remoteIcalUid?: string;
+  remoteEtag?: string;
+  remoteHref?: string;
+  syncMode: CalendarSyncMode;
+  isMasked: boolean;
+  readOnly: boolean;
+  lastSyncedAt: string;
+  baseSnapshotHash: string;
+  originalTitleSnapshot?: string;
+}
+
+export interface SubscribedExternalCalendar {
+  id: string;
+  remoteCalendarId: string;
+  name: string;
+  color: string;
+  enabled: boolean;
+  readOnlyRemote?: boolean;
+  syncMode: CalendarSyncMode;
+  maskLabel: string;
+  boundProjectId?: string;
+  pushLocalProjectEvents: boolean;
+  defaultCategory: CalendarCategory;
+  conflictPolicy: SyncConflictPolicy;
+  syncCursor?: string;
+  ctag?: string;
+  lastSyncedAt?: string;
+}
+
+export interface CalDavConnectionConfig {
+  serverUrl: string;
+  username: string;
+  appPassword?: string;
+  principalUrl?: string;
+  calendarHomeUrl?: string;
+}
+
+export interface ConnectedCalendarAccount {
+  id: string;
+  provider: ExternalProviderType;
+  accountEmail: string;
+  displayName: string;
+  status: 'connected' | 'reauth_required' | 'error';
+  errorMessage?: string;
+  createdAt: string;
+  lastSyncedAt?: string;
+  calendars: SubscribedExternalCalendar[];
+  caldavConfig?: CalDavConnectionConfig;
+  microsoftSessionHandle?: string;
+}
+
+export interface PendingOutboundDeletion {
+  id: string;
+  accountId: string;
+  calendarId: string;
+  remoteCalendarId: string;
+  provider: ExternalProviderType;
+  remoteUid: string;
+  remoteEtag?: string;
+  remoteHref?: string;
+  eventTitle: string;
+  eventDate: string;
+  deletedAt: string;
+}
+
+export interface SyncConflictItem {
+  id: string;
+  accountId: string;
+  calendarId: string;
+  calendarName: string;
+  provider: ExternalProviderType;
+  localEventId: string;
+  remoteUid: string;
+  remoteEtag?: string;
+  remoteHref?: string;
+  localSnapshot: CalendarEventItem;
+  remoteSnapshot: CalendarEventItem;
+  detectedAt: string;
+}
+
+export interface VaultExternalSyncState {
+  accounts: ConnectedCalendarAccount[];
+  pendingDeletions: PendingOutboundDeletion[];
+  conflicts: SyncConflictItem[];
+}
+
+export interface NotificationEnginePreferences {
+  enabled: boolean;
+  defaultLeadMinutes: number[];
+  allDayNotifyHour: number | null; // null = 종일 일정 알림 끔, 0~23 = 당일 해당 시각(현지 기준) 알림
+  webPushEnabled: boolean;
+  backgroundSyncEnabled: boolean;
+  privacyMaskWhenEncrypted: boolean;
+}
+
+export interface SavedCollabRoomItem {
+  roomId: string;
+  kind: 'proposal' | 'runsheet' | 'sharepass-crdt';
+  shareKind?: 'event' | 'project';
+  localTitle: string;
+  isE2ee: boolean;
+  roomKeyBase64Url?: string;
+  hostSecret?: string;
+  linkedEventId?: string;
+  linkedProjectId?: string;
+  autoSyncToVault?: boolean;
+  createdAt: string;
+  lastOpenedAt: string;
+}
+
 export interface CalendarEventItem {
   id: string;
   title: string;
@@ -61,7 +183,9 @@ export interface CalendarEventItem {
   completedDates?: string[]; // 반복 일정 중 개별 완료 처리된 회차 날짜(YYYY-MM-DD)
   recurrenceMasterId?: string; // 가상 전개된 반복 회차의 원본 마스터 일정 ID
   occurrenceDate?: string; // 가상 전개된 회차의 기준 시작일(YYYY-MM-DD)
+  reminderMinutes?: number[]; // 개별 일정 알림 리드타임(분 배열, 빈 배열 []은 이 일정 알림 끔, undefined는 기본 설정 따름)
   isSample?: boolean;
+  externalSync?: ExternalEventSyncMeta;
 }
 
 export interface RecommendedVenue {

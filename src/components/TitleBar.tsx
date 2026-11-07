@@ -1,11 +1,14 @@
 import React from 'react';
 import {
+  Bell,
   ChevronLeft,
   ChevronRight,
   PanelLeftOpen,
   PanelLeftClose,
   Plus,
+  RefreshCw,
   Search,
+  Users,
 } from 'lucide-react';
 import {
   CalendarCategory,
@@ -37,6 +40,15 @@ interface TitleBarProps {
   onChangeViewMode: (mode: CalendarViewMode) => void;
   onOpenCommandPalette?: () => void;
   onOpenCreateEvent?: () => void;
+  onOpenExternalSync?: () => void;
+  syncedAccountCount?: number;
+  syncConflictCount?: number;
+  isExternalSyncing?: boolean;
+  onOpenNotificationSettings?: () => void;
+  isNotificationEnabled?: boolean;
+  scheduledAlertCount?: number;
+  onOpenCollabHub?: () => void;
+  collabRoomCount?: number;
   onImportIcsFile?: (file: File) => void;
   onExportWorkspaceJson?: () => void;
   onImportWorkspaceJsonFile?: (file: File) => void;
@@ -63,6 +75,15 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onChangeViewMode,
   onOpenCommandPalette,
   onOpenCreateEvent,
+  onOpenExternalSync,
+  syncedAccountCount = 0,
+  syncConflictCount = 0,
+  isExternalSyncing = false,
+  onOpenNotificationSettings,
+  isNotificationEnabled = false,
+  scheduledAlertCount = 0,
+  onOpenCollabHub,
+  collabRoomCount = 0,
   onImportIcsFile,
   onExportWorkspaceJson,
   onImportWorkspaceJsonFile,
@@ -225,6 +246,96 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           )}
 
           {historySlot}
+
+          {onOpenExternalSync && (
+            <TopBarTooltip
+              label={
+                syncConflictCount > 0
+                  ? `외부 동기화 · 충돌 ${syncConflictCount}건`
+                  : syncedAccountCount > 0
+                  ? `외부 캘린더 동기화 (${syncedAccountCount})`
+                  : '외부 캘린더 · CalDAV 동기화'
+              }
+              shortcut="S"
+              align="right"
+            >
+              <button
+                type="button"
+                onClick={onOpenExternalSync}
+                aria-label="외부 캘린더 및 CalDAV 동기화 허브"
+                className={`relative h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
+                  syncConflictCount > 0
+                    ? 'text-amber-300 hover:text-amber-200 hover:bg-white/[0.06]'
+                    : syncedAccountCount > 0
+                    ? 'text-neutral-200 hover:text-white hover:bg-white/[0.06]'
+                    : 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+                }`}
+              >
+                <RefreshCw
+                  className={`w-[14.5px] h-[14.5px] ${isExternalSyncing ? 'animate-spin' : ''}`}
+                  strokeWidth={1.65}
+                />
+                {syncConflictCount > 0 && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-400"
+                  />
+                )}
+              </button>
+            </TopBarTooltip>
+          )}
+
+          {onOpenNotificationSettings && (
+            <TopBarTooltip
+              label={
+                isNotificationEnabled
+                  ? scheduledAlertCount > 0
+                    ? `알림 엔진 활성 · 예약 ${scheduledAlertCount}건`
+                    : '알림 · 백그라운드 푸시 활성'
+                  : '고급 알림 · 백그라운드 푸시 설정'
+              }
+              shortcut="B"
+              align="right"
+            >
+              <button
+                type="button"
+                onClick={onOpenNotificationSettings}
+                aria-label="고급 알림 및 백그라운드 푸시 설정"
+                className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
+                  isNotificationEnabled
+                    ? 'text-neutral-200 hover:text-white hover:bg-white/[0.06]'
+                    : 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+                }`}
+              >
+                <Bell className="w-[14.5px] h-[14.5px]" strokeWidth={1.65} />
+              </button>
+            </TopBarTooltip>
+          )}
+
+          {onOpenCollabHub && (
+            <TopBarTooltip
+              label={
+                collabRoomCount > 0
+                  ? `라이브 협업 룸 (${collabRoomCount})`
+                  : '라이브 협업 · 실시간 조율 허브'
+              }
+              shortcut="R"
+              align="right"
+            >
+              <button
+                type="button"
+                onClick={onOpenCollabHub}
+                aria-label="라이브 협업 및 실시간 시간대 조율 허브"
+                className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
+                  collabRoomCount > 0
+                    ? 'text-neutral-200 hover:text-white hover:bg-white/[0.06]'
+                    : 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+                }`}
+              >
+                <Users className="w-[14.5px] h-[14.5px]" strokeWidth={1.65} />
+              </button>
+            </TopBarTooltip>
+          )}
 
           <ExportMenuDropdown
             currentYear={currentYear}

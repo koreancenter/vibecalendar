@@ -1,5 +1,4 @@
 import React, { useEffect } from 'react';
-import { Share2 } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { EventDetailContent } from './EventDetailContent';
 
@@ -92,20 +91,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
           onClose={onClose}
         />
 
-        <div className="p-3 bg-[#0f121a] border-t border-white/[0.07] flex items-center justify-between gap-2 shrink-0">
-          {onShare ? (
-            <button
-              type="button"
-              onClick={() => onShare(event)}
-              className="px-3.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-neutral-100 text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Share2 className="w-3.5 h-3.5 shrink-0" />
-              <span>브리핑 패스 공유</span>
-            </button>
-          ) : (
-            <div />
-          )}
-
+        <div className="p-3 bg-[#0f121a] border-t border-white/[0.07] flex items-center justify-end gap-2 shrink-0">
           <button
             type="button"
             onClick={onClose}

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Bell,
   Calendar,
   ChevronDown,
   ChevronUp,
@@ -25,6 +26,7 @@ import {
 import { CALENDAR_CATEGORIES, CATEGORY_COLORS } from '../constants/categories';
 import { getProjectThemeClasses } from '../constants/projects';
 import { ManualEventDraft } from '../hooks/useCalendarEvents';
+import { MAX_CUSTOM_LEAD_MINUTES } from '../shared/notificationSchema';
 import { RECURRENCE_OPTIONS } from '../shared/recurrenceUtils';
 import {
   detectBrowserTimeZone,
@@ -126,6 +128,8 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
 
   const [recurrenceFreq, setRecurrenceFreq] = useState<RecurrenceFrequency | 'none'>('none');
   const [recurrenceUntil, setRecurrenceUntil] = useState('');
+  const [reminderOption, setReminderOption] = useState<string>('default');
+  const [customReminderMins, setCustomReminderMins] = useState<string>('25');
 
   const [isResolvingLoc, setIsResolvingLoc] = useState(false);
   const [locNotice, setLocNotice] = useState<string | null>(null);
@@ -158,6 +162,8 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
     setNewCheckText('');
     setRecurrenceFreq('none');
     setRecurrenceUntil('');
+    setReminderOption('default');
+    setCustomReminderMins('25');
     setIsResolvingLoc(false);
     setLocNotice(null);
     setFormError(null);
@@ -387,6 +393,27 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
       }
     }
 
+    let resolvedReminderMinutes: number[] | undefined;
+    if (reminderOption === 'off') {
+      resolvedReminderMinutes = [];
+    } else if (reminderOption === 'custom') {
+      const parsedCustom = Number(customReminderMins);
+      if (
+        !Number.isFinite(parsedCustom) ||
+        parsedCustom < 0 ||
+        parsedCustom > MAX_CUSTOM_LEAD_MINUTES
+      ) {
+        setFormError(`커스텀 알림 시간은 0 ~ ${MAX_CUSTOM_LEAD_MINUTES}분 사이로 입력해 주세요.`);
+        return;
+      }
+      resolvedReminderMinutes = [Math.round(parsedCustom)];
+    } else if (reminderOption !== 'default') {
+      resolvedReminderMinutes = reminderOption
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isFinite(n) && n >= 0 && n <= MAX_CUSTOM_LEAD_MINUTES);
+    }
+
     onSubmit({
       title: trimmedTitle,
       date,
@@ -410,6 +437,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
               ...(recurrenceUntil && recurrenceUntil >= date ? { until: recurrenceUntil } : {}),
             }
           : undefined,
+      reminderMinutes: resolvedReminderMinutes,
     });
     onClose();
   };
@@ -712,6 +740,73 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                       aria-label="반복 종료일"
                       className="h-7 px-2 rounded-md bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-[11.5px] font-mono tabular-nums text-neutral-200 outline-hidden [color-scheme:dark] shrink-0"
                     />
+                  )}
+
+                  <div className="relative inline-flex items-center shrink-0">
+                    <Bell className="pointer-events-none absolute left-2 w-3 h-3 text-neutral-400" />
+                    <select
+                      value={reminderOption}
+                      onChange={(e) => {
+                        setReminderOption(e.target.value);
+                        if (formError) setFormError(null);
+                      }}
+                      aria-label="일정 알림 리드타임"
+                      title="이 일정의 알림 리드타임 설정"
+                      className="h-7 pl-6.5 pr-5.5 rounded-md bg-white/[0.02] border border-white/[0.07] hover:border-white/[0.15] text-[11.5px] text-neutral-300 outline-hidden cursor-pointer appearance-none transition-colors tabular-nums"
+                    >
+                      <option value="default" className="bg-[#12151e] text-neutral-100">
+                        기본 알림 따름
+                      </option>
+                      <option value="off" className="bg-[#12151e] text-neutral-100">
+                        이 일정 알림 끔
+                      </option>
+                      <option value="0" className="bg-[#12151e] text-neutral-100">
+                        정각 (시작 시각)
+                      </option>
+                      <option value="5" className="bg-[#12151e] text-neutral-100">
+                        5분 전
+                      </option>
+                      <option value="10" className="bg-[#12151e] text-neutral-100">
+                        10분 전
+                      </option>
+                      <option value="15" className="bg-[#12151e] text-neutral-100">
+                        15분 전
+                      </option>
+                      <option value="30" className="bg-[#12151e] text-neutral-100">
+                        30분 전
+                      </option>
+                      <option value="60" className="bg-[#12151e] text-neutral-100">
+                        1시간 전
+                      </option>
+                      <option value="10,60" className="bg-[#12151e] text-neutral-100">
+                        1시간 + 10분 전
+                      </option>
+                      <option value="1440" className="bg-[#12151e] text-neutral-100">
+                        하루 전 (24시간)
+                      </option>
+                      <option value="custom" className="bg-[#12151e] text-neutral-100">
+                        분 직접 입력...
+                      </option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-1.5 w-3 h-3 text-neutral-500" />
+                  </div>
+
+                  {reminderOption === 'custom' && (
+                    <div className="inline-flex items-center gap-1 shrink-0">
+                      <input
+                        type="number"
+                        min={0}
+                        max={MAX_CUSTOM_LEAD_MINUTES}
+                        value={customReminderMins}
+                        onChange={(e) => {
+                          setCustomReminderMins(e.target.value);
+                          if (formError) setFormError(null);
+                        }}
+                        aria-label="커스텀 알림 분 입력"
+                        className="h-7 w-16 px-2 rounded-md bg-white/[0.03] border border-white/[0.12] focus:border-white/28 text-[11.5px] font-mono tabular-nums text-neutral-100 outline-hidden"
+                      />
+                      <span className="text-[11px] text-neutral-400 whitespace-nowrap">분 전</span>
+                    </div>
                   )}
                 </div>
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle, Circle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Circle, Lock } from 'lucide-react';
 import { CalendarEventItem } from '../../types';
 import { ResolvedEventTiming } from '../../shared/timeZoneUtils';
 import { EventLuxuryTheme } from '../../utils/eventTheme';
@@ -66,6 +66,15 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
 }) => {
   const proj = theme.project;
   const isCompleted = Boolean(event.isCompleted);
+  const isReadOnlyExternal = Boolean(event.externalSync?.readOnly);
+  const isMaskedExternal = Boolean(event.externalSync?.isMasked);
+  const externalProviderShort = event.externalSync
+    ? event.externalSync.provider === 'google'
+      ? 'GCal'
+      : event.externalSync.provider === 'microsoft'
+      ? 'Outlook'
+      : 'CalDAV'
+    : null;
   const { total: checklistTotal, done: checklistDone } = getEventChecklistStats(event);
 
   if (variant === 'inspector') {
@@ -118,6 +127,17 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
               </>
             )}
 
+            {externalProviderShort && (
+              <>
+                <span aria-hidden="true" className="text-white/20 shrink-0">
+                  ·
+                </span>
+                <span className="font-[360] tracking-[0.025em] text-white/38 shrink-0">
+                  {isMaskedExternal ? `${externalProviderShort} 마스킹` : externalProviderShort}
+                </span>
+              </>
+            )}
+
             {(checklistTotal > 0 || hasConflict) && (
               <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
                 {checklistTotal > 0 && (
@@ -131,11 +151,12 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
           </div>
 
           <h5
-            className={`text-[13px] font-[450] tracking-[0.015em] leading-[1.52] mt-2 truncate ${
-              isCompleted ? 'line-through text-white/34' : 'text-[#f2f4f8]'
+            className={`text-[13px] font-[450] tracking-[0.015em] leading-[1.52] mt-2 truncate flex items-center gap-1.5 ${
+              isCompleted ? 'line-through text-white/34' : isMaskedExternal ? 'text-white/68' : 'text-[#f2f4f8]'
             }`}
           >
-            {event.title}
+            {isMaskedExternal && <Lock className="w-3 h-3 text-white/40 shrink-0" />}
+            <span className="truncate">{event.title}</span>
           </h5>
 
           {(event.location || event.locationAddress) && (
@@ -219,7 +240,9 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
       data-selected={isSelected && !isMovedToOtherDate ? 'true' : undefined}
       onMouseDown={onDragMouseDown}
       style={style}
-      className={`group absolute ${paddingClasses} luxury-event-card cursor-grab active:cursor-grabbing z-10 hover:z-20 flex flex-col justify-between overflow-hidden select-none border ${
+      className={`group absolute ${paddingClasses} luxury-event-card ${
+        isReadOnlyExternal ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
+      } z-10 hover:z-20 flex flex-col justify-between overflow-hidden select-none border ${
         theme.blockSurfaceClass
       } ${
         isSelected && !isMovedToOtherDate ? `${theme.selectedSurfaceClass} !z-30` : ''
@@ -232,7 +255,7 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
       } ${isCompleted && !isMovedToOtherDate ? 'opacity-55' : ''} ${backgroundShieldClass}`}
     >
       {/* 상단 리사이즈 핸들 */}
-      {onResizeTopMouseDown && (
+      {onResizeTopMouseDown && !isReadOnlyExternal && (
         <div
           onMouseDown={onResizeTopMouseDown}
           className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.05] transition-opacity duration-150"
@@ -250,12 +273,13 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
           />
           {hasConflict && <AlertTriangle className="w-3 h-3 text-amber-300/90 shrink-0" />}
           {isCompleted && <CheckCircle className="w-3 h-3 text-emerald-300/90 shrink-0" />}
+          {isMaskedExternal && <Lock className="w-2.5 h-2.5 text-white/40 shrink-0" />}
           <span className="text-[10.5px] font-[370] text-white/46 shrink-0 tabular-nums tracking-[0.032em]">
             {resolvedStart}
           </span>
           <span
             className={`text-[11.5px] font-[450] truncate tracking-[0.014em] ${
-              isCompleted ? 'line-through text-white/34' : 'text-[#f2f4f8]'
+              isCompleted ? 'line-through text-white/34' : isMaskedExternal ? 'text-white/68' : 'text-[#f2f4f8]'
             }`}
           >
             {event.title}
@@ -320,9 +344,12 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
                 isLargeBlock ? 'mt-2' : 'mt-1.5'
               } tracking-[0.015em] ${
                 heightPx >= 140 ? 'line-clamp-2 break-keep' : 'truncate'
-              } ${isCompleted ? 'line-through text-white/34' : 'text-[#f2f4f8]'}`}
+              } flex items-center gap-1.5 ${
+                isCompleted ? 'line-through text-white/34' : isMaskedExternal ? 'text-white/68' : 'text-[#f2f4f8]'
+              }`}
             >
-              {event.title}
+              {isMaskedExternal && <Lock className="w-3 h-3 text-white/40 shrink-0" />}
+              <span className="truncate">{event.title}</span>
             </div>
 
             {!isLargeBlock &&
@@ -361,7 +388,7 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
       )}
 
       {/* 하단 리사이즈 핸들 */}
-      {onResizeBottomMouseDown && (
+      {onResizeBottomMouseDown && !isReadOnlyExternal && (
         <div
           onMouseDown={onResizeBottomMouseDown}
           className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.05] transition-opacity duration-150"

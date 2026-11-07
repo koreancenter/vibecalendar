@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { AlertTriangle, Trash2 } from 'lucide-react';
+import { AlertTriangle, Trash2, X } from 'lucide-react';
 
 interface DeleteConfirmationModalProps {
   isOpen: boolean;
@@ -38,19 +38,27 @@ export const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = (
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs select-none"
       role="dialog"
       aria-modal="true"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md bg-[#161821] border border-white/10 rounded-2xl p-5 shadow-2xl space-y-4"
+        className="luxury-glass-border relative w-full max-w-md bg-gradient-to-b from-[#181c27]/96 via-[#11141d]/96 to-[#0c0e15]/98 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-5 shadow-[0_28px_72px_-16px_rgba(0,0,0,0.85)] text-neutral-200 space-y-4"
       >
         <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
           <div className="flex items-center gap-2 text-rose-400 font-semibold text-sm">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>{title || `${itemType} 삭제 확인`}</span>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="h-7 w-7 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         <div className="space-y-2.5 text-sm text-neutral-300">

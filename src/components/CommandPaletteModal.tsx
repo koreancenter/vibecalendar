@@ -14,10 +14,12 @@ import {
   PanelLeft,
   Plus,
   Redo2,
+  RefreshCw,
   Search,
   Sparkles,
   Undo2,
   Upload,
+  Users,
   Wand2,
   X,
 } from 'lucide-react';
@@ -51,9 +53,16 @@ interface CommandPaletteModalProps {
   onToggleDualTimeZone?: () => void;
   reminderLeadMinutes?: ReminderLeadMinutes;
   onChangeReminderLeadMinutes?: (lead: ReminderLeadMinutes) => void;
+  notificationSummaryLabel?: string;
+  onOpenNotificationSettings?: () => void;
   canInstallPwa?: boolean;
   onInstallPwa?: () => void;
   onOpenHistoryPopover?: () => void;
+  onOpenExternalSync?: () => void;
+  onSyncAllExternal?: () => void;
+  syncedAccountCount?: number;
+  onOpenCollabHub?: () => void;
+  collabRoomCount?: number;
 }
 
 interface PaletteItem {
@@ -101,9 +110,16 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onToggleDualTimeZone,
   reminderLeadMinutes = 0,
   onChangeReminderLeadMinutes,
+  notificationSummaryLabel,
+  onOpenNotificationSettings,
   canInstallPwa = false,
   onInstallPwa,
   onOpenHistoryPopover,
+  onOpenExternalSync,
+  onSyncAllExternal,
+  syncedAccountCount = 0,
+  onOpenCollabHub,
+  collabRoomCount = 0,
 }) => {
   const historyApi = useEventHistoryOptional();
   const [query, setQuery] = useState('');
@@ -347,6 +363,43 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onOpenCreateProject();
         },
       },
+      ...(onOpenExternalSync
+        ? [
+            {
+              id: 'act-open-external-sync',
+              section: 'action' as const,
+              title: '외부 캘린더 · CalDAV 동기화 허브 열기',
+              subtitle:
+                syncedAccountCount > 0
+                  ? `연결된 계정 ${syncedAccountCount}개 · 읽기 전용 마스킹 및 양방향 하이브리드 설정`
+                  : 'Google Calendar · Microsoft Outlook · 표준 CalDAV 연결',
+              shortcut: 'S',
+              keywords:
+                '동기화 외부 캘린더 구글 아웃룩 애플 아이클라우드 caldav google microsoft outlook sync',
+              icon: <RefreshCw className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onOpenExternalSync();
+              },
+            },
+          ]
+        : []),
+      ...(onSyncAllExternal && syncedAccountCount > 0
+        ? [
+            {
+              id: 'act-sync-all-now',
+              section: 'action' as const,
+              title: '연결된 외부 캘린더 지금 동기화',
+              subtitle: `활성 외부 계정 ${syncedAccountCount}개 증분 델타 동기화 즉시 실행`,
+              keywords: '지금 동기화 새로고침 외부 캘린더 sync now refresh pull push',
+              icon: <RefreshCw className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onSyncAllExternal();
+              },
+            },
+          ]
+        : []),
       ...(onTriggerImportIcs
         ? [
             {
@@ -379,14 +432,56 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             },
           ]
         : []),
+      ...(onOpenCollabHub
+        ? [
+            {
+              id: 'act-open-collab-hub',
+              section: 'action' as const,
+              title: '라이브 협업 룸 · 실시간 시간대 조율 허브 열기',
+              subtitle:
+                collabRoomCount > 0
+                  ? `저장된 협업 룸 ${collabRoomCount}개 · E2EE 실시간 투표 및 공동 런시트`
+                  : '종단간 암호화(E2EE) 다중 시간대 조율 · 공동 체크리스트 · 현장 피드',
+              shortcut: 'R',
+              keywords:
+                '협업 라이브 조율 투표 런시트 댓글 공유방 collab room proposal runsheet timetree fantastical e2ee',
+              icon: <Users className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onOpenCollabHub();
+              },
+            },
+          ]
+        : []),
+      ...(onOpenNotificationSettings
+        ? [
+            {
+              id: 'act-open-notification-settings',
+              section: 'action' as const,
+              title: '고급 알림 · 백그라운드 푸시 설정 열기',
+              subtitle: notificationSummaryLabel
+                ? `현재 ${notificationSummaryLabel} · 다중 리드타임 조합 · 앱 종료 Web Push 관리`
+                : '다중 리드타임 · 백그라운드 동기화 · VAPID Web Push 설정',
+              shortcut: 'B',
+              keywords:
+                '알림 리마인더 백그라운드 푸시 스누즈 리드타임 notification push reminder background sync vapid',
+              icon: <Bell className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
+              onExecute: () => {
+                onClose();
+                onOpenNotificationSettings();
+              },
+            },
+          ]
+        : []),
       ...(onChangeReminderLeadMinutes
         ? [
             {
               id: 'act-cycle-reminder',
               section: 'action' as const,
-              title: '임박 일정 로컬 알림 전환',
+              title: '임박 일정 로컬 알림 빠른 전환',
               subtitle: `현재 ${
-                reminderLeadMinutes === 0 ? '꺼짐' : `${reminderLeadMinutes}분 전 알림`
+                notificationSummaryLabel ||
+                (reminderLeadMinutes === 0 ? '꺼짐' : `${reminderLeadMinutes}분 전 알림`)
               } · 실행 시 10분 / 15분 / 30분 / 꺼짐 순환`,
               keywords: '알림 리마인더 푸시 notification reminder alert 10분 15분 30분',
               icon: <Bell className="w-3.5 h-3.5 text-neutral-300 shrink-0" />,
@@ -559,10 +654,17 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     onToggleDualTimeZone,
     reminderLeadMinutes,
     onChangeReminderLeadMinutes,
+    notificationSummaryLabel,
+    onOpenNotificationSettings,
+    onOpenCollabHub,
+    collabRoomCount,
     canInstallPwa,
     onInstallPwa,
     historyApi,
     onOpenHistoryPopover,
+    onOpenExternalSync,
+    onSyncAllExternal,
+    syncedAccountCount,
   ]);
 
   useEffect(() => {
