@@ -8,15 +8,20 @@ import {
   MapPin,
   Minus,
   Pencil,
+  Phone,
+  PhoneCall,
   Plus,
   Search,
+  Smartphone,
 } from 'lucide-react';
 import { CalendarEventItem } from '../types';
 import {
   buildGoogleMapsPinUrl,
   buildKakaoMapUrl,
   buildNaverMapUrl,
+  cleanTelHref,
   formatCombinedLocation,
+  formatPhoneDisplay,
   hasValidCoordinates,
   inferRegionalMapAnchor,
   isInternalOrVirtualLocation,
@@ -87,12 +92,22 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
   );
 
   const [isAddressCopied, setIsAddressCopied] = useState(false);
+  const [copiedPhoneType, setCopiedPhoneType] = useState<'landline' | 'mobile' | null>(null);
 
   useEffect(() => {
     setZoom(16);
     setPan({ x: 0, y: 0 });
     setIsAddressCopied(false);
-  }, [event.id, event.location, event.locationAddress, event.locationLat, event.locationLng]);
+    setCopiedPhoneType(null);
+  }, [
+    event.id,
+    event.location,
+    event.locationAddress,
+    event.locationLat,
+    event.locationLng,
+    event.locationPhone,
+    event.locationMobilePhone,
+  ]);
 
   const mapGeometry = useMemo(() => {
     const seedStr = `${displayLat.toFixed(5)}:${displayLng.toFixed(5)}:${event.location || ''}:${event.locationAddress || ''}`;
@@ -202,6 +217,20 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
       setIsAddressCopied(true);
       window.setTimeout(() => {
         setIsAddressCopied(false);
+      }, 1600);
+    } catch {
+      // ignore clipboard restrictions
+    }
+  };
+
+  const handleCopyPhone = async (num: string, type: 'landline' | 'mobile') => {
+    const clean = num.trim();
+    if (!clean) return;
+    try {
+      await navigator.clipboard.writeText(clean);
+      setCopiedPhoneType(type);
+      window.setTimeout(() => {
+        setCopiedPhoneType((prev) => (prev === type ? null : prev));
       }, 1600);
     } catch {
       // ignore clipboard restrictions
@@ -649,46 +678,126 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
           )}
         </div>
 
-        {/* 3. 지도 앱 바로가기 (네이버 지도, 카카오맵, Google 지도) */}
-        <div className="px-3.5 py-2.5 bg-[#121620]/70 flex flex-wrap items-center justify-between gap-2.5">
-          <span className="text-[10.5px] font-medium text-neutral-400">
-            지도 앱 바로가기
-          </span>
-          <div className="flex items-center gap-2 flex-wrap">
-            <a
-              href={naverMapUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-7 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-xs font-medium text-emerald-300 hover:text-white inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
-              title="네이버 지도에서 열기"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-              <span>네이버 지도</span>
-              <ExternalLink className="w-3 h-3 text-emerald-400/80 shrink-0" />
-            </a>
-            <a
-              href={kakaoMapUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-7 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs font-medium text-amber-300 hover:text-white inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
-              title="카카오맵에서 열기"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-              <span>카카오맵</span>
-              <ExternalLink className="w-3 h-3 text-amber-300/80 shrink-0" />
-            </a>
-            <a
-              href={googleMapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-7 px-3 rounded-lg bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.12] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
-              title="Google 지도에서 열기"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-              <span>Google 지도</span>
-              <ExternalLink className="w-3 h-3 text-neutral-400 shrink-0" />
-            </a>
+        {/* 3. 장소 전화번호 (대표 유선 · 현장 담당자 모바일) */}
+        <div className="px-3.5 py-2.5 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10.5px] font-medium text-neutral-500">
+              장소 전화번호 (대표 유선 · 담당자 모바일)
+            </span>
+            {onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="h-5 px-1.5 rounded bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] text-[10px] text-neutral-400 hover:text-neutral-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none"
+                title="전화번호 및 위치 편집"
+              >
+                <Pencil className="w-2.5 h-2.5 shrink-0" />
+                <span>연락처 관리</span>
+              </button>
+            )}
           </div>
+
+          {event.locationPhone || event.locationMobilePhone ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+              {/* 대표 유선 번호 */}
+              <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/[0.07] flex items-center justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-sky-500/12 border border-sky-500/25 text-sky-400 flex items-center justify-center shrink-0">
+                    <Phone className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-[10px] font-medium text-neutral-500 leading-tight">
+                      대표 유선 번호
+                    </span>
+                    <span className="text-xs font-semibold font-mono tabular-nums text-neutral-100 truncate block mt-0.5">
+                      {event.locationPhone ? formatPhoneDisplay(event.locationPhone) : '미등록'}
+                    </span>
+                  </div>
+                </div>
+
+                {event.locationPhone && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <a
+                      href={`tel:${cleanTelHref(event.locationPhone)}`}
+                      className="h-6.5 px-2 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-[10.5px] font-medium text-sky-300 hover:text-white inline-flex items-center gap-1 transition-colors whitespace-nowrap cursor-pointer"
+                      title="대표 유선 전화 걸기"
+                    >
+                      <PhoneCall className="w-2.5 h-2.5 shrink-0" />
+                      <span>통화</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPhone(event.locationPhone!, 'landline')}
+                      className="h-6.5 w-6.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.08] text-neutral-300 hover:text-white inline-flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                      title="대표 유선 번호 복사"
+                    >
+                      {copiedPhoneType === 'landline' ? (
+                        <Check className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* 현장 담당자 모바일 */}
+              <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/[0.07] flex items-center justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-500/12 border border-emerald-500/25 text-emerald-400 flex items-center justify-center shrink-0">
+                    <Smartphone className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-[10px] font-medium text-neutral-500 leading-tight">
+                      현장/담당자 모바일
+                    </span>
+                    <span className="text-xs font-semibold font-mono tabular-nums text-neutral-100 truncate block mt-0.5">
+                      {event.locationMobilePhone ? formatPhoneDisplay(event.locationMobilePhone) : '미등록'}
+                    </span>
+                  </div>
+                </div>
+
+                {event.locationMobilePhone && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <a
+                      href={`tel:${cleanTelHref(event.locationMobilePhone)}`}
+                      className="h-6.5 px-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-[10.5px] font-medium text-emerald-300 hover:text-white inline-flex items-center gap-1 transition-colors whitespace-nowrap cursor-pointer"
+                      title="담당자 휴대전화 걸기"
+                    >
+                      <PhoneCall className="w-2.5 h-2.5 shrink-0" />
+                      <span>통화</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPhone(event.locationMobilePhone!, 'mobile')}
+                      className="h-6.5 w-6.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.08] text-neutral-300 hover:text-white inline-flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                      title="휴대전화 번호 복사"
+                    >
+                      {copiedPhoneType === 'mobile' ? (
+                        <Check className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="py-2 px-3 rounded-lg bg-white/[0.02] border border-white/[0.05] flex items-center justify-between text-xs text-neutral-400">
+              <span className="text-[11px] text-neutral-500">등록된 대표 유선 또는 현장 담당자 휴대전화 번호가 없습니다.</span>
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300 hover:underline cursor-pointer inline-flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>전화번호 등록</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </section>

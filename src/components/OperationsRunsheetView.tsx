@@ -63,7 +63,9 @@ interface OperationsRunsheetViewProps {
     location?: string,
     locationAddress?: string,
     locationLat?: number,
-    locationLng?: number
+    locationLng?: number,
+    locationPhone?: string,
+    locationMobilePhone?: string
   ) => void;
   onUpdateEventFields?: (
     eventId: string,

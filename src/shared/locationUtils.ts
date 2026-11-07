@@ -413,3 +413,59 @@ export function inferRegionalMapAnchor(
   };
 }
 
+/**
+ * 전화번호 문자열에서 tel: 프로토콜 호출용 정규화 문자열을 생성합니다.
+ * (공백, 하이픈, 괄호 등 제외, 국제전화 + 유지)
+ */
+export function cleanTelHref(raw?: string): string {
+  if (!raw) return '';
+  return raw.replace(/[^\d+]/g, '');
+}
+
+/**
+ * 한국 전화번호 및 일반 전화번호를 시각적으로 읽기 편하게 포맷팅합니다.
+ */
+export function formatPhoneDisplay(raw?: string): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  // 사용자가 이미 하이픈을 넣었거나 국제 표기(+...)인 경우 정제만 수행
+  if (trimmed.includes('-') || trimmed.includes('.') || trimmed.startsWith('+')) {
+    return trimmed.replace(/\s+/g, ' ');
+  }
+
+  const digits = trimmed.replace(/\D/g, '');
+  // 서울 02 유선
+  if (digits.startsWith('02')) {
+    if (digits.length === 9) {
+      return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
+    }
+    if (digits.length === 10) {
+      return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6)}`;
+    }
+  }
+
+  // 휴대전화 (010, 011 등)
+  if (digits.startsWith('01') && digits.length >= 10 && digits.length <= 11) {
+    if (digits.length === 10) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+    }
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  }
+
+  // 전국 대표번호 (1588, 1577, 1600 등)
+  if (/^1[568]\d{2}/.test(digits) && digits.length === 8) {
+    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  }
+
+  // 일반 지역번호 (031, 032, 051 등)
+  if (digits.startsWith('0') && digits.length >= 10) {
+    const areaCodeLen = 3;
+    const midLen = digits.length === 10 ? 3 : 4;
+    return `${digits.slice(0, areaCodeLen)}-${digits.slice(areaCodeLen, areaCodeLen + midLen)}-${digits.slice(areaCodeLen + midLen)}`;
+  }
+
+  return trimmed;
+}
+

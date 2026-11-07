@@ -27,6 +27,8 @@ import {
   RefreshCw,
   Bell,
   BellOff,
+  Phone,
+  Smartphone,
 } from 'lucide-react';
 import {
   CalendarCategory,
@@ -83,7 +85,9 @@ interface EventDetailContentProps {
     location?: string,
     locationAddress?: string,
     locationLat?: number,
-    locationLng?: number
+    locationLng?: number,
+    locationPhone?: string,
+    locationMobilePhone?: string
   ) => void;
   onUpdateEventFields?: (
     eventId: string,
@@ -142,6 +146,8 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [locDraft, setLocDraft] = useState(event.location || '');
   const [addrDraft, setAddrDraft] = useState(event.locationAddress || '');
+  const [phoneDraft, setPhoneDraft] = useState(event.locationPhone || '');
+  const [mobilePhoneDraft, setMobilePhoneDraft] = useState(event.locationMobilePhone || '');
   const [latDraft, setLatDraft] = useState(
     hasValidCoordinates(event.locationLat, event.locationLng)
       ? event.locationLat!.toFixed(6)
@@ -196,6 +202,8 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
     setIsEditingLocation(false);
     setLocDraft(event.location || '');
     setAddrDraft(event.locationAddress || '');
+    setPhoneDraft(event.locationPhone || '');
+    setMobilePhoneDraft(event.locationMobilePhone || '');
     const valid = hasValidCoordinates(event.locationLat, event.locationLng);
     setLatDraft(valid ? event.locationLat!.toFixed(6) : '');
     setLngDraft(valid ? event.locationLng!.toFixed(6) : '');
@@ -208,6 +216,8 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
     event.locationAddress,
     event.locationLat,
     event.locationLng,
+    event.locationPhone,
+    event.locationMobilePhone,
   ]);
 
   useEffect(() => {
@@ -389,7 +399,15 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
       nextLng = norm.locationLng;
     }
 
-    onUpdateLocation(event.id, locDraft, addrDraft, nextLat, nextLng);
+    onUpdateLocation(
+      event.id,
+      locDraft,
+      addrDraft,
+      nextLat,
+      nextLng,
+      phoneDraft,
+      mobilePhoneDraft
+    );
     setIsEditingLocation(false);
   };
 
@@ -473,6 +491,8 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
   const hasAnyLocationData = Boolean(
     event.location ||
       event.locationAddress ||
+      event.locationPhone ||
+      event.locationMobilePhone ||
       hasValidCoordinates(event.locationLat, event.locationLng)
   );
 
@@ -1257,6 +1277,36 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                   className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-600 outline-hidden"
                 />
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1 flex items-center gap-1.5">
+                    <Phone className="w-3 h-3 text-sky-400 shrink-0" />
+                    <span>장소 대표 유선 전화번호</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={phoneDraft}
+                    onChange={(e) => setPhoneDraft(e.target.value)}
+                    placeholder="예: 02-588-4100"
+                    className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1 flex items-center gap-1.5">
+                    <Smartphone className="w-3 h-3 text-emerald-400 shrink-0" />
+                    <span>현장 안내 / 담당자 휴대전화</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={mobilePhoneDraft}
+                    onChange={(e) => setMobilePhoneDraft(e.target.value)}
+                    placeholder="예: 010-8492-3104"
+                    className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-hidden"
+                  />
+                </div>
+              </div>
             </div>
 
             {coordError && (
@@ -1269,6 +1319,8 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                 onClick={() => {
                   setLocDraft(event.location || '');
                   setAddrDraft(event.locationAddress || '');
+                  setPhoneDraft(event.locationPhone || '');
+                  setMobilePhoneDraft(event.locationMobilePhone || '');
                   const valid = hasValidCoordinates(event.locationLat, event.locationLng);
                   setLatDraft(valid ? event.locationLat!.toFixed(6) : '');
                   setLngDraft(valid ? event.locationLng!.toFixed(6) : '');

@@ -175,6 +175,8 @@ export interface CalendarEventItem {
   locationAddress?: string;
   locationLat?: number;
   locationLng?: number;
+  locationPhone?: string; // 장소 대표 유선 전화번호 (예: 02-588-4100)
+  locationMobilePhone?: string; // 현장 담당자/매니저 휴대전화 번호 (예: 010-8492-3104)
   content?: string;
   isCompleted?: boolean;
   checklist?: ChecklistItem[];

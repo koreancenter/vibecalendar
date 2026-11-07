@@ -112,6 +112,8 @@ export function createSampleWorkspaceDataset(anchorDateStr?: string): {
       locationAddress: '서울특별시 성동구 에테르대로 142 (가상 예시 주소)',
       locationLat: 37.544612,
       locationLng: 127.055724,
+      locationPhone: '02-588-4100', // 캠퍼스 대표 유선
+      locationMobilePhone: '010-8492-3104', // 현장 안내: 한서준 수석
       content:
         '공동 연구 범위 확정 및 아트리움 랩 투어 (가상 샘플 일정)\n- 현장 안내: 연구기획팀 한서준 수석\n- 주차 안내: 지하 2층 방문객 전용 구역 사전 등록 완료',
       isCompleted: false,
@@ -135,6 +137,8 @@ export function createSampleWorkspaceDataset(anchorDateStr?: string): {
       locationAddress: '서울특별시 용산구 메르디앙길 28 (가상 예시 주소)',
       locationLat: 37.534185,
       locationLng: 126.994812,
+      locationPhone: '02-792-8820', // 매장 유선 예약실
+      locationMobilePhone: '010-5120-7731', // 지배인 직통
       content:
         '글로벌 협력사 초청 단독 룸 오찬 (가상 샘플 일정)\n- 식단 구성: 비건·알레르기 사전 확인 반영 코스\n- 영접 안내: 11:45 별관 1층 전용 로비 리셉션 데스크',
       isCompleted: false,
@@ -158,6 +162,8 @@ export function createSampleWorkspaceDataset(anchorDateStr?: string): {
       locationAddress: '경기도 성남시 분당구 아스트라파크로 210 (가상 예시 주소)',
       locationLat: 37.394782,
       locationLng: 127.111194,
+      locationPhone: '031-789-5500', // 컨벤션홀 대표 유선
+      locationMobilePhone: '010-3341-8902', // 무대 총괄 감독
       content:
         '메인 스크린 해상도 캘리브레이션 및 발표자 음향 리허설 (가상 샘플 일정)',
       isCompleted: false,

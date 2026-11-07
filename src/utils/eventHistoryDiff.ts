@@ -115,6 +115,8 @@ export function areSingleEventsEqual(a: CalendarEventItem, b: CalendarEventItem)
     a.locationAddress === b.locationAddress &&
     a.locationLat === b.locationLat &&
     a.locationLng === b.locationLng &&
+    a.locationPhone === b.locationPhone &&
+    a.locationMobilePhone === b.locationMobilePhone &&
     a.content === b.content &&
     Boolean(a.isCompleted) === Boolean(b.isCompleted) &&
     a.recurrence?.frequency === b.recurrence?.frequency &&
@@ -195,6 +197,13 @@ export function describeEventFieldChanges(
         ? '상세 주소 수정'
         : '장소 정보 비움'
     );
+  }
+
+  if (
+    before.locationPhone !== after.locationPhone ||
+    before.locationMobilePhone !== after.locationMobilePhone
+  ) {
+    diffs.push('장소 전화번호 수정');
   }
 
   if (before.content !== after.content) {

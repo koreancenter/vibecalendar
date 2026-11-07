@@ -82,6 +82,8 @@ export interface ManualEventDraft {
   locationAddress?: string;
   locationLat?: number;
   locationLng?: number;
+  locationPhone?: string;
+  locationMobilePhone?: string;
   content?: string;
   checklist?: ChecklistItem[];
   recurrence?: RecurrenceRule;
@@ -1625,7 +1627,9 @@ export function useCalendarEvents({
       rawLocation?: string,
       rawAddress?: string,
       rawLat?: number,
-      rawLng?: number
+      rawLng?: number,
+      rawPhone?: string,
+      rawMobilePhone?: string
     ) => {
       const prevSnapshot = eventsRef.current;
       const masterId = resolveMasterEventId(eventId);
@@ -1637,12 +1641,21 @@ export function useCalendarEvents({
         location || locationAddress || (rawLat !== undefined && rawLng !== undefined)
           ? normalizeCoordinates(rawLat, rawLng)
           : {};
+      const locationPhone =
+        rawPhone !== undefined ? rawPhone.trim() || undefined : target.locationPhone;
+      const locationMobilePhone =
+        rawMobilePhone !== undefined
+          ? rawMobilePhone.trim() || undefined
+          : target.locationMobilePhone;
+
       const updated: CalendarEventItem = {
         ...target,
         location,
         locationAddress,
         locationLat,
         locationLng,
+        locationPhone,
+        locationMobilePhone,
       };
       if (areSingleEventsEqual(target, updated)) return;
 
@@ -1651,7 +1664,15 @@ export function useCalendarEvents({
       setEvents(nextEvents);
       setSelectedEvent((prev) =>
         prev && (prev.id === eventId || resolveMasterEventId(prev.id) === masterId)
-          ? { ...prev, location, locationAddress, locationLat, locationLng }
+          ? {
+              ...prev,
+              location,
+              locationAddress,
+              locationLat,
+              locationLng,
+              locationPhone,
+              locationMobilePhone,
+            }
           : prev
       );
 
@@ -1735,6 +1756,10 @@ export function useCalendarEvents({
         locationAddress,
         locationLat,
         locationLng,
+        locationPhone: draft.locationPhone?.trim() ? draft.locationPhone.trim() : undefined,
+        locationMobilePhone: draft.locationMobilePhone?.trim()
+          ? draft.locationMobilePhone.trim()
+          : undefined,
         content: draft.content?.trim() ? draft.content.trim() : undefined,
         isCompleted: false,
         checklist: cleanedChecklist && cleanedChecklist.length > 0 ? cleanedChecklist : undefined,

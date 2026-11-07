@@ -11,9 +11,11 @@ import {
   ListTodo,
   Loader2,
   MapPin,
+  Phone,
   Plus,
   Repeat,
   Search,
+  Smartphone,
   X,
 } from 'lucide-react';
 import {
@@ -57,6 +59,8 @@ export interface EventComposerSeed {
   category?: CalendarCategory;
   location?: string;
   locationAddress?: string;
+  locationPhone?: string;
+  locationMobilePhone?: string;
 }
 
 interface EventComposerModalProps {
@@ -122,6 +126,8 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
 
   // 점진적 공개(Progressive Disclosure): 메모 및 사전 체크리스트
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
+  const [locationPhone, setLocationPhone] = useState(seed.locationPhone || '');
+  const [locationMobilePhone, setLocationMobilePhone] = useState(seed.locationMobilePhone || '');
   const [content, setContent] = useState('');
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [newCheckText, setNewCheckText] = useState('');
@@ -156,7 +162,9 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
     setLocationQuery(initialLocQuery);
     setResolvedGeo(null);
 
-    setIsDetailsExpanded(false);
+    setIsDetailsExpanded(Boolean(seed.locationPhone || seed.locationMobilePhone));
+    setLocationPhone(seed.locationPhone || '');
+    setLocationMobilePhone(seed.locationMobilePhone || '');
     setContent('');
     setChecklist([]);
     setNewCheckText('');
@@ -428,6 +436,8 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
       locationAddress: finalAddress,
       locationLat: finalLat,
       locationLng: finalLng,
+      locationPhone: locationPhone.trim() || undefined,
+      locationMobilePhone: locationMobilePhone.trim() || undefined,
       content: content.trim() || undefined,
       checklist: pendingChecks.length > 0 ? pendingChecks : undefined,
       recurrence:
@@ -450,7 +460,10 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
   };
 
   const optionalSummaryCount =
-    (content.trim() ? 1 : 0) + checklist.length + (newCheckText.trim() ? 1 : 0);
+    (content.trim() ? 1 : 0) +
+    checklist.length +
+    (newCheckText.trim() ? 1 : 0) +
+    (locationPhone.trim() || locationMobilePhone.trim() ? 1 : 0);
 
   return (
     <div
@@ -934,6 +947,36 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                       <span>접기</span>
                       <ChevronUp className="w-3 h-3" />
                     </button>
+                  </div>
+
+                  {/* 장소 연락처 (대표 유선 · 현장 담당자 모바일) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10.5px] text-neutral-400 mb-1 flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-sky-400 shrink-0" />
+                        <span>장소 대표 유선 전화</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={locationPhone}
+                        onChange={(e) => setLocationPhone(e.target.value)}
+                        placeholder="예: 02-588-4100"
+                        className="w-full h-8 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-500 outline-hidden"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10.5px] text-neutral-400 mb-1 flex items-center gap-1">
+                        <Smartphone className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span>현장 안내 / 담당자 모바일</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={locationMobilePhone}
+                        onChange={(e) => setLocationMobilePhone(e.target.value)}
+                        placeholder="예: 010-8492-3104"
+                        className="w-full h-8 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-500 outline-hidden"
+                      />
+                    </div>
                   </div>
 
                   {/* 상세 메모 */}
