@@ -4,6 +4,7 @@ import { ProjectItem, ProjectStatus } from '../types';
 import { LUXURY_PROJECT_COLORS, PROJECT_STATUS_MAP } from '../constants/projects';
 import { parseProjectPrompt, generateProjectCode } from '../utils/projectAiParser';
 import { getTodayDateString, parseLocalDate, formatDateString } from '../shared/dateUtils';
+import { HelpTooltip } from './common/HelpTooltip';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -142,9 +143,17 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
       >
         {/* 1. 모달 상단 헤더 */}
         <div className="h-14 px-6 border-b border-white/[0.06] flex items-center justify-between shrink-0">
-          <h3 className="text-sm font-semibold text-white tracking-tight">
-            {initialProject ? '프로젝트 정보 수정' : '새 프로젝트 등록'}
-          </h3>
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="text-sm font-semibold text-white tracking-tight">
+              {initialProject ? '프로젝트 정보 수정' : '새 프로젝트 등록'}
+            </h3>
+            <HelpTooltip
+              title={initialProject ? '프로젝트 정보 수정' : '새 프로젝트 등록'}
+              content="프로젝트의 카테고리 색상, 목표 기간 및 상세 설명을 설정합니다. AI 자연어 입력을 통한 스마트 추출도 지원합니다."
+              align="left"
+              placement="bottom"
+            />
+          </div>
           <button
             type="button"
             onClick={onClose}

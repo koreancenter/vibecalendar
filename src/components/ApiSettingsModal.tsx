@@ -7,6 +7,7 @@ import {
   getCachedCloudApiKey,
   saveVerifiedCloudApiKey,
 } from '../utils/cloudApiKeyStorage';
+import { HelpTooltip } from './common/HelpTooltip';
 
 export type ApiConnectivityState = 'idle' | 'testing' | 'connected' | 'error';
 
@@ -313,6 +314,12 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({
             >
               API 설정
             </h2>
+            <HelpTooltip
+              title="AI 모델 및 클라우드 연동 자격증명"
+              content="Google Gemini API 키와 외부 연동 자격증명을 설정합니다. 민감한 키는 로컬 보안 저장소에만 안전하게 유지됩니다."
+              align="left"
+              placement="bottom"
+            />
           </div>
 
           <button

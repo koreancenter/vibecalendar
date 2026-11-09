@@ -17,6 +17,7 @@ import { ProjectItem, CalendarEventItem, ProjectStatus } from '../types';
 import { PROJECT_STATUS_MAP } from '../constants/projects';
 import { parseLocalDate, formatDateString } from '../shared/dateUtils';
 import { calculateCompletionStats } from '../shared/scheduleUtils';
+import { HelpTooltip } from './common/HelpTooltip';
 
 interface ProjectManagementModalProps {
   isOpen: boolean;
@@ -159,6 +160,12 @@ export const ProjectManagementModal: React.FC<ProjectManagementModalProps> = ({
             <span className="text-[11px] font-mono text-neutral-500 tabular-nums">
               {projects.length}
             </span>
+            <HelpTooltip
+              title="프로젝트 관리 및 간트 타임라인"
+              content="프로젝트별 색상 테마, 마일스톤 현황, 일정 그룹핑 및 타임라인 비교 분석을 관리합니다."
+              align="left"
+              placement="bottom"
+            />
           </div>
 
           <div className="flex items-center gap-1">

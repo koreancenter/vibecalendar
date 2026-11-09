@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { HelpCircle } from 'lucide-react';
 
 interface HelpTooltipProps {
@@ -12,7 +12,7 @@ interface HelpTooltipProps {
 /**
  * 모달 및 폼 공용 정밀 도움말 툴팁 (물음표 아이콘)
  * - 장황한 설명 텍스트를 대체하여 모달 레이아웃을 깔끔하게 유지
- * - 호버 및 포커스, 모바일 터치(토글)를 모두 지원
+ * - 호버 및 포커스, 모바일 터치(토글), 외부 클릭 닫기를 모두 지원
  * - z-[85] 레이어로 모달 및 폼 내부에서 잘림 방지
  */
 export const HelpTooltip: React.FC<HelpTooltipProps> = ({
@@ -23,6 +23,18 @@ export const HelpTooltip: React.FC<HelpTooltipProps> = ({
   className = '',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener('pointerdown', handleClickOutside);
+    return () => window.removeEventListener('pointerdown', handleClickOutside);
+  }, [isOpen]);
 
   const alignmentClass =
     align === 'left'
@@ -36,6 +48,7 @@ export const HelpTooltip: React.FC<HelpTooltipProps> = ({
 
   return (
     <div
+      ref={containerRef}
       className={`relative inline-flex items-center align-middle group/help ${className}`}
       onMouseEnter={() => setIsOpen(true)}
       onMouseLeave={() => setIsOpen(false)}

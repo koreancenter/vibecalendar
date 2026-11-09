@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, ArrowUpRight, Loader2, Trash2, X } from 'lucide-react';
 import { OutboundMutationPlanItem } from '../../services/sync/syncEngine';
+import { HelpTooltip } from '../common/HelpTooltip';
 
 interface OutboundSyncConfirmModalProps {
   plan: OutboundMutationPlanItem[] | null;
@@ -47,6 +48,12 @@ export const OutboundSyncConfirmModal: React.FC<OutboundSyncConfirmModalProps> =
             <h3 className="text-sm font-semibold text-white tracking-tight truncate">
               외부 클라우드 캘린더 변경 반영 확인
             </h3>
+            <HelpTooltip
+              title="아웃바운드 동기화 승인"
+              content="양방향 하이브리드 동기화 정책에 따라 로컬 볼트에서 변경된 일정을 Google, Microsoft, CalDAV 등 원격 클라우드로 안전하게 전송합니다."
+              align="left"
+              placement="bottom"
+            />
           </div>
           <button
             type="button"

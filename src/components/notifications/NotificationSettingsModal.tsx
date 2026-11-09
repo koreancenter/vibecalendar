@@ -245,20 +245,28 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
       >
         {/* 상단 헤더 */}
         <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between gap-4 shrink-0">
-          <div className="space-y-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <Bell className="w-4 h-4 text-neutral-300 shrink-0" strokeWidth={1.75} />
-              <h2 className="text-[15px] font-semibold text-white tracking-tight">
-                고급 알림 및 백그라운드 동기화 엔진
-              </h2>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-neutral-400 tabular-nums">
-              <span>{prefs.enabled ? summarizeLeadMinutesList(prefs.defaultLeadMinutes) : '알림 중지됨'}</span>
-              <span aria-hidden="true">·</span>
-              <span>{permissionText}</span>
-              <span aria-hidden="true">·</span>
-              <span>예약 대기 {upcomingAlerts.length}건</span>
-            </div>
+          <div className="flex items-center gap-2 min-w-0">
+            <Bell className="w-4 h-4 text-neutral-300 shrink-0" strokeWidth={1.75} />
+            <h2 className="text-[15px] font-semibold text-white tracking-tight truncate">
+              고급 알림 및 백그라운드 동기화 엔진
+            </h2>
+            <HelpTooltip
+              title="고급 알림 및 백그라운드 동기화 엔진"
+              content={
+                <div className="space-y-1">
+                  <p>
+                    {prefs.enabled
+                      ? `알림 활성: ${summarizeLeadMinutesList(prefs.defaultLeadMinutes)}`
+                      : '현재 알림이 비활성화되어 있습니다.'}
+                  </p>
+                  <p className="text-neutral-400">
+                    권한 상태: {permissionText} · 예약 대기 {upcomingAlerts.length}건
+                  </p>
+                </div>
+              }
+              align="left"
+              placement="bottom"
+            />
           </div>
 
           <button

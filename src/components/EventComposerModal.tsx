@@ -25,6 +25,7 @@ import {
   ProjectItem,
   RecurrenceFrequency,
 } from '../types';
+import { HelpTooltip } from './common/HelpTooltip';
 import { CALENDAR_CATEGORIES, CATEGORY_COLORS } from '../constants/categories';
 import { getProjectThemeClasses } from '../constants/projects';
 import { ManualEventDraft } from '../hooks/useCalendarEvents';
@@ -481,13 +482,19 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
       >
         {/* 헤더 */}
         <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2 text-xs text-neutral-300">
+          <div className="flex items-center gap-2 text-xs text-neutral-300 min-w-0">
             <Calendar className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
             <span className="font-semibold text-white tracking-tight">새 일정 등록</span>
             <span aria-hidden="true" className="text-neutral-600">
               ·
             </span>
             <span className="font-mono tabular-nums text-neutral-400">{date}</span>
+            <HelpTooltip
+              title="새 일정 등록 안내"
+              content="이중 타임존(시차 자동 환산), 장소 및 연락처 자동 완성, 체크리스트, 외부 캘린더 동기화를 한 번에 설정할 수 있습니다."
+              align="left"
+              placement="bottom"
+            />
           </div>
           <button
             type="button"

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, RefreshCw, Image, Check, AlertCircle } from 'lucide-react';
+import { HelpTooltip } from './common/HelpTooltip';
 
 export interface CapturedPhoto {
   dataUrl: string;
@@ -227,6 +228,12 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
           <div className="flex items-center gap-2 text-white font-semibold text-sm">
             <Camera className="w-4 h-4 text-indigo-400" />
             <span>사진 촬영 및 문서 판독</span>
+            <HelpTooltip
+              title="사진 촬영 및 AI 스마트 문서 판독"
+              content="포스터, 티켓, 초대장 등을 촬영하면 Gemini 비전 엔진이 일정명, 일시, 장소를 자동으로 인식하여 캘린더에 추가합니다."
+              align="left"
+              placement="bottom"
+            />
           </div>
         </div>
 

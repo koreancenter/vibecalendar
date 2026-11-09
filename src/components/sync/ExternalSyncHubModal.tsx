@@ -25,6 +25,7 @@ import {
   VaultExternalSyncState,
 } from '../../types';
 import { CALENDAR_CATEGORIES } from '../../constants/categories';
+import { HelpTooltip } from '../common/HelpTooltip';
 
 interface ExternalSyncHubModalProps {
   isOpen: boolean;
@@ -193,31 +194,34 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="luxury-glass-border w-full max-w-4xl h-[600px] max-h-[90vh] flex flex-col rounded-2xl bg-gradient-to-b from-[#161a24]/96 via-[#10131c]/96 to-[#0b0d14]/98 backdrop-blur-xl border border-white/[0.08] shadow-[0_28px_72px_-16px_rgba(0,0,0,0.85)] text-neutral-200 overflow-hidden select-none"
+        className="luxury-glass-border w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl bg-gradient-to-b from-[#161a24]/96 via-[#10131c]/96 to-[#0b0d14]/98 backdrop-blur-xl border border-white/[0.08] shadow-[0_28px_72px_-16px_rgba(0,0,0,0.85)] text-neutral-200 overflow-hidden select-none"
       >
         {/* Top Header */}
-        <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between gap-4 shrink-0">
-          <div className="min-w-0">
+        <div className="px-5 sm:px-6 py-3.5 border-b border-white/[0.06] flex items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
             <h2 className="text-base font-semibold text-white tracking-tight truncate">
               외부 캘린더 및 CalDAV 하이브리드 동기화
             </h2>
-            <div className="mt-1 flex items-center gap-2 text-xs text-neutral-400 truncate">
-              <span>
-                {isVaultEncrypted
-                  ? 'AES-256-GCM 암호화 볼트 브릿지 활성'
-                  : '일반 세션 모드 (민감 자격증명 메모리 전용 보관)'}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="tabular-nums">연결 계정 {syncState.accounts.length}개</span>
-              {syncState.conflicts.length > 0 && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="text-amber-300 tabular-nums">
-                    동기화 충돌 {syncState.conflicts.length}건
-                  </span>
-                </>
-              )}
-            </div>
+            <HelpTooltip
+              title="외부 캘린더 및 CalDAV 하이브리드 동기화"
+              content={
+                <div className="space-y-1">
+                  <p>
+                    {isVaultEncrypted
+                      ? 'AES-256-GCM 암호화 볼트 브릿지 활성: 암호화 키로 보호되는 볼트에 안전하게 브릿징됩니다.'
+                      : '일반 세션 모드: 외부 캘린더 자격증명 및 토큰은 브라우저 메모리에만 격리 보관됩니다.'}
+                  </p>
+                  <p className="text-neutral-400">
+                    현재 연결 계정 {syncState.accounts.length}개
+                    {syncState.conflicts.length > 0
+                      ? ` · 동기화 충돌 ${syncState.conflicts.length}건`
+                      : ''}
+                  </p>
+                </div>
+              }
+              align="left"
+              placement="bottom"
+            />
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -244,8 +248,8 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
         </div>
 
         {/* Navigation Segmented Bar */}
-        <div className="px-6 py-2.5 border-b border-white/[0.06] bg-white/[0.01] flex items-center justify-between gap-4 shrink-0">
-          <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+        <div className="px-5 sm:px-6 py-2 border-b border-white/[0.06] bg-white/[0.01] flex items-center gap-4 shrink-0">
+          <div className="inline-flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
             <button
               type="button"
               onClick={() => setActiveTab('accounts')}
@@ -282,15 +286,10 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
               3-Way 충돌 검토 ({syncState.conflicts.length})
             </button>
           </div>
-
-          <div className="hidden md:flex items-center gap-2 text-[11px] text-neutral-500 whitespace-nowrap">
-            <Lock className="w-3 h-3 shrink-0" />
-            <span>Google 토큰은 로컬 스토리지에 저장되지 않고 메모리에만 격리됩니다</span>
-          </div>
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
           {connectError && (
             <div className="px-4 py-3 rounded-lg border border-amber-400/25 bg-amber-500/[0.07] flex items-start justify-between gap-3 text-xs text-amber-200 select-text">
               <div className="flex items-start gap-2 leading-relaxed">
@@ -310,21 +309,17 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
           {activeTab === 'accounts' && (
             <>
               {/* OAuth 2.0 Quick Connect Panel */}
-              <section className="rounded-xl border border-white/[0.07] bg-[#12151f]/70 p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-semibold text-white">
-                      클라우드 OAuth 2.0 및 표준 프로토콜 연결
-                    </h3>
-                    <p className="text-xs text-neutral-400 mt-0.5">
-                      최초 연결 시 모든 캘린더는 개인정보 보호를 위해 읽기 전용 가용시간 마스킹 모드로 안전하게 시작됩니다.
-                    </p>
-                  </div>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-xs px-0.5">
+                  <h3 className="font-semibold text-white">클라우드 캘린더 빠른 연동</h3>
+                  <span className="text-[11px] text-neutral-400">
+                    최초 연결 시 읽기 전용 마스킹 모드로 안전하게 연동됩니다
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
                   {/* 1. Official Sign in with Google Card */}
-                  <div className="rounded-lg border border-white/[0.06] bg-[#0c0e14]/85 p-4 flex flex-col justify-between gap-3">
+                  <div className="rounded-xl border border-white/[0.06] bg-[#0c0e14]/85 p-3.5 flex flex-col justify-between h-full gap-2.5">
                     <div>
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <span className="font-semibold text-white">Google Calendar</span>
@@ -336,20 +331,20 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                             : '환경변수 필요'}
                         </span>
                       </div>
-                      <p className="text-[11px] text-neutral-400 mt-1.5 leading-relaxed">
+                      <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed line-clamp-2 min-h-[32px]">
                         구독 중인 Google 캘린더 목록 조회 및 증분 syncToken 동기화를 수행합니다.
                       </p>
                     </div>
 
-                    <div>
+                    <div className="space-y-1.5 pt-0.5">
                       <button
                         type="button"
                         disabled={isConnectingGoogle}
                         onClick={() => void handleGoogleClick()}
-                        className="w-full h-9 px-3 rounded-lg bg-white hover:bg-neutral-100 text-[#1f1f1f] border border-neutral-300 text-xs font-medium inline-flex items-center justify-center gap-2.5 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-60"
+                        className="w-full h-9.5 px-3 rounded-lg bg-white hover:bg-neutral-100 text-[#1f1f1f] border border-neutral-300 text-xs font-semibold inline-flex items-center justify-center gap-2.5 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-60 shadow-xs"
                       >
                         {isConnectingGoogle ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-neutral-700" />
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-700" />
                         ) : (
                           <svg
                             version="1.1"
@@ -377,16 +372,24 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                         )}
                         <span>Sign in with Google</span>
                       </button>
-                      {!googleConfigured && (
-                        <p className="text-[10.5px] text-neutral-500 mt-1.5 leading-snug select-text">
-                          환경변수 <code className="font-mono text-neutral-300">VITE_GOOGLE_CLIENT_ID</code> 설정 후 작동합니다.
-                        </p>
-                      )}
+
+                      <div className="h-5 flex items-center text-[10.5px] text-neutral-400 font-mono truncate select-text">
+                        {!googleConfigured ? (
+                          <span className="truncate">VITE_GOOGLE_CLIENT_ID 필요</span>
+                        ) : hasGoogleSessionToken ? (
+                          <span className="text-emerald-400 flex items-center gap-1">
+                            <Check className="w-3 h-3 shrink-0" />
+                            <span>세션 토큰 활성</span>
+                          </span>
+                        ) : (
+                          <span className="truncate">OAuth 2.0 연동 준비됨</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   {/* 2. Microsoft Graph API OAuth 2.0 + PKCE Card */}
-                  <div className="rounded-lg border border-white/[0.06] bg-[#0c0e14]/85 p-4 flex flex-col justify-between gap-3">
+                  <div className="rounded-xl border border-white/[0.06] bg-[#0c0e14]/85 p-3.5 flex flex-col justify-between h-full gap-2.5">
                     <div>
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <span className="font-semibold text-white">Microsoft 365 · Outlook</span>
@@ -394,17 +397,17 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                           {microsoftStatus.configured ? 'PKCE 활성' : '환경변수 필요'}
                         </span>
                       </div>
-                      <p className="text-[11px] text-neutral-400 mt-1.5 leading-relaxed">
+                      <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed line-clamp-2 min-h-[32px]">
                         Microsoft Graph deltaLink 증분 동기화 및 Windows 타임존 자동 변환을 지원합니다.
                       </p>
                     </div>
 
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 pt-0.5">
                       <button
                         type="button"
                         disabled={isConnectingMs}
                         onClick={() => void handleMicrosoftClick()}
-                        className="w-full h-9 px-3 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-xs font-medium text-white inline-flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-60"
+                        className="w-full h-9.5 px-3 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-xs font-semibold text-white inline-flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-60"
                       >
                         {isConnectingMs ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -418,7 +421,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                         type="button"
                         onClick={() => void handleCopyCallbackUrl()}
                         title={microsoftStatus.callbackUrl}
-                        className="w-full flex items-center justify-between gap-1.5 text-[10.5px] text-neutral-500 hover:text-neutral-300 font-mono truncate cursor-pointer"
+                        className="w-full h-5 flex items-center justify-between gap-1.5 text-[10.5px] text-neutral-400 hover:text-neutral-200 font-mono truncate cursor-pointer"
                       >
                         <span className="truncate">Callback: {microsoftStatus.callbackUrl}</span>
                         {copiedCallback ? (
@@ -431,38 +434,41 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                   </div>
 
                   {/* 3. Standard CalDAV RFC 4791 Card */}
-                  <div className="rounded-lg border border-white/[0.06] bg-[#0c0e14]/85 p-4 flex flex-col justify-between gap-3">
+                  <div className="rounded-xl border border-white/[0.06] bg-[#0c0e14]/85 p-3.5 flex flex-col justify-between h-full gap-2.5">
                     <div>
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <span className="font-semibold text-white">표준 CalDAV (RFC 4791)</span>
                         <span className="text-[11px] text-emerald-300/90">즉시 사용 가능</span>
                       </div>
-                      <p className="text-[11px] text-neutral-400 mt-1.5 leading-relaxed">
+                      <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed line-clamp-2 min-h-[32px]">
                         Apple iCloud, Fastmail, Nextcloud, Synology 등 표준 CalDAV 서버와 양방향 연동합니다.
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('caldav')}
-                      className="w-full h-9 px-3 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-xs font-medium text-white inline-flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
-                    >
-                      <Server className="w-3.5 h-3.5 text-indigo-300" />
-                      <span>CalDAV 서버 설정 열기</span>
-                    </button>
+                    <div className="space-y-1.5 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('caldav')}
+                        className="w-full h-9.5 px-3 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-xs font-semibold text-white inline-flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        <Server className="w-3.5 h-3.5 text-indigo-300" />
+                        <span>CalDAV 서버 설정 열기</span>
+                      </button>
+
+                      <div className="h-5 flex items-center justify-between text-[10.5px] text-neutral-400 font-mono truncate">
+                        <span className="truncate">RFC 4791 표준 · 앱 비밀번호 지원</span>
+                        <span className="text-emerald-400 text-[10px] shrink-0 font-sans">즉시 연동</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </section>
+              </div>
 
               {/* Connected Accounts & Per-Calendar Sync Mode Configuration */}
               {syncState.accounts.length === 0 ? (
-                <div className="rounded-xl border border-white/[0.06] bg-[#10131c]/60 px-6 py-12 text-center space-y-2">
-                  <p className="text-sm font-medium text-neutral-200">
-                    아직 연결된 외부 클라우드 또는 CalDAV 계정이 없습니다
-                  </p>
-                  <p className="text-xs text-neutral-500 max-w-lg mx-auto leading-relaxed">
-                    상단에서 Google Calendar, Microsoft Outlook, 또는 Apple iCloud / Nextcloud CalDAV 계정을 연결하면
-                    캘린더별로 읽기 전용 마스킹 동기화 또는 양방향 하이브리드 동기화를 지정할 수 있습니다.
+                <div className="rounded-xl border border-dashed border-white/[0.08] bg-white/[0.015] px-4 py-3 text-center">
+                  <p className="text-xs text-neutral-400">
+                    아직 연결된 계정이 없습니다. 상단 서비스 버튼을 통해 캘린더를 연동해 보세요.
                   </p>
                 </div>
               ) : (
@@ -817,16 +823,15 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
           {activeTab === 'caldav' && (
             <form
               onSubmit={(e) => void handleCalDavSubmit(e)}
-              className="rounded-xl border border-white/[0.07] bg-[#12151f]/75 p-5 space-y-4 max-w-2xl"
+              className="rounded-xl border border-white/[0.07] bg-[#12151f]/75 p-4 space-y-3"
             >
-              <div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                 <h3 className="text-sm font-semibold text-white">
-                  RFC 4791 표준 CalDAV 계정 연결
+                  표준 CalDAV 계정 연결 (RFC 4791)
                 </h3>
-                <p className="text-xs text-neutral-400 mt-1 leading-relaxed">
-                  2단계 인증이 활성화된 서비스(Apple iCloud, Fastmail, Nextcloud)는 반드시 계정 기본 비밀번호 대신
-                  서비스 설정에서 발급한 <strong className="text-neutral-200">앱 전용 비밀번호(App-Specific Password)</strong>를 입력해 주세요.
-                </p>
+                <span className="text-[11px] text-neutral-400">
+                  앱 전용 비밀번호(App Password) 지원
+                </span>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
@@ -838,7 +843,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                       setCaldavPreset(preset.id);
                       if (preset.url) setCaldavServerUrl(preset.url);
                     }}
-                    className={`h-7 px-3 rounded-md text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                    className={`h-6.5 px-2.5 rounded-md text-[11px] transition-colors cursor-pointer whitespace-nowrap ${
                       caldavPreset === preset.id
                         ? 'bg-white text-[#0c0e14] font-semibold'
                         : 'bg-white/[0.04] hover:bg-white/[0.08] text-neutral-300 border border-white/[0.06]'
@@ -849,9 +854,9 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                 ))}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs text-neutral-400 mb-1.5">
+                  <label className="block text-[11px] text-neutral-400 mb-1">
                     CalDAV 서버 URL (HTTPS 필수)
                   </label>
                   <input
@@ -860,12 +865,12 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                     value={caldavServerUrl}
                     onChange={(e) => setCaldavServerUrl(e.target.value)}
                     placeholder="https://caldav.icloud.com"
-                    className="w-full h-9 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white font-mono focus:border-white/30 outline-none"
+                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white font-mono focus:border-white/30 outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-neutral-400 mb-1.5">
+                  <label className="block text-[11px] text-neutral-400 mb-1">
                     계정 아이디 또는 이메일
                   </label>
                   <input
@@ -874,12 +879,12 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                     value={caldavUsername}
                     onChange={(e) => setCaldavUsername(e.target.value)}
                     placeholder="user@icloud.com"
-                    className="w-full h-9 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white focus:border-white/30 outline-none"
+                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white focus:border-white/30 outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-neutral-400 mb-1.5">
+                  <label className="block text-[11px] text-neutral-400 mb-1">
                     앱 전용 비밀번호 (App Password)
                   </label>
                   <input
@@ -888,12 +893,12 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                     value={caldavPassword}
                     onChange={(e) => setCaldavPassword(e.target.value)}
                     placeholder="xxxx-xxxx-xxxx-xxxx"
-                    className="w-full h-9 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white focus:border-white/30 outline-none"
+                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white focus:border-white/30 outline-none"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-xs text-neutral-400 mb-1.5">
+                  <label className="block text-[11px] text-neutral-400 mb-1">
                     표시 별칭 (선택)
                   </label>
                   <input
@@ -901,29 +906,29 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                     value={caldavLabel}
                     onChange={(e) => setCaldavLabel(e.target.value)}
                     placeholder="예: 개인 iCloud 캘린더"
-                    className="w-full h-9 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white focus:border-white/30 outline-none"
+                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white focus:border-white/30 outline-none"
                   />
                 </div>
               </div>
 
-              <div className="px-3.5 py-2.5 rounded-lg bg-white/[0.025] border border-white/[0.06] text-[11px] text-neutral-400 leading-relaxed">
+              <div className="px-3 py-2 rounded-lg bg-white/[0.025] border border-white/[0.06] text-[10.5px] text-neutral-400 leading-relaxed">
                 {isVaultEncrypted
                   ? '현재 AES-256-GCM 암호화 볼트가 활성화되어 있어 앱 전용 비밀번호가 PIN 파생 키(DEK)로 암호화 보관되며, 볼트 잠금(⌘L) 시 메모리에서 즉시 제로화(Zero-fill)됩니다.'
                   : '현재 잠금 없는 일반 모드이므로 앱 전용 비밀번호는 디스크에 평문 저장되지 않고 현재 브라우저 탭 메모리에만 유지됩니다.'}
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-1">
+              <div className="flex items-center justify-end gap-2 pt-0.5">
                 <button
                   type="button"
                   onClick={() => setActiveTab('accounts')}
-                  className="h-9 px-4 rounded-lg border border-white/[0.08] text-xs text-neutral-300 hover:bg-white/[0.05] cursor-pointer whitespace-nowrap"
+                  className="h-8.5 px-3.5 rounded-lg border border-white/[0.08] text-xs text-neutral-300 hover:bg-white/[0.05] cursor-pointer whitespace-nowrap"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
                   disabled={isDiscoveringCalDav}
-                  className="h-9 px-4 rounded-lg bg-white text-[#0c0e14] hover:bg-neutral-200 disabled:opacity-50 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  className="h-8.5 px-4 rounded-lg bg-white text-[#0c0e14] hover:bg-neutral-200 disabled:opacity-50 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                 >
                   {isDiscoveringCalDav ? (
                     <>
@@ -939,14 +944,15 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
           )}
 
           {activeTab === 'conflicts' && (
-            <div className="space-y-3">
+            <div>
               {syncState.conflicts.length === 0 ? (
-                <div className="rounded-xl border border-white/[0.06] bg-[#10131c]/60 px-6 py-12 text-center space-y-1.5">
-                  <p className="text-sm font-medium text-neutral-200">
+                <div className="rounded-xl border border-dashed border-white/[0.08] bg-white/[0.015] px-6 py-8 text-center space-y-2">
+                  <GitMerge className="w-5 h-5 text-neutral-500 mx-auto" />
+                  <p className="text-xs sm:text-sm font-medium text-neutral-200">
                     검토가 필요한 양방향 동기화 충돌이 없습니다
                   </p>
-                  <p className="text-xs text-neutral-500">
-                    로컬 볼트와 외부 클라우드에서 동일한 일정을 동시에 수정한 경우에만 이곳에 표시됩니다.
+                  <p className="text-[11px] text-neutral-500 max-w-md mx-auto leading-relaxed">
+                    로컬 볼트와 외부 클라우드에서 동일한 일정을 동시에 수정한 경우에만 이곳에 충돌 해결 카드가 표시됩니다.
                   </p>
                 </div>
               ) : (
