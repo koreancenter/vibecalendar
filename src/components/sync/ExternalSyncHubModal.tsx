@@ -194,7 +194,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="luxury-glass-border w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl bg-gradient-to-b from-[#161a24]/96 via-[#10131c]/96 to-[#0b0d14]/98 backdrop-blur-xl border border-white/[0.08] shadow-[0_28px_72px_-16px_rgba(0,0,0,0.85)] text-neutral-200 overflow-hidden select-none"
+        className="luxury-glass-border w-full max-w-3xl h-[470px] max-h-[88vh] flex flex-col rounded-2xl bg-gradient-to-b from-[#161a24]/96 via-[#10131c]/96 to-[#0b0d14]/98 backdrop-blur-xl border border-white/[0.08] shadow-[0_28px_72px_-16px_rgba(0,0,0,0.85)] text-neutral-200 overflow-hidden select-none"
       >
         {/* Top Header */}
         <div className="px-5 sm:px-6 py-3.5 border-b border-white/[0.06] flex items-center justify-between gap-4 shrink-0">
@@ -395,7 +395,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                   <div className="rounded-xl border border-white/[0.06] bg-[#0c0e14]/85 p-3.5 flex flex-col justify-between h-full gap-2.5">
                     <div className="flex items-center justify-between gap-2 text-xs">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-white truncate">Microsoft 365 · Outlook</span>
+                        <span className="font-semibold text-white whitespace-nowrap">Microsoft 365</span>
                         <HelpTooltip
                           title="Microsoft 365 · Outlook 연동"
                           content="Microsoft Graph deltaLink 증분 동기화 및 Windows 타임존 자동 변환을 지원하여 Outlook 일정을 안전하게 동기화합니다."
@@ -830,7 +830,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
           {activeTab === 'caldav' && (
             <form
               onSubmit={(e) => void handleCalDavSubmit(e)}
-              className="rounded-xl border border-white/[0.07] bg-[#12151f]/75 p-4 space-y-3"
+              className="space-y-3.5 pt-1"
             >
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
                 <h3 className="text-sm font-semibold text-white">
@@ -904,27 +904,21 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                   />
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block text-[11px] text-neutral-400 mb-1">
-                    표시 별칭 (선택)
+                <div className="sm:col-span-2 flex items-center gap-3 pt-1">
+                  <label className="text-xs text-neutral-300 font-medium whitespace-nowrap shrink-0">
+                    표시 설정 <span className="text-neutral-500 font-normal">(선택)</span>
                   </label>
                   <input
                     type="text"
                     value={caldavLabel}
                     onChange={(e) => setCaldavLabel(e.target.value)}
-                    placeholder="예: 개인 iCloud 캘린더"
-                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white focus:border-white/30 outline-none"
+                    placeholder="예: 개인 iCloud 캘린더 (미입력 시 서버 주소로 자동 지정)"
+                    className="flex-1 h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white placeholder:text-neutral-500 focus:border-white/30 outline-none"
                   />
                 </div>
               </div>
 
-              <div className="px-3 py-2 rounded-lg bg-white/[0.025] border border-white/[0.06] text-[10.5px] text-neutral-400 leading-relaxed">
-                {isVaultEncrypted
-                  ? '현재 AES-256-GCM 암호화 볼트가 활성화되어 있어 앱 전용 비밀번호가 PIN 파생 키(DEK)로 암호화 보관되며, 볼트 잠금(⌘L) 시 메모리에서 즉시 제로화(Zero-fill)됩니다.'
-                  : '현재 잠금 없는 일반 모드이므로 앱 전용 비밀번호는 디스크에 평문 저장되지 않고 현재 브라우저 탭 메모리에만 유지됩니다.'}
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-0.5">
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setActiveTab('accounts')}
