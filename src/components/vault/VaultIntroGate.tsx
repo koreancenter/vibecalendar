@@ -529,6 +529,16 @@ export const VaultIntroGate: React.FC<VaultIntroGateProps> = ({
             </span>
             <button
               type="button"
+              onClick={() => openLegalDrawer('opensource')}
+              className="text-neutral-500 hover:text-neutral-200 underline-offset-4 hover:underline transition-colors duration-150 cursor-pointer whitespace-nowrap"
+            >
+              오픈소스 저작권 고지
+            </button>
+            <span aria-hidden="true" className="text-neutral-700">
+              ·
+            </span>
+            <button
+              type="button"
               onClick={() => openLegalDrawer('colophon')}
               className="text-neutral-500 hover:text-neutral-200 underline-offset-4 hover:underline transition-colors duration-150 cursor-pointer whitespace-nowrap"
             >

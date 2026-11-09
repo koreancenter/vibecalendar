@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Check, Copy, X } from 'lucide-react';
 
-export type LegalDrawerTab = 'disclaimer' | 'privacy' | 'colophon';
+export type LegalDrawerTab = 'disclaimer' | 'privacy' | 'opensource' | 'colophon';
 
 interface LegalAndColophonDrawerProps {
   isOpen: boolean;
@@ -88,7 +88,7 @@ export const LegalAndColophonDrawer: React.FC<LegalAndColophonDrawerProps> = ({
           </div>
 
           <nav
-            className="mt-5 flex items-center gap-6"
+            className="mt-5 flex items-center gap-5 sm:gap-6 overflow-x-auto no-scrollbar"
             role="tablist"
             aria-label="법적 고지 문서 선택"
           >
@@ -96,6 +96,7 @@ export const LegalAndColophonDrawer: React.FC<LegalAndColophonDrawerProps> = ({
               [
                 { id: 'disclaimer', label: 'AI 보안·과금 면책고지' },
                 { id: 'privacy', label: '개인정보처리방침' },
+                { id: 'opensource', label: '오픈소스 저작권 고지' },
                 { id: 'colophon', label: '제작 노트' },
               ] as const
             ).map((tab) => {
@@ -248,6 +249,177 @@ export const LegalAndColophonDrawer: React.FC<LegalAndColophonDrawerProps> = ({
                   <div>관할 및 소재지: {CREATOR_ENTITY.jurisdiction}</div>
                   <div>공식 문의처: {CREATOR_ENTITY.email}</div>
                 </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'opensource' && (
+            <div className="space-y-7">
+              <div>
+                <h2 className="text-lg font-semibold text-white tracking-tight">
+                  오픈소스 소프트웨어 저작권 고지 (Open Source Notice)
+                </h2>
+                <p className="mt-2 text-xs text-neutral-500 tabular-nums">
+                  시행일: 2026. 10. 28 · 고지 주체: {CREATOR_ENTITY.fullTitle}
+                </p>
+              </div>
+
+              <section className="space-y-2.5">
+                <h3 className="text-sm font-semibold text-neutral-100">
+                  01. 본 애플리케이션 라이선스 (MIT License)
+                </h3>
+                <p className="text-neutral-400">
+                  ‘바이브 행사’는 오픈소스 소프트웨어 생태계의 지식 공유 정신을 바탕으로 구축되었으며, 본 애플리케이션의 핵심 소스 코드는 MIT License 규정에 따라 배포 및 제공됩니다.
+                </p>
+                <div className="p-3.5 rounded-lg bg-white/[0.03] border border-white/[0.06] font-mono text-xs text-neutral-400 space-y-2 leading-relaxed select-text">
+                  <div className="text-neutral-300 font-semibold">
+                    Copyright (c) 2026 {CREATOR_ENTITY.fullTitle}
+                  </div>
+                  <p className="text-[11.5px] text-neutral-400">
+                    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+                  </p>
+                  <p className="text-[11.5px] text-neutral-400">
+                    The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+                  </p>
+                  <p className="text-[11.5px] text-neutral-500">
+                    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+                  </p>
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-neutral-100">
+                  02. 사용된 주요 기술 및 오픈소스 라이브러리 고지
+                </h3>
+                <p className="text-neutral-400">
+                  본 서비스는 다음과 같은 검증된 오픈소스 소프트웨어 라이브러리를 활용하여 구현되었으며, 각 라이브러리의 저작권과 라이선스는 해당 원저작자에게 귀속됩니다.
+                </p>
+
+                <div className="border border-white/[0.07] rounded-xl overflow-hidden divide-y divide-white/[0.06] text-xs bg-white/[0.015]">
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">Yjs · y-protocols · lib0</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[11px] border border-emerald-500/20">MIT License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: Kevin Jahns · 적용: 실시간 E2EE CRDT 동시 편집 및 분산 문서 동기화 엔진</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">React & React DOM (v19)</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[11px] border border-emerald-500/20">MIT License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: Meta Platforms, Inc. and affiliates · 적용: 선언적 컴포넌트 기반 리액티브 UI 프레임워크</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">Tailwind CSS (v4)</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[11px] border border-emerald-500/20">MIT License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: Tailwind Labs, Inc. · 적용: 고밀도 옵시디언 다크 테마 디자인 시스템 및 유틸리티 스타일링</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">Lucide Icons (lucide-react)</span>
+                      <span className="px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-400 font-mono text-[11px] border border-sky-500/20">ISC License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: Lucide Contributors · 적용: 미니멀 벡터 심볼 및 아이코노그래피 시스템</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">fast-xml-parser</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[11px] border border-emerald-500/20">MIT License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: Amit Kumar Gupta · 적용: RFC 4791 표준 CalDAV / WebDAV 다중 상태(Multistatus) XML 고속 파서</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">jsPDF</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[11px] border border-emerald-500/20">MIT License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: James Hall (Parall-ax) and contributors · 적용: 클라이언트 브라우저 기반 일정 브리핑 및 타임테이블 PDF 렌더링</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">Zod</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[11px] border border-emerald-500/20">MIT License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: Colin McDonnell · 적용: TypeScript 우선 런타임 데이터 스키마 유효성 검증</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">WebLLM (@mlc-ai/web-llm)</span>
+                      <span className="px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-400 font-mono text-[11px] border border-purple-500/20">Apache 2.0</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: MLC AI Team · 적용: 브라우저 내부 WebGPU 하드웨어 가속 온디바이스 로컬 AI 추론 엔진</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">Express & ws</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[11px] border border-emerald-500/20">MIT License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: Express Contributors & Einar Otto Stangvik · 적용: E2EE 실시간 협업 룸 웹소켓 중계 및 API 서버</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">web-push</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[11px] border border-emerald-500/20">MIT License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: Marco Castelluccio and contributors · 적용: W3C VAPID 표준 실시간 웹 푸시 알림 전송</p>
+                  </div>
+
+                  <div className="p-3.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">Vite & esbuild</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-[11px] border border-emerald-500/20">MIT License</span>
+                    </div>
+                    <p className="text-neutral-400 text-[11.5px]">저작자: Evan You & Evan Wallace · 적용: 차세대 초고속 프론트엔드 모듈 번들러 및 빌드 툴</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-2">
+                <h3 className="text-sm font-semibold text-neutral-100">
+                  03. W3C 및 IETF 개방형 표준 프로토콜 준수
+                </h3>
+                <p className="text-neutral-400">
+                  본 애플리케이션은 벤더 종속 없는 지속 가능한 소프트웨어 환경을 위해 다음의 W3C 및 IETF 공식 개방형 웹 표준을 준수합니다.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs">
+                  <div className="p-3 rounded-lg bg-white/[0.025] border border-white/[0.06] space-y-1">
+                    <span className="font-semibold text-white block">Web Cryptography API</span>
+                    <span className="text-[11.5px] text-neutral-400 block">W3C 표준 하드웨어 가속 AES-256-GCM 볼트 암호화 및 PBKDF2-SHA256 키 유도</span>
+                  </div>
+                  <div className="p-3 rounded-lg bg-white/[0.025] border border-white/[0.06] space-y-1">
+                    <span className="font-semibold text-white block">WebAuthn (FIDO2)</span>
+                    <span className="text-[11.5px] text-neutral-400 block">W3C 생체 인증 표준(Face ID · Touch ID · Windows Hello) 패스키 연동</span>
+                  </div>
+                  <div className="p-3 rounded-lg bg-white/[0.025] border border-white/[0.06] space-y-1">
+                    <span className="font-semibold text-white block">RFC 4791 & RFC 5545</span>
+                    <span className="text-[11.5px] text-neutral-400 block">IETF CalDAV 및 iCalendar(ICS) 분산 캘린더링 상호운용 표준</span>
+                  </div>
+                  <div className="p-3 rounded-lg bg-white/[0.025] border border-white/[0.06] space-y-1">
+                    <span className="font-semibold text-white block">Service Worker & PWA</span>
+                    <span className="text-[11.5px] text-neutral-400 block">W3C PWA 오프라인 캐싱 및 백그라운드 리마인더 동작</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-2">
+                <h3 className="text-sm font-semibold text-neutral-100">
+                  04. 저작권자 권리 보호 및 무보증(AS-IS) 면책
+                </h3>
+                <p className="text-neutral-400">
+                  본 소프트웨어에 포함된 모든 오픈소스 라이브러리의 저작권 및 상표권은 해당 원저작자에게 유보됩니다. 각 오픈소스 소프트웨어는 명시적이거나 묵시적인 어떠한 보증 없이 "있는 그대로(AS-IS)" 제공되며, 사용 중 발생한 직·간접적 손해에 대해 원저작자와 기여자는 책임을 지지 않습니다.
+                </p>
               </section>
             </div>
           )}

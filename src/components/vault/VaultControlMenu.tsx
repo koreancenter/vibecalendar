@@ -518,6 +518,16 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
               type="button"
               onClick={() => {
                 setIsOpen(false);
+                onOpenLegalDrawer('opensource');
+              }}
+              className="w-full px-3.5 py-1.5 text-left hover:bg-white/[0.05] text-neutral-400 hover:text-neutral-200 transition-colors duration-150 cursor-pointer whitespace-nowrap"
+            >
+              오픈소스 저작권 고지
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
                 onOpenLegalDrawer('colophon');
               }}
               className="w-full px-3.5 py-1.5 text-left hover:bg-white/[0.05] text-neutral-400 hover:text-neutral-200 transition-colors duration-150 cursor-pointer whitespace-nowrap"
