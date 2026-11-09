@@ -156,7 +156,7 @@ export function registerExternalSyncRoutes(app: express.Express): void {
     if (window.opener) {
       window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', provider: 'microsoft', error: ${JSON.stringify(
         oauthErr || '인증 취소 또는 실패'
-      )} }, '*');
+      )} }, window.location.origin);
       window.close();
     }
   </script>
@@ -180,7 +180,7 @@ export function registerExternalSyncRoutes(app: express.Express): void {
 <body style="background:#0c0e14;color:#e5e7eb;font-family:system-ui,sans-serif;padding:24px;">
   <script>
     if (window.opener) {
-      window.opener.postMessage(${payloadJson}, '*');
+      window.opener.postMessage(${payloadJson}, window.location.origin);
       window.close();
     } else {
       window.location.href = '/';
@@ -197,7 +197,7 @@ export function registerExternalSyncRoutes(app: express.Express): void {
     if (window.opener) {
       window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', provider: 'microsoft', error: ${JSON.stringify(
         message
-      )} }, '*');
+      )} }, window.location.origin);
       window.close();
     }
   </script>

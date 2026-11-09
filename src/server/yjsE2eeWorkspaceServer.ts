@@ -372,6 +372,10 @@ export function attachYjsSharePassWebSocketServer(httpServer: HttpServer): WebSo
   });
 
   wss.on('connection', (ws: WebSocket) => {
+    let socketMessageCount = 0;
+    let socketWindowResetAt = Date.now() + 1000;
+    const MAX_YJS_MESSAGES_PER_SEC = 40;
+
     ws.on('pong', () => {
       const ctx = peerContexts.get(ws);
       if (ctx) {
@@ -380,6 +384,22 @@ export function attachYjsSharePassWebSocketServer(httpServer: HttpServer): WebSo
     });
 
     ws.on('message', (rawData) => {
+      const now = Date.now();
+      if (now > socketWindowResetAt) {
+        socketMessageCount = 1;
+        socketWindowResetAt = now + 1000;
+      } else {
+        socketMessageCount++;
+        if (socketMessageCount > MAX_YJS_MESSAGES_PER_SEC) {
+          sendToSocket(ws, {
+            type: 'yjs:error',
+            code: 'RATE_LIMITED',
+            message: '초당 동기화 프레임 한도(40회)를 초과했습니다.',
+          });
+          return;
+        }
+      }
+
       let msg: YjsE2eeClientWsMessage;
       try {
         const text = typeof rawData === 'string' ? rawData : rawData.toString('utf8');

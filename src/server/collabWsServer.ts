@@ -136,6 +136,9 @@ export function attachCollabWebSocketServer(httpServer: HttpServer): WebSocketSe
 
   wss.on('connection', (ws: WebSocket) => {
     const connectionKey = `conn_${crypto.randomBytes(6).toString('hex')}`;
+    let socketMessageCount = 0;
+    let socketWindowResetAt = Date.now() + 1000;
+    const MAX_WS_MESSAGES_PER_SEC = 30;
 
     ws.on('pong', () => {
       const ctx = peerContexts.get(ws);
@@ -145,6 +148,22 @@ export function attachCollabWebSocketServer(httpServer: HttpServer): WebSocketSe
     });
 
     ws.on('message', (rawData) => {
+      const now = Date.now();
+      if (now > socketWindowResetAt) {
+        socketMessageCount = 1;
+        socketWindowResetAt = now + 1000;
+      } else {
+        socketMessageCount++;
+        if (socketMessageCount > MAX_WS_MESSAGES_PER_SEC) {
+          sendMessage(ws, {
+            type: 'room:error',
+            code: 'RATE_LIMITED',
+            message: '실시간 메시지 전송 한도(초당 30회)를 초과했습니다.',
+          });
+          return;
+        }
+      }
+
       let msg: CollabClientMessage;
       try {
         const str = typeof rawData === 'string' ? rawData : rawData.toString('utf8');

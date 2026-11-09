@@ -170,13 +170,8 @@ export function useExternalCalendarSync({
   // Listen for Microsoft OAuth 2.0 popup postMessage completion
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
-      const origin = event.origin || '';
-      const isAllowedOrigin =
-        origin === window.location.origin ||
-        origin.endsWith('.run.app') ||
-        origin.includes('localhost') ||
-        origin.includes('127.0.0.1');
-      if (!isAllowedOrigin) return;
+      // 오직 현재 애플리케이션과 완전히 일치하는 출처(Origin)만 신뢰 (외부 Cloud Run 도메인 스푸핑 차단)
+      if (origin !== window.location.origin) return;
 
       const payload = event.data as Record<string, unknown> | null;
       if (!payload || typeof payload !== 'object') return;

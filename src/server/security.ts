@@ -243,7 +243,9 @@ function resolveAttachmentKind(rawKind: string | null | undefined): string {
 }
 
 /**
- * 보안 헤더 미들웨어 (CSP 적용 및 프리뷰 iframe 호환성 보장)
+ * 보안 헤더 미들웨어 (CSP 강화 및 프리뷰 iframe 호환성 보장)
+ * - 'unsafe-eval'을 완전히 배제하고 표준 'wasm-unsafe-eval'만 유지하여 임의 코드 실행(XSS RCE) 차단
+ * - 민감 하드웨어 접근 권한 제어 (Permissions-Policy) 추가
  */
 export function securityHeaders(
   _req: express.Request,
@@ -251,13 +253,18 @@ export function securityHeaders(
   next: express.NextFunction
 ): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '0');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader(
+    'Permissions-Policy',
+    'camera=(self), microphone=(self), geolocation=(), payment=(), usb=()'
+  );
   res.setHeader(
     'Content-Security-Policy',
     [
       "default-src 'self'",
       "manifest-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://accounts.google.com",
+      "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://accounts.google.com",
       "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://accounts.google.com",
       "font-src 'self' https://cdn.jsdelivr.net data:",
       "img-src 'self' data: blob: https://*.googleusercontent.com",
@@ -274,6 +281,8 @@ export function securityHeaders(
 
 /**
  * LRU/FIFO 상한 보호형 인메모리 Rate Limiter
+ * - 표준 X-RateLimit-* 헤더 반환
+ * - 사설 IPv4-mapped IPv6 주소 정규화
  */
 interface RateLimitRecord {
   count: number;
@@ -295,14 +304,21 @@ const cleanupTimer = setInterval(() => {
 }, 5 * 60 * 1000);
 cleanupTimer.unref();
 
+function extractSafeClientIp(req: express.Request): string {
+  const raw = req.ip || req.socket.remoteAddress || 'unknown-ip';
+  return raw.replace(/^::ffff:/, '').trim().slice(0, 45);
+}
+
 export function apiRateLimiter(
   req: express.Request,
   res: express.Response,
   next: express.NextFunction
 ): void {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown-ip';
+  const ip = extractSafeClientIp(req);
   const now = Date.now();
   const record = ipRateLimitMap.get(ip);
+
+  res.setHeader('X-RateLimit-Limit', MAX_REQUESTS_PER_WINDOW.toString());
 
   if (!record || now > record.resetTime) {
     if (!record && ipRateLimitMap.size >= MAX_ENTRIES_BEFORE_EVICT) {
@@ -311,10 +327,17 @@ export function apiRateLimiter(
         ipRateLimitMap.delete(oldestKey);
       }
     }
-    ipRateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    const resetTime = now + RATE_LIMIT_WINDOW_MS;
+    ipRateLimitMap.set(ip, { count: 1, resetTime });
+    res.setHeader('X-RateLimit-Remaining', (MAX_REQUESTS_PER_WINDOW - 1).toString());
+    res.setHeader('X-RateLimit-Reset', Math.ceil(resetTime / 1000).toString());
     next();
     return;
   }
+
+  const remaining = Math.max(0, MAX_REQUESTS_PER_WINDOW - record.count);
+  res.setHeader('X-RateLimit-Remaining', remaining.toString());
+  res.setHeader('X-RateLimit-Reset', Math.ceil(record.resetTime / 1000).toString());
 
   if (record.count >= MAX_REQUESTS_PER_WINDOW) {
     const retryAfter = Math.ceil((record.resetTime - now) / 1000);
@@ -1311,8 +1334,22 @@ export function validateAndSanitizeOllamaProxyRequest(
   }
 
   const portNum = parsedUrl.port ? Number(parsedUrl.port) : 11434;
-  if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
-    return { ok: false, status: 400, error: '유효하지 않은 포트 번호입니다.' };
+  if (!Number.isInteger(portNum) || portNum < 1024 || portNum > 65535) {
+    return {
+      ok: false,
+      status: 400,
+      error: '로컬 AI 추론 프록시는 비특권 사용자 포트(1024~65535, 기본값 11434)만 허용됩니다.',
+    };
+  }
+
+  // 내부 앱 자기참조 재귀 루프(포트 3000) 및 내부 관리 포트(2375 Docker, 6379 Redis 등) 차단
+  const FORBIDDEN_PORTS = new Set([3000, 2375, 2376, 5432, 6379, 27017]);
+  if (FORBIDDEN_PORTS.has(portNum)) {
+    return {
+      ok: false,
+      status: 403,
+      error: '해당 내부 시스템 포트로의 프록시 접근은 보안상 차단되었습니다.',
+    };
   }
 
   const origin = `${parsedUrl.protocol}//${parsedUrl.hostname}:${portNum}`;
