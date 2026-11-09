@@ -320,20 +320,23 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
                   {/* 1. Official Sign in with Google Card */}
                   <div className="rounded-xl border border-white/[0.06] bg-[#0c0e14]/85 p-3.5 flex flex-col justify-between h-full gap-2.5">
-                    <div>
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-semibold text-white">Google Calendar</span>
-                        <span className="text-[11px] text-neutral-400">
-                          {hasGoogleSessionToken
-                            ? '토큰 활성'
-                            : googleConfigured
-                            ? 'OAuth 2.0 준비됨'
-                            : '환경변수 필요'}
-                        </span>
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-semibold text-white truncate">Google Calendar</span>
+                        <HelpTooltip
+                          title="Google Calendar 연동"
+                          content="구독 중인 Google 캘린더 목록을 조회하고 증분 syncToken 동기화를 통해 개인정보 보호 마스킹 또는 양방향 동기화를 수행합니다."
+                          align="left"
+                          placement="bottom"
+                        />
                       </div>
-                      <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed line-clamp-2 min-h-[32px]">
-                        구독 중인 Google 캘린더 목록 조회 및 증분 syncToken 동기화를 수행합니다.
-                      </p>
+                      <span className="text-[11px] text-neutral-400 shrink-0">
+                        {hasGoogleSessionToken
+                          ? '토큰 활성'
+                          : googleConfigured
+                          ? 'OAuth 2.0 준비됨'
+                          : '환경변수 필요'}
+                      </span>
                     </div>
 
                     <div className="space-y-1.5 pt-0.5">
@@ -390,16 +393,19 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
 
                   {/* 2. Microsoft Graph API OAuth 2.0 + PKCE Card */}
                   <div className="rounded-xl border border-white/[0.06] bg-[#0c0e14]/85 p-3.5 flex flex-col justify-between h-full gap-2.5">
-                    <div>
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-semibold text-white">Microsoft 365 · Outlook</span>
-                        <span className="text-[11px] text-neutral-400">
-                          {microsoftStatus.configured ? 'PKCE 활성' : '환경변수 필요'}
-                        </span>
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-semibold text-white truncate">Microsoft 365 · Outlook</span>
+                        <HelpTooltip
+                          title="Microsoft 365 · Outlook 연동"
+                          content="Microsoft Graph deltaLink 증분 동기화 및 Windows 타임존 자동 변환을 지원하여 Outlook 일정을 안전하게 동기화합니다."
+                          align="left"
+                          placement="bottom"
+                        />
                       </div>
-                      <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed line-clamp-2 min-h-[32px]">
-                        Microsoft Graph deltaLink 증분 동기화 및 Windows 타임존 자동 변환을 지원합니다.
-                      </p>
+                      <span className="text-[11px] text-neutral-400 shrink-0">
+                        {microsoftStatus.configured ? 'PKCE 활성' : '환경변수 필요'}
+                      </span>
                     </div>
 
                     <div className="space-y-1.5 pt-0.5">
@@ -435,14 +441,16 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
 
                   {/* 3. Standard CalDAV RFC 4791 Card */}
                   <div className="rounded-xl border border-white/[0.06] bg-[#0c0e14]/85 p-3.5 flex flex-col justify-between h-full gap-2.5">
-                    <div>
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-semibold text-white">표준 CalDAV (RFC 4791)</span>
-                        <span className="text-[11px] text-emerald-300/90">즉시 사용 가능</span>
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-semibold text-white truncate">표준 CalDAV (RFC 4791)</span>
+                        <HelpTooltip
+                          title="표준 CalDAV (RFC 4791) 연동"
+                          content="Apple iCloud, Fastmail, Nextcloud, Synology 등 RFC 4791 규격을 준수하는 표준 CalDAV 서버와 양방향 연동합니다."
+                          align="left"
+                          placement="bottom"
+                        />
                       </div>
-                      <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed line-clamp-2 min-h-[32px]">
-                        Apple iCloud, Fastmail, Nextcloud, Synology 등 표준 CalDAV 서버와 양방향 연동합니다.
-                      </p>
                     </div>
 
                     <div className="space-y-1.5 pt-0.5">
@@ -455,9 +463,8 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                         <span>CalDAV 서버 설정 열기</span>
                       </button>
 
-                      <div className="h-5 flex items-center justify-between text-[10.5px] text-neutral-400 font-mono truncate">
+                      <div className="h-5 flex items-center text-[10.5px] text-neutral-400 font-mono truncate">
                         <span className="truncate">RFC 4791 표준 · 앱 비밀번호 지원</span>
-                        <span className="text-emerald-400 text-[10px] shrink-0 font-sans">즉시 연동</span>
                       </div>
                     </div>
                   </div>
