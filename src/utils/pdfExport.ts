@@ -1,4 +1,4 @@
-import { jsPDF } from 'jspdf';
+import type { jsPDF } from 'jspdf';
 import { CalendarCategory, CalendarEventItem, ProjectItem } from '../types';
 import {
   getCalendarGrid,
@@ -375,7 +375,7 @@ function stampPageFooters(
     ctx.textAlign = 'left';
     ctx.font = `500 18px ${FONT_SANS}`;
     ctx.fillStyle = palette.textMuted;
-    ctx.fillText(`바이브 행사  ·  ${sectionLabel}`, MARGIN_X, FOOTER_Y + 4);
+    ctx.fillText(`바이브 캘린더  ·  ${sectionLabel}`, MARGIN_X, FOOTER_Y + 4);
 
     ctx.textAlign = 'right';
     ctx.font = `500 18px ${FONT_MONO}`;
@@ -420,7 +420,7 @@ function renderMonthGridCanvas(
     .join('  ·  ');
 
   const gridTop = drawExecutiveHeader(ctx, palette, {
-    kicker: '바이브 행사  ·  월간 공정 캘린더',
+    kicker: '바이브 캘린더  ·  월간 공정 캘린더',
     title: `${currentYear}년 ${currentMonth + 1}월`,
     filterSummary: buildFilterContextLabel(projects, selectedProjectIds, selectedCategory),
     metricsLine,
@@ -633,7 +633,7 @@ function renderWeekTimelineCanvas(
     .join('  ·  ');
 
   const gridTop = drawExecutiveHeader(ctx, palette, {
-    kicker: '바이브 행사  ·  주간 타임라인 브리프',
+    kicker: '바이브 캘린더  ·  주간 타임라인 브리프',
     title: `${weekYear}년 ${getWeekRangeLabel(selectedDate)}`,
     filterSummary: buildFilterContextLabel(projects, selectedProjectIds, selectedCategory),
     metricsLine,
@@ -1205,7 +1205,7 @@ export async function exportCalendarViewToPdf(
       palette,
       monthEvents,
       `${options.currentYear}년 ${options.currentMonth + 1}월 상세 일정 명세`,
-      '바이브 행사  ·  월간 세부 공정 및 체크리스트'
+      '바이브 캘린더  ·  월간 세부 공정 및 체크리스트'
     );
     monthLedgerPages.forEach((c) => {
       renderedPages.push({
@@ -1228,7 +1228,7 @@ export async function exportCalendarViewToPdf(
       palette,
       weekEvents,
       `주간 상세 공정 및 체크리스트 (${weekLabel})`,
-      '바이브 행사  ·  주간 실행 명세표'
+      '바이브 캘린더  ·  주간 실행 명세표'
     );
     weekLedgerPages.forEach((c) => {
       renderedPages.push({
@@ -1240,6 +1240,7 @@ export async function exportCalendarViewToPdf(
 
   stampPageFooters(renderedPages, palette);
 
+  const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({
     orientation: 'landscape',
     unit: 'mm',
@@ -1249,15 +1250,15 @@ export async function exportCalendarViewToPdf(
 
   const docTitle =
     options.scope === 'month'
-      ? `바이브 행사 월간 일정표 (${monthPrefix})`
+      ? `바이브 캘린더 월간 일정표 (${monthPrefix})`
       : options.scope === 'week'
-      ? `바이브 행사 주간 타임라인 (${weekDays[0].date} ~ ${weekDays[6].date})`
-      : `바이브 행사 월간·주간 통합 브리프 (${monthPrefix})`;
+      ? `바이브 캘린더 주간 타임라인 (${weekDays[0].date} ~ ${weekDays[6].date})`
+      : `바이브 캘린더 월간·주간 통합 브리프 (${monthPrefix})`;
 
   pdf.setProperties({
     title: docTitle,
     subject: '행사 준비 공정 및 일정 리포트',
-    creator: '바이브 행사',
+    creator: '바이브 캘린더',
   });
 
   renderedPages.forEach(({ canvas }, index) => {

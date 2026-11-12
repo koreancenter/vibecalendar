@@ -1,6 +1,6 @@
 /* eslint-disable no-restricted-globals */
 /**
- * 바이브 행사 — PWA Service Worker Background Sync & Local/Push Notification Engine
+ * 바이브 캘린더 — PWA Service Worker Background Sync & Local/Push Notification Engine
  * Loaded via Workbox importScripts('/sw-background-engine.js')
  *
  * Zero-Knowledge Privacy Guarantee:
@@ -208,7 +208,7 @@
         triggerId: alertItem.triggerId,
         firedAtMs: Date.now(),
       });
-      var title = alertItem.notificationTitle || '바이브 행사 · 일정 알림';
+      var title = alertItem.notificationTitle || '바이브 캘린더 · 일정 알림';
       var options = buildNotificationOptions(alertItem);
       return self.registration.showNotification(title, options).catch(function () {});
     });
@@ -233,7 +233,7 @@
           var opts = buildNotificationOptions(alertItem);
           opts.showTrigger = new self.TimestampTrigger(alertItem.triggerAtMs);
           return self.registration
-            .showNotification(alertItem.notificationTitle || '바이브 행사 · 일정 알림', opts)
+            .showNotification(alertItem.notificationTitle || '바이브 캘린더 · 일정 알림', opts)
             .catch(function () {});
         } catch (_e) {
           return Promise.resolve();
@@ -357,7 +357,7 @@
     var workPromise = (function () {
       if (payload.type === 'TEST_PUSH') {
         return self.registration.showNotification(
-          payload.title || '바이브 행사 · 백그라운드 푸시 검증 완료',
+          payload.title || '바이브 캘린더 · 백그라운드 푸시 검증 완료',
           {
             body:
               payload.body ||
@@ -391,7 +391,7 @@
           typeof payload.leadMinutes === 'number' && payload.leadMinutes > 0
             ? payload.leadMinutes + '분 후 일정 시작'
             : '예정된 일정 시작';
-        return self.registration.showNotification('바이브 행사 · ' + leadLabel, {
+        return self.registration.showNotification('바이브 캘린더 · ' + leadLabel, {
           body: '예정된 캘린더 일정을 확인하려면 탭하세요.',
           icon: '/pwa-192x192.png',
           badge: '/pwa-192x192.png',
@@ -462,7 +462,7 @@
         leadMinutes: snoozeDelayMin,
         triggerAtMs: snoozeAtMs,
         eventStartEpochMs: data.eventStartEpochMs || snoozeAtMs,
-        notificationTitle: '바이브 행사 · 다시 알림 (10분 연장)',
+        notificationTitle: '바이브 캘린더 · 다시 알림 (10분 연장)',
         notificationBody: data.notificationBody || '예정된 일정을 다시 확인해 주세요.',
         isAllDay: false,
         isMasked: Boolean(data.isMasked),
@@ -590,7 +590,7 @@
         setTimeout(resolve, delayMs);
       }).then(function () {
         return self.registration.showNotification(
-          msg.title || '바이브 행사 · 로컬 백그라운드 알림 검증',
+          msg.title || '바이브 캘린더 · 로컬 백그라운드 알림 검증',
           {
             body:
               msg.body ||

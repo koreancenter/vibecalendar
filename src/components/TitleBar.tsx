@@ -130,7 +130,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </TopBarTooltip>
 
         <span className="text-[13px] font-semibold text-white tracking-tight whitespace-nowrap shrink-0 hidden sm:inline">
-          바이브 행사
+          바이브 캘린더
         </span>
       </div>
 

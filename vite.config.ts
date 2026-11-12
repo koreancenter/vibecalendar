@@ -73,8 +73,8 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: '바이브 행사',
-          short_name: '바이브 행사',
+          name: '바이브 캘린더',
+          short_name: '바이브 캘린더',
           description: 'VS Code 스타일 고밀도 행사 준비 공정 캘린더 워크스페이스',
           theme_color: '#0c0e14',
           background_color: '#0c0e14',
@@ -106,7 +106,11 @@ export default defineConfig(() => {
         workbox: {
           importScripts: ['/sw-background-engine.js'],
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          globIgnores: ['**/sw-background-engine.js'],
+          globIgnores: [
+            '**/sw-background-engine.js',
+            '**/vendor-webllm*.js',
+            '**/jspdf*.js',
+          ],
           navigateFallbackDenylist: [
             /^\/api\//,
             /^\/@vite\//,
@@ -114,7 +118,7 @@ export default defineConfig(() => {
             /^\/src\//,
             /^\/sw-background-engine\.js$/,
           ],
-          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/.*/i,
@@ -141,6 +145,32 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+      },
+    },
+    build: {
+      chunkSizeWarningLimit: 1200,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('@mlc-ai/web-llm')) {
+                return 'vendor-webllm';
+              }
+              if (id.includes('react') || id.includes('react-dom')) {
+                return 'vendor-react';
+              }
+              if (id.includes('yjs') || id.includes('y-protocols') || id.includes('lib0')) {
+                return 'vendor-yjs';
+              }
+              if (id.includes('lucide-react')) {
+                return 'vendor-icons';
+              }
+              if (id.includes('fast-xml-parser')) {
+                return 'vendor-xml';
+              }
+            }
+          },
+        },
       },
     },
     server: {

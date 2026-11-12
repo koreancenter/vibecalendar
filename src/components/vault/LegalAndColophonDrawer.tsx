@@ -10,14 +10,8 @@ interface LegalAndColophonDrawerProps {
   onCopySuccess?: (message: string) => void;
 }
 
-export const CREATOR_ENTITY = {
-  teamName: 'GOGUMA APP Team',
-  networkName: 'Korean Center Global Network',
-  fullTitle: 'GOGUMA APP Team - Korean Center Global Network',
-  email: 'master@goguma.app',
-  jurisdiction: 'Republic of Korea',
-  copyrightYear: '2026',
-} as const;
+import { CREATOR_ENTITY } from '../../constants/legal';
+export { CREATOR_ENTITY };
 
 export const LegalAndColophonDrawer: React.FC<LegalAndColophonDrawerProps> = ({
   isOpen,

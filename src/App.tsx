@@ -6,31 +6,71 @@ import { AiChatSidebar } from './components/AiChatSidebar';
 import { MonthGridView } from './components/MonthGridView';
 import { WeekGridView } from './components/WeekGridView';
 import { DayAgendaView } from './components/DayAgendaView';
-import { OperationsRunsheetView } from './components/OperationsRunsheetView';
-import { EventDetailModal } from './components/EventDetailModal';
-import { EventComposerModal, EventComposerSeed } from './components/EventComposerModal';
-import { CommandPaletteModal } from './components/CommandPaletteModal';
-import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
 import { ProjectSelectorBar } from './components/ProjectSelectorBar';
-import { ProjectModal } from './components/ProjectModal';
-import { ProjectManagementModal } from './components/ProjectManagementModal';
-import { SharePassModal, ShareModalTarget } from './components/SharePassModal';
-import { SharedPassStandaloneView } from './components/SharedPassStandaloneView';
+import type { EventComposerSeed } from './components/EventComposerModal';
+import type { ShareModalTarget } from './components/SharePassModal';
 import { PWAInstallButton, OfflineStatusBanner } from './components/PWAInstallButton';
 import { VaultIntroGate } from './components/vault/VaultIntroGate';
 import { VaultControlMenu } from './components/vault/VaultControlMenu';
-import {
-  LegalAndColophonDrawer,
-  LegalDrawerTab,
-} from './components/vault/LegalAndColophonDrawer';
+import type { LegalDrawerTab } from './components/vault/LegalAndColophonDrawer';
 import { EventHistoryPopover } from './components/EventHistoryPopover';
-import { ApiSettingsModal } from './components/ApiSettingsModal';
-import { ExternalSyncHubModal } from './components/sync/ExternalSyncHubModal';
-import { OutboundSyncConfirmModal } from './components/sync/OutboundSyncConfirmModal';
-import { NotificationSettingsModal } from './components/notifications/NotificationSettingsModal';
-import { CollabHubModal } from './components/collab/CollabHubModal';
-import { LiveCollabRoomView } from './components/collab/LiveCollabRoomView';
-import { SharePassCollaborativeWorkspace } from './components/collab/SharePassCollaborativeWorkspace';
+
+// 온디맨드 비동기 청크 분할 (Code Splitting): 초기 진입 번들 경량화
+const OperationsRunsheetView = React.lazy(() =>
+  import('./components/OperationsRunsheetView').then((m) => ({ default: m.OperationsRunsheetView }))
+);
+const EventDetailModal = React.lazy(() =>
+  import('./components/EventDetailModal').then((m) => ({ default: m.EventDetailModal }))
+);
+const EventComposerModal = React.lazy(() =>
+  import('./components/EventComposerModal').then((m) => ({ default: m.EventComposerModal }))
+);
+const CommandPaletteModal = React.lazy(() =>
+  import('./components/CommandPaletteModal').then((m) => ({ default: m.CommandPaletteModal }))
+);
+const DeleteConfirmationModal = React.lazy(() =>
+  import('./components/DeleteConfirmationModal').then((m) => ({ default: m.DeleteConfirmationModal }))
+);
+const ProjectModal = React.lazy(() =>
+  import('./components/ProjectModal').then((m) => ({ default: m.ProjectModal }))
+);
+const ProjectManagementModal = React.lazy(() =>
+  import('./components/ProjectManagementModal').then((m) => ({ default: m.ProjectManagementModal }))
+);
+const SharePassModal = React.lazy(() =>
+  import('./components/SharePassModal').then((m) => ({ default: m.SharePassModal }))
+);
+const SharedPassStandaloneView = React.lazy(() =>
+  import('./components/SharedPassStandaloneView').then((m) => ({ default: m.SharedPassStandaloneView }))
+);
+const LegalAndColophonDrawer = React.lazy(() =>
+  import('./components/vault/LegalAndColophonDrawer').then((m) => ({ default: m.LegalAndColophonDrawer }))
+);
+const ApiSettingsModal = React.lazy(() =>
+  import('./components/ApiSettingsModal').then((m) => ({ default: m.ApiSettingsModal }))
+);
+const ExternalSyncHubModal = React.lazy(() =>
+  import('./components/sync/ExternalSyncHubModal').then((m) => ({ default: m.ExternalSyncHubModal }))
+);
+const OutboundSyncConfirmModal = React.lazy(() =>
+  import('./components/sync/OutboundSyncConfirmModal').then((m) => ({ default: m.OutboundSyncConfirmModal }))
+);
+const NotificationSettingsModal = React.lazy(() =>
+  import('./components/notifications/NotificationSettingsModal').then((m) => ({
+    default: m.NotificationSettingsModal,
+  }))
+);
+const CollabHubModal = React.lazy(() =>
+  import('./components/collab/CollabHubModal').then((m) => ({ default: m.CollabHubModal }))
+);
+const LiveCollabRoomView = React.lazy(() =>
+  import('./components/collab/LiveCollabRoomView').then((m) => ({ default: m.LiveCollabRoomView }))
+);
+const SharePassCollaborativeWorkspace = React.lazy(() =>
+  import('./components/collab/SharePassCollaborativeWorkspace').then((m) => ({
+    default: m.SharePassCollaborativeWorkspace,
+  }))
+);
 import { createE2eeSharePassWorkspace } from './services/sharePassWorkspaceClient';
 import { purgeAllNotificationIdbData } from './services/notifications/notificationIdb';
 import { subscribeCloudKeyUnauthorized } from './utils/cloudApiKeyStorage';
@@ -2514,48 +2554,58 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
 
           {viewMode === 'ops' && (
             <div className="flex-1 h-full overflow-hidden flex flex-col">
-              <OperationsRunsheetView
-                events={filteredEvents}
-                selectedDate={selectedDate}
-                selectedDateEvents={selectedDateEvents}
-                selectedEvent={selectedEvent}
-                viewerTimeZone={tzPrefs.viewerTimeZone}
-                projects={projects}
-                selectedProjectId={selectedProjectId}
-                comparedProjectIds={selectedProjectIds}
-                emptyGuideText={emptyGuideText}
-                isWorkspaceEmpty={isWorkspaceEmpty}
-                onLoadSampleData={handleLoadSampleData}
-                onSelectDate={(date) => {
-                  setSelectedDate(date);
-                  syncYearMonthFromDate(date);
-                }}
-                onSelectEvent={setSelectedEvent}
-                onDeleteEvent={requestDeleteEvent}
-                onToggleComplete={handleToggleComplete}
-                onToggleChecklistItem={handleToggleChecklistItem}
-                onUpdateProject={handleUpdateEventProject}
-                onUpdateTimeZone={handleUpdateEventTimeZone}
-                onUpdateLocation={handleUpdateEventLocation}
-                onUpdateEventFields={handleUpdateEventFields}
-                onAddChecklistItem={handleAddChecklistItem}
-                onUpdateChecklistItemText={handleUpdateChecklistItemText}
-                onDeleteChecklistItem={handleDeleteChecklistItem}
-                onOpenCreateEvent={(date) => handleOpenCreateEvent({ date })}
-                onShareEvent={handleShareEvent}
-                onQuickAiPromptForDate={handleQuickAiPromptForDate}
-                onRequestReverseMilestones={(prompt) => handleRequestReverseMilestones(prompt)}
-                onAutoRebalance={() => {
-                  handleAutoRebalanceSchedule();
-                }}
-              />
+              <React.Suspense
+                fallback={
+                  <div className="flex-1 bg-[#0c0e14] flex items-center justify-center text-xs text-neutral-500">
+                    공정 런시트 불러오는 중...
+                  </div>
+                }
+              >
+                <OperationsRunsheetView
+                  events={filteredEvents}
+                  selectedDate={selectedDate}
+                  selectedDateEvents={selectedDateEvents}
+                  selectedEvent={selectedEvent}
+                  viewerTimeZone={tzPrefs.viewerTimeZone}
+                  projects={projects}
+                  selectedProjectId={selectedProjectId}
+                  comparedProjectIds={selectedProjectIds}
+                  emptyGuideText={emptyGuideText}
+                  isWorkspaceEmpty={isWorkspaceEmpty}
+                  onLoadSampleData={handleLoadSampleData}
+                  onSelectDate={(date) => {
+                    setSelectedDate(date);
+                    syncYearMonthFromDate(date);
+                  }}
+                  onSelectEvent={setSelectedEvent}
+                  onDeleteEvent={requestDeleteEvent}
+                  onToggleComplete={handleToggleComplete}
+                  onToggleChecklistItem={handleToggleChecklistItem}
+                  onUpdateProject={handleUpdateEventProject}
+                  onUpdateTimeZone={handleUpdateEventTimeZone}
+                  onUpdateLocation={handleUpdateEventLocation}
+                  onUpdateEventFields={handleUpdateEventFields}
+                  onAddChecklistItem={handleAddChecklistItem}
+                  onUpdateChecklistItemText={handleUpdateChecklistItemText}
+                  onDeleteChecklistItem={handleDeleteChecklistItem}
+                  onOpenCreateEvent={(date) => handleOpenCreateEvent({ date })}
+                  onShareEvent={handleShareEvent}
+                  onQuickAiPromptForDate={handleQuickAiPromptForDate}
+                  onRequestReverseMilestones={(prompt) => handleRequestReverseMilestones(prompt)}
+                  onAutoRebalance={() => {
+                    handleAutoRebalanceSchedule();
+                  }}
+                />
+              </React.Suspense>
             </div>
           )}
         </main>
       </div>
 
-      {/* 3. 삭제 확인 모달 (일정 & 프로젝트 공용) */}
-      <DeleteConfirmationModal
+      {/* 온디맨드 로딩 모달 클러스터: 필요 시에만 비동기 로드 */}
+      <React.Suspense fallback={null}>
+        {/* 3. 삭제 확인 모달 (일정 & 프로젝트 공용) */}
+        <DeleteConfirmationModal
         isOpen={deleteModalState.isOpen}
         title={deleteModalState.title}
         itemName={deleteModalState.itemName}
@@ -3036,6 +3086,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           showToast={showToast}
         />
       )}
+      </React.Suspense>
 
       {/* 7. 하단 알림 토스트 & 실행 취소 배너 */}
       {toastMessage && (
@@ -3789,7 +3840,13 @@ export default function App() {
 
   if (urlSharedPayload) {
     return (
-      <>
+      <React.Suspense
+        fallback={
+          <div className="h-screen w-screen bg-[#080a10] text-neutral-400 flex items-center justify-center text-xs font-sans">
+            브리핑 패스 불러오는 중...
+          </div>
+        }
+      >
         <SharedPassStandaloneView
           payload={urlSharedPayload}
           isPreviewMode={false}
@@ -3798,7 +3855,7 @@ export default function App() {
           onExit={handleExitUrlShareMode}
         />
         <OfflineStatusBanner />
-      </>
+      </React.Suspense>
     );
   }
 

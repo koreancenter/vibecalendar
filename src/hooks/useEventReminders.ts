@@ -421,7 +421,7 @@ export function useEventReminders({
     );
     const inAppText = alert.isMasked
       ? `${alert.localStartTime} 예정된 보안 일정이 곧 시작됩니다.`
-      : `${alert.notificationTitle.replace('바이브 행사 · ', '')}: ${alert.notificationBody}`;
+      : `${alert.notificationTitle.replace('바이브 캘린더 · ', '')}: ${alert.notificationBody}`;
 
     onInAppReminderRef.current?.(inAppText, matchedEvent);
 
@@ -557,7 +557,7 @@ export function useEventReminders({
         triggerId: `snooze:${alert.eventId}:${Math.floor(snoozeAtMs / 1000)}`,
         leadMinutes: delayMinutes,
         triggerAtMs: snoozeAtMs,
-        notificationTitle: `바이브 행사 · 다시 알림 (${delayMinutes}분 연장)`,
+        notificationTitle: `바이브 캘린더 · 다시 알림 (${delayMinutes}분 연장)`,
         isSnoozed: true,
         updatedAtMs: Date.now(),
       };

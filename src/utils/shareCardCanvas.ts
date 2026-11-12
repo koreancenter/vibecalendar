@@ -595,7 +595,7 @@ export async function renderSharePassToBlob(
   ctx.font = `500 11px ${SANS_STACK}`;
   ctx.fillStyle = palette.textMuted;
   ctx.textBaseline = 'top';
-  ctx.fillText('바이브 행사 · 브리핑 패스', contentX, footerY);
+  ctx.fillText('바이브 캘린더 · 브리핑 패스', contentX, footerY);
 
   ctx.font = `400 11px ${MONO_STACK}`;
   const issuedText = `발행 ${payload.issuedAt}`;

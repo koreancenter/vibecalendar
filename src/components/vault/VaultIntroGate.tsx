@@ -13,11 +13,12 @@ import {
   VaultInvalidPinError,
 } from '../../utils/vaultCrypto';
 import { BiometricUserCancelledError } from '../../utils/webauthnBiometrics';
-import {
-  CREATOR_ENTITY,
-  LegalAndColophonDrawer,
-  LegalDrawerTab,
-} from './LegalAndColophonDrawer';
+import { CREATOR_ENTITY } from '../../constants/legal';
+import type { LegalDrawerTab } from './LegalAndColophonDrawer';
+
+const LegalAndColophonDrawer = React.lazy(() =>
+  import('./LegalAndColophonDrawer').then((m) => ({ default: m.LegalAndColophonDrawer }))
+);
 
 interface VaultIntroGateProps {
   mode: 'onboarding' | 'locked';
@@ -883,12 +884,14 @@ export const VaultIntroGate: React.FC<VaultIntroGateProps> = ({
       </section>
 
       {/* 법적 고지 및 제작 노트 슬라이드오버 시트 */}
-      <LegalAndColophonDrawer
-        isOpen={drawerState.isOpen}
-        initialTab={drawerState.tab}
-        onClose={() => setDrawerState((prev) => ({ ...prev, isOpen: false }))}
-        onCopySuccess={showGateToast}
-      />
+      <React.Suspense fallback={null}>
+        <LegalAndColophonDrawer
+          isOpen={drawerState.isOpen}
+          initialTab={drawerState.tab}
+          onClose={() => setDrawerState((prev) => ({ ...prev, isOpen: false }))}
+          onCopySuccess={showGateToast}
+        />
+      </React.Suspense>
 
       {/* 게이트 내부 토스트 알림 */}
       {inlineToast && (

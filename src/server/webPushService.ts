@@ -307,7 +307,7 @@ export function triggerDelayedTestWebPush(
       subscription,
       {
         type: 'TEST_PUSH',
-        title: '바이브 행사 · 백그라운드 Web Push 연결 확인',
+        title: '바이브 캘린더 · 백그라운드 Web Push 연결 확인',
         body: '앱이나 브라우저 창이 닫혀 있어도 설정한 리드타임에 맞춰 알림이 전달됩니다.',
         sentAtMs: Date.now(),
       },

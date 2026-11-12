@@ -1,5 +1,5 @@
 {
-  "name": "바이브 행사",
+  "name": "바이브 캘린더",
   "description": "VS Code 스타일 고밀도 행사 준비 공정 캘린더 워크스페이스",
   "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

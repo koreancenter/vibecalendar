@@ -287,13 +287,13 @@ export async function enrollBiometricForDek(
       publicKey: {
         challenge: challenge as BufferSource,
         rp: {
-          name: '바이브 행사 (Vibe Event Vault)',
+          name: '바이브 캘린더 (Vibe Event Vault)',
           id: window.location.hostname,
         },
         user: {
           id: userId as BufferSource,
           name: 'vibe-local-vault',
-          displayName: '바이브 행사 로컬 볼트',
+          displayName: '바이브 캘린더 로컬 볼트',
         },
         pubKeyCredParams: [
           { type: 'public-key', alg: -7 }, // ES256
