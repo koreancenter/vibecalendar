@@ -85,3 +85,40 @@ export const CALENDAR_CATEGORIES: CalendarCategory[] = [
   '행사·세미나',
   '기타',
 ];
+
+export type CanonicalCategoryKey =
+  | 'work'
+  | 'business_trip'
+  | 'meal'
+  | 'personal'
+  | 'event'
+  | 'other';
+
+export const CATEGORY_CANONICAL_MAP: Record<string, CanonicalCategoryKey> = {
+  '업무': 'work',
+  '방문·출장': 'business_trip',
+  '식사·모임': 'meal',
+  '개인': 'personal',
+  '행사·세미나': 'event',
+  '기타': 'other',
+  'work': 'work',
+  'business_trip': 'business_trip',
+  'meal': 'meal',
+  'personal': 'personal',
+  'event': 'event',
+  'other': 'other',
+};
+
+export function toCanonicalCategoryKey(cat?: string | null): CanonicalCategoryKey {
+  if (!cat) return 'other';
+  return CATEGORY_CANONICAL_MAP[cat] || 'other';
+}
+
+export function getLocalizedCategory(
+  category: string,
+  t: (key: string, defaultValue?: string) => string
+): string {
+  const canonical = toCanonicalCategoryKey(category);
+  return t(`calendar.categories.${canonical}`, category);
+}
+

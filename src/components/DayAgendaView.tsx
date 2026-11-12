@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Wand2 } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
-import { formatKoreanDateWithDay, getTodayDateString } from '../shared/dateUtils';
+import { formatLocalizedDate, getTodayDateString } from '../shared/dateUtils';
 import { hasEventConflict } from '../shared/scheduleUtils';
 import { getTimeZoneMeta, toViewerProjectedEvent } from '../shared/timeZoneUtils';
 import {
@@ -86,10 +87,11 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
   isWorkspaceEmpty = false,
   onLoadSampleData,
 }) => {
+  const { t, i18n } = useTranslation();
   const isComparing = comparedProjectIds.length >= 2;
   const dateHeaderLabel = useMemo(
-    () => formatKoreanDateWithDay(selectedDate, false),
-    [selectedDate]
+    () => formatLocalizedDate(selectedDate, i18n.language),
+    [selectedDate, i18n.language]
   );
   const isToday = selectedDate === getTodayDateString();
 
@@ -147,7 +149,7 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
                 <span aria-hidden="true" className="text-neutral-600">
                   ·
                 </span>
-                <span className="text-[11px] text-neutral-300">오늘</span>
+                <span className="text-[11px] text-neutral-300">{t('common.today', '오늘')}</span>
               </>
             )}
             <span aria-hidden="true" className="text-neutral-600 hidden sm:inline">
@@ -191,7 +193,7 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
         {/* 종일 일정 고정 바 */}
         {allDayEvents.length > 0 && (
           <div className="bg-[#11141d] border-b border-white/[0.07] px-4 py-2.5 flex items-center gap-3 shrink-0 flex-wrap">
-            <span className="text-[11px] font-[370] text-white/42 shrink-0 tracking-[0.025em]">종일</span>
+            <span className="text-[11px] font-[370] text-white/42 shrink-0 tracking-[0.025em]">{t('calendar.allDay', '종일')}</span>
             {allDayEvents.map((ev) => {
               const vm = byEventId.get(ev.id) ?? getViewModel(ev);
               const isSelected = selectedEvent?.id === ev.id;

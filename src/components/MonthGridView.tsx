@@ -12,6 +12,7 @@ import {
   useCalendarEventViewModels,
 } from '../hooks/useCalendarEventViewModels';
 import { useCalendarDragAndDrop } from '../hooks/useCalendarDragAndDrop';
+import { useTranslation } from 'react-i18next';
 import { getEventChecklistStats, LuxuryEventChip } from './common/LuxuryEventChip';
 
 interface MonthGridViewProps {
@@ -79,12 +80,18 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
   isWorkspaceEmpty = false,
   onLoadSampleData,
 }) => {
+  const { t } = useTranslation();
   const grid = useMemo(
     () => getCalendarGrid(currentYear, currentMonth),
     [currentYear, currentMonth]
   );
   const rowCount = Math.ceil(grid.length / 7) || 5;
   const isComparing = comparedProjectIds.length >= 2;
+
+  const weekdays = useMemo(() => {
+    const list = t('calendar.daysOfWeekShort', { returnObjects: true });
+    return Array.isArray(list) ? (list as string[]) : WEEKDAYS;
+  }, [t]);
 
   const [hoveredTarget, setHoveredTarget] = useState<{
     event: CalendarEventItem;
@@ -177,9 +184,9 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
     <div className="flex-1 flex flex-col h-full bg-[#111318] select-none min-h-0">
       {/* 1. 요일 헤더 */}
       <div className="h-10 grid grid-cols-7 border-b border-white/[0.06] bg-[#101218] text-center text-xs shrink-0 items-center z-10">
-        {WEEKDAYS.map((day, idx) => (
+        {weekdays.map((day, idx) => (
           <div
-            key={day}
+            key={day + idx}
             className={
               idx === 0 || idx === 6
                 ? 'text-white/32 font-normal tracking-tight'
@@ -198,7 +205,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
             {isWorkspaceEmpty && onLoadSampleData ? (
               <div className="luxury-glass-border relative pointer-events-auto rounded-xl bg-gradient-to-b from-[#181c27]/78 via-[#11141d]/76 to-[#0c0e15]/84 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] px-6 py-5 text-center space-y-3.5 overflow-hidden">
                 <p className="text-[13px] font-medium text-neutral-100 tracking-tight">
-                  현재 등록된 일정이 없습니다
+                  {t('calendar.emptyWorkspace', '현재 등록된 일정이 없습니다')}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   {onOpenCreateEvent && (
@@ -208,7 +215,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                       className="h-9 px-4 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
                     >
                       <Plus className="w-3.5 h-3.5 shrink-0" />
-                      <span>새 일정 등록</span>
+                      <span>{t('calendar.newEvent', '새 일정 등록')}</span>
                     </button>
                   )}
                   <button
@@ -217,7 +224,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                     className="h-9 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.13] border border-white/[0.09] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                    <span>샘플 데이터 불러오기</span>
+                    <span>{t('calendar.loadSample', '샘플 데이터 불러오기')}</span>
                   </button>
                 </div>
               </div>

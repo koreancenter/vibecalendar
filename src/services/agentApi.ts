@@ -94,6 +94,7 @@ export interface AgentContext {
   currentYear: number;
   selectedDate: string;
   viewerTimeZone?: string;
+  viewerLocale?: string;
   existingEvents: CalendarEventItem[];
   selectedEvent?: CalendarEventItem | null;
   chatHistory?: ChatSessionHistoryItem[];

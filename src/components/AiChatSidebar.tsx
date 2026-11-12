@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Loader2,
   Volume2,
@@ -110,6 +111,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
   externalPromptRequest = null,
   onConsumeExternalPrompt,
 }) => {
+  const { t, i18n } = useTranslation();
   const effectiveViewerZone =
     viewerTimeZone && isValidTimeZone(viewerTimeZone)
       ? viewerTimeZone
@@ -510,6 +512,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
           currentYear,
           selectedDate,
           viewerTimeZone: effectiveViewerZone,
+          viewerLocale: i18n.language,
           existingEvents,
           selectedEvent,
           chatHistory: historyPayload,

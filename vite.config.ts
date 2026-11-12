@@ -73,8 +73,8 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: '바이브 캘린더',
-          short_name: '바이브 캘린더',
+          name: '바이브 캘린더 Vibe Calendar',
+          short_name: 'Vibe Calendar',
           description: 'VS Code 스타일 고밀도 행사 준비 공정 캘린더 워크스페이스',
           theme_color: '#0c0e14',
           background_color: '#0c0e14',

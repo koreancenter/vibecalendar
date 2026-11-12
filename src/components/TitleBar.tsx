@@ -10,15 +10,22 @@ import {
   Search,
   Users,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   CalendarCategory,
   CalendarEventItem,
   CalendarViewMode,
   ProjectItem,
 } from '../types';
-import { getWeekRangeLabel, formatKoreanDateWithDay } from '../shared/dateUtils';
+import {
+  getWeekRangeLabel,
+  getLocalizedWeekRangeLabel,
+  getLocalizedMonthLabel,
+  formatLocalizedDate,
+} from '../shared/dateUtils';
 import { ExportMenuDropdown } from './ExportMenuDropdown';
 import { TopBarTooltip } from './common/TopBarTooltip';
+import { LanguageSelector } from './common/LanguageSelector';
 
 interface TitleBarProps {
   currentYear: number;
@@ -89,32 +96,35 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onImportWorkspaceJsonFile,
   showToast,
 }) => {
+  const { t, i18n } = useTranslation();
+  const currentLocale = i18n.language || 'ko';
+
   const prevLabel =
     viewMode === 'month' || viewMode === 'ops'
-      ? '이전 달'
+      ? `${t('common.prev', '이전')} (${t('calendar.viewMonth', '월')})`
       : viewMode === 'week'
-      ? '이전 주'
-      : '이전 날';
+      ? `${t('common.prev', '이전')} (${t('calendar.viewWeek', '주')})`
+      : `${t('common.prev', '이전')} (${t('calendar.viewDay', '일')})`;
 
   const nextLabel =
     viewMode === 'month' || viewMode === 'ops'
-      ? '다음 달'
+      ? `${t('common.next', '다음')} (${t('calendar.viewMonth', '월')})`
       : viewMode === 'week'
-      ? '다음 주'
-      : '다음 날';
+      ? `${t('common.next', '다음')} (${t('calendar.viewWeek', '주')})`
+      : `${t('common.next', '다음')} (${t('calendar.viewDay', '일')})`;
 
   return (
     <header className="h-11 bg-[#0c0e14] border-b border-white/[0.04] px-3.5 sm:px-5 flex items-center justify-between gap-3 select-none shrink-0 z-30">
       {/* Zone 1: 좌측 패널 토글 및 단일 브랜드 워드마크 */}
       <div className="flex items-center gap-2.5 shrink-0">
         <TopBarTooltip
-          label={isSidebarOpen ? '컨시어지 패널 닫기' : '컨시어지 패널 열기'}
+          label={isSidebarOpen ? t('common.sidebarClose', '컨시어지 패널 닫기') : t('common.sidebarOpen', '컨시어지 패널 열기')}
           align="left"
         >
           <button
             type="button"
             onClick={onToggleSidebar}
-            aria-label={isSidebarOpen ? '컨시어지 패널 닫기' : '컨시어지 패널 열기'}
+            aria-label={isSidebarOpen ? t('common.sidebarClose', '컨시어지 패널 닫기') : t('common.sidebarOpen', '컨시어지 패널 열기')}
             className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
               isSidebarOpen
                 ? 'text-neutral-300 hover:text-white hover:bg-white/[0.06]'
@@ -130,7 +140,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </TopBarTooltip>
 
         <span className="text-[13px] font-semibold text-white tracking-tight whitespace-nowrap shrink-0 hidden sm:inline">
-          바이브 캘린더
+          {t('common.appTitleFull', '바이브 캘린더 Vibe Calendar')}
         </span>
       </div>
 
@@ -147,16 +157,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </button>
         </TopBarTooltip>
 
-        <TopBarTooltip label="오늘 날짜로 이동" shortcut="T">
+        <TopBarTooltip label={t('common.today', '오늘 날짜로 이동')} shortcut="T">
           <button
             type="button"
             onClick={onToday}
             className="text-[13px] font-medium text-white hover:text-neutral-200 px-1.5 tracking-tight tabular-nums whitespace-nowrap transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 rounded-md"
           >
-            {viewMode === 'month' && `${currentYear}년 ${currentMonth + 1}월`}
-            {viewMode === 'week' && `${currentYear}년 ${getWeekRangeLabel(selectedDate)}`}
-            {viewMode === 'agenda' && formatKoreanDateWithDay(selectedDate, true)}
-            {viewMode === 'ops' && `공정 런시트 · ${currentYear}년 ${currentMonth + 1}월`}
+            {viewMode === 'month' && getLocalizedMonthLabel(currentYear, currentMonth, currentLocale)}
+            {viewMode === 'week' && `${currentYear} · ${getLocalizedWeekRangeLabel(selectedDate, currentLocale)}`}
+            {viewMode === 'agenda' && formatLocalizedDate(selectedDate, currentLocale)}
+            {viewMode === 'ops' && `${t('calendar.viewOpsTooltip', '공정 런시트')} · ${getLocalizedMonthLabel(currentYear, currentMonth, currentLocale)}`}
           </button>
         </TopBarTooltip>
 
@@ -171,13 +181,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </button>
         </TopBarTooltip>
 
-        <TopBarTooltip label="오늘로 이동" shortcut="T">
+        <TopBarTooltip label={t('common.today', '오늘로 이동')} shortcut="T">
           <button
             type="button"
             onClick={onToday}
             className="ml-0.5 px-1.5 h-6 rounded-md text-xs font-normal text-neutral-500 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
           >
-            오늘
+            {t('common.today', '오늘')}
           </button>
         </TopBarTooltip>
       </div>
@@ -199,14 +209,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           role="tablist"
           aria-label="캘린더 뷰 전환"
         >
-          {(
-            [
-              { mode: 'month', label: '월', tooltip: '월간 뷰', shortcut: 'M' },
-              { mode: 'week', label: '주', tooltip: '주간 뷰', shortcut: 'W' },
-              { mode: 'agenda', label: '일', tooltip: '일간 뷰', shortcut: 'D' },
-              { mode: 'ops', label: '공정', tooltip: '공정 런시트', shortcut: 'O' },
-            ] as const
-          ).map(({ mode, label, tooltip, shortcut }) => {
+          {[
+            { mode: 'month' as const, label: t('calendar.viewMonth', '월'), tooltip: t('calendar.viewMonthTooltip', '월간 뷰 (M)'), shortcut: 'M' },
+            { mode: 'week' as const, label: t('calendar.viewWeek', '주'), tooltip: t('calendar.viewWeekTooltip', '주간 뷰 (W)'), shortcut: 'W' },
+            { mode: 'agenda' as const, label: t('calendar.viewDay', '일'), tooltip: t('calendar.viewDayTooltip', '일간 뷰 (D)'), shortcut: 'D' },
+            { mode: 'ops' as const, label: t('calendar.viewOps', '공정'), tooltip: t('calendar.viewOpsTooltip', '공정 런시트 (O)'), shortcut: 'O' },
+          ].map(({ mode, label, tooltip, shortcut }) => {
             const active = viewMode === mode;
             return (
               <TopBarTooltip key={mode} label={tooltip} shortcut={shortcut}>
@@ -352,14 +360,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             onExportDone={showToast}
           />
 
+          <LanguageSelector />
+
           {vaultSlot}
 
           {onOpenCreateEvent && (
-            <TopBarTooltip label="새 일정 등록" shortcut="N" align="right">
+            <TopBarTooltip label={t('calendar.newEvent', '새 일정')} shortcut="N" align="right">
               <button
                 type="button"
                 onClick={onOpenCreateEvent}
-                aria-label="새 일정 등록"
+                aria-label={t('calendar.newEvent', '새 일정')}
                 className="ml-0.5 h-7 w-7 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.11] hover:border-white/[0.2] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] text-neutral-100 hover:text-white flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
               >
                 <Plus className="w-[15px] h-[15px]" strokeWidth={1.85} />

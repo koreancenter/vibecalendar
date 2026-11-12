@@ -192,9 +192,9 @@ export function getCalendarGrid(year: number, month: number): CalendarDayCell[] 
 }
 
 /**
- * 특정 기준일(YYYY-MM-DD)이 속한 주의 일요일~토요일 7일 배열 반환
+ * 특정 기준일(YYYY-MM-DD)이 속한 주의 일요일~토요일 7일 배열 반환 (로케일 지원)
  */
-export function getWeekDays(dateStr: string): WeekDayItem[] {
+export function getWeekDays(dateStr: string, locale: string = 'ko'): WeekDayItem[] {
   const target = parseLocalDate(dateStr);
   const targetMonth = target.getMonth() + 1;
   const sunday = new Date(target);
@@ -202,6 +202,9 @@ export function getWeekDays(dateStr: string): WeekDayItem[] {
 
   const todayStr = getTodayDateString();
   const week: WeekDayItem[] = [];
+  const langTag = locale.startsWith('en') ? 'en-US' : locale.startsWith('ja') ? 'ja-JP' : 'ko-KR';
+  const shortFmt = new Intl.DateTimeFormat(langTag, { weekday: 'short' });
+  const fullFmt = new Intl.DateTimeFormat(langTag, { weekday: 'long' });
 
   for (let i = 0; i < 7; i++) {
     const cur = new Date(sunday);
@@ -213,8 +216,8 @@ export function getWeekDays(dateStr: string): WeekDayItem[] {
     week.push({
       date: curStr,
       dayNumber: curD,
-      dayOfWeek: WEEKDAYS_SHORT[i],
-      dayOfWeekFull: WEEKDAYS_FULL[i],
+      dayOfWeek: shortFmt.format(cur),
+      dayOfWeekFull: fullFmt.format(cur),
       isToday: curStr === todayStr,
       isCurrentMonth: curM === targetMonth,
       monthNumber: curM,
@@ -233,3 +236,51 @@ export function getWeekRangeLabel(dateStr: string): string {
   const end = week[6];
   return `${start.monthNumber}월 ${start.dayNumber}일 ~ ${end.monthNumber}월 ${end.dayNumber}일`;
 }
+
+/**
+ * 로케일 기반 날짜 포맷팅 (Intl.DateTimeFormat 사용)
+ */
+export function formatLocalizedDate(
+  dateStr: string,
+  locale: string = 'ko',
+  options?: Intl.DateTimeFormatOptions
+): string {
+  const target = parseLocalDate(dateStr);
+  const langTag = locale.startsWith('en') ? 'en-US' : locale.startsWith('ja') ? 'ja-JP' : 'ko-KR';
+  return new Intl.DateTimeFormat(
+    langTag,
+    options || {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'short',
+    }
+  ).format(target);
+}
+
+/**
+ * 로케일 기반 주간 범위 문자열 포맷팅
+ */
+export function getLocalizedWeekRangeLabel(dateStr: string, locale: string = 'ko'): string {
+  const week = getWeekDays(dateStr);
+  const start = parseLocalDate(week[0].date);
+  const end = parseLocalDate(week[6].date);
+  const langTag = locale.startsWith('en') ? 'en-US' : locale.startsWith('ja') ? 'ja-JP' : 'ko-KR';
+
+  const fmt = new Intl.DateTimeFormat(langTag, { month: 'short', day: 'numeric' });
+  return `${fmt.format(start)} ~ ${fmt.format(end)}`;
+}
+
+/**
+ * 로케일 기반 월 라벨 포맷팅 (예: "2026년 11월", "November 2026", "2026年11月")
+ */
+export function getLocalizedMonthLabel(
+  year: number,
+  monthIndex: number,
+  locale: string = 'ko'
+): string {
+  const d = new Date(year, monthIndex, 1);
+  const langTag = locale.startsWith('en') ? 'en-US' : locale.startsWith('ja') ? 'ja-JP' : 'ko-KR';
+  return new Intl.DateTimeFormat(langTag, { year: 'numeric', month: 'long' }).format(d);
+}
+

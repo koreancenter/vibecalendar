@@ -880,6 +880,7 @@ function buildAgentPromptParts(reqData: ValidatedAgentRequest) {
     currentYear: context.currentYear,
     selectedDate: context.selectedDate,
     viewerTimeZone: context.viewerTimeZone,
+    viewerLocale: context.viewerLocale,
     activeProjectId: context.selectedProjectId !== 'all' ? context.selectedProjectId : null,
     activeProjectName: context.activeProjectName || null,
     projects: context.projects,
@@ -934,8 +935,16 @@ function buildAgentPromptParts(reqData: ValidatedAgentRequest) {
       ? '첨부된 파일 및 클립보드 데이터에서 일정, 일시, 장소, 참석자, 체크리스트 항목을 빠짐없이 분석하여 캘린더 일정으로 등록하고 핵심 내용을 브리핑해 주세요.'
       : '';
 
+  const viewerLocale = context.viewerLocale || 'ko';
+  let localeDirective = '';
+  if (viewerLocale.startsWith('en')) {
+    localeDirective = '\n[Language Directive: The user is currently using English interface. Please provide all conversational explanations and replyText in fluent, professional English, while keeping official proper nouns and addresses intact.]';
+  } else if (viewerLocale.startsWith('ja')) {
+    localeDirective = '\n[Language Directive: The user is currently using Japanese interface (日本語). Please provide all conversational explanations and replyText in natural, polite Japanese, while keeping official proper nouns and addresses intact.]';
+  }
+
   parts.push({
-    text: `[사용자 요청]\n${prompt || defaultAttachmentPrompt}`,
+    text: `[사용자 요청]${localeDirective}\n${prompt || defaultAttachmentPrompt}`,
   });
 
   return parts;

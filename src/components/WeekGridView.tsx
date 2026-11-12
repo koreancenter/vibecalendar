@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { getEventDateSpan, getWeekDays, WeekDayItem } from '../shared/dateUtils';
 import { expandRecurringEventsForRange } from '../shared/recurrenceUtils';
@@ -52,7 +53,11 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
   isWorkspaceEmpty = false,
   onLoadSampleData,
 }) => {
-  const weekDays: WeekDayItem[] = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
+  const { t, i18n } = useTranslation();
+  const weekDays: WeekDayItem[] = useMemo(
+    () => getWeekDays(selectedDate, i18n.language),
+    [selectedDate, i18n.language]
+  );
   const isComparing = comparedProjectIds.length >= 2;
 
   const [timelineHoverDate, setTimelineHoverDate] = useState<string | null>(null);
@@ -160,15 +165,15 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
             </>
           ) : (
             <span className="text-[10.5px] text-white/38 tabular-nums tracking-tight truncate">
-              {viewerShortCode || '시간'}
+              {viewerShortCode || t('calendar.time', '시간')}
             </span>
           )}
         </div>
 
         <div className="flex-1 grid grid-cols-7 divide-x divide-white/[0.06]">
-          {weekDays.map((day) => {
+          {weekDays.map((day, idx) => {
             const isSelected = day.date === selectedDate;
-            const isWeekend = day.dayOfWeek === '일' || day.dayOfWeek === '토';
+            const isWeekend = idx === 0 || idx === 6;
             const isDropTarget =
               timelineHoverDate === day.date || allDayDropDate === day.date;
 
@@ -233,7 +238,7 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
                 : 'w-14 sm:w-16'
             } border-r border-white/[0.07] p-1.5 text-center text-[10px] font-medium text-neutral-500 flex items-center justify-center shrink-0`}
           >
-            종일
+            {t('calendar.allDay', '종일')}
           </div>
           <div className="flex-1 grid grid-cols-7 divide-x divide-white/[0.06]">
             {weekDays.map((day) => {

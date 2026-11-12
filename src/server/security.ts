@@ -585,6 +585,7 @@ export const AgentContextSchema = z.object({
     })
     .optional(),
   viewerTimeZone: z.string().max(80).nullish(),
+  viewerLocale: z.string().max(20).nullish(),
   existingEvents: z
     .array(CalendarEventInputSchema)
     .max(MAX_EXISTING_EVENTS_INPUT)
@@ -732,6 +733,7 @@ export interface SanitizedAgentContext {
   currentYear: number;
   selectedDate: string;
   viewerTimeZone: string;
+  viewerLocale?: string;
   selectedProjectId: string;
   activeProjectName?: string;
   existingEvents: CalendarEventItem[];
@@ -1052,6 +1054,9 @@ export function sanitizeAgentCommandPayload(
 
   const selectedProjectId = sanitizeIdentifier(rawCtx?.selectedProjectId, 80) || 'all';
   const activeProjectName = sanitizeSingleLineText(rawCtx?.activeProjectName, 100) || undefined;
+  const viewerLocale = rawCtx?.viewerLocale
+    ? sanitizeSingleLineText(rawCtx.viewerLocale, 16).toLowerCase()
+    : undefined;
 
   return {
     prompt,
@@ -1062,6 +1067,7 @@ export function sanitizeAgentCommandPayload(
       currentYear,
       selectedDate,
       viewerTimeZone,
+      viewerLocale,
       selectedProjectId,
       activeProjectName,
       existingEvents,
