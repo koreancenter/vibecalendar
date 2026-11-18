@@ -127,8 +127,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             aria-label={isSidebarOpen ? t('common.sidebarClose', '컨시어지 패널 닫기') : t('common.sidebarOpen', '컨시어지 패널 열기')}
             className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
               isSidebarOpen
-                ? 'text-neutral-300 hover:text-white hover:bg-white/[0.06]'
-                : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.06]'
+                ? 'text-neutral-200 hover:text-white hover:bg-white/[0.06]'
+                : 'text-neutral-300 hover:text-white hover:bg-white/[0.06]'
             }`}
           >
             {isSidebarOpen ? (
@@ -151,7 +151,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             type="button"
             onClick={onPrev}
             aria-label={prevLabel}
-            className="h-7 w-7 rounded-lg flex items-center justify-center text-neutral-500 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
+            className="h-7 w-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
           >
             <ChevronLeft className="w-[15px] h-[15px]" strokeWidth={1.65} />
           </button>
@@ -175,19 +175,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             type="button"
             onClick={onNext}
             aria-label={nextLabel}
-            className="h-7 w-7 rounded-lg flex items-center justify-center text-neutral-500 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
+            className="h-7 w-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
           >
             <ChevronRight className="w-[15px] h-[15px]" strokeWidth={1.65} />
-          </button>
-        </TopBarTooltip>
-
-        <TopBarTooltip label={t('common.today', '오늘로 이동')} shortcut="T">
-          <button
-            type="button"
-            onClick={onToday}
-            className="ml-0.5 px-1.5 h-6 rounded-md text-xs font-normal text-neutral-500 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
-          >
-            {t('common.today', '오늘')}
           </button>
         </TopBarTooltip>
       </div>
@@ -225,8 +215,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   onClick={() => onChangeViewMode(mode)}
                   className={`h-6 px-2 sm:px-2.5 rounded-[6px] text-[11.5px] leading-none inline-flex items-center justify-center transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
                     active
-                      ? 'bg-white/[0.10] text-white font-medium shadow-[0_1px_2px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]'
-                      : 'text-neutral-500 hover:text-neutral-200 font-normal'
+                      ? 'bg-white/[0.12] text-white font-medium shadow-[0_1px_2px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]'
+                      : 'text-neutral-300 hover:text-white font-normal'
                   }`}
                 >
                   {label}
@@ -241,12 +231,12 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {/* Cluster 3: 정밀 유틸리티 아이콘 열 (검색 · 내보내기 · 볼트 · 새 일정 앵커) */}
         <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {onOpenCommandPalette && (
-            <TopBarTooltip label="통합 검색" shortcut="⌘K" align="right">
+            <TopBarTooltip label={t('common.search', '통합 검색')} shortcut="⌘K" align="right">
               <button
                 type="button"
                 onClick={onOpenCommandPalette}
-                aria-label="통합 검색 및 명령 팔레트"
-                className="h-7 w-7 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
+                aria-label={t('common.search', '통합 검색 및 명령 팔레트')}
+                className="h-7 w-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25"
               >
                 <Search className="w-[15px] h-[15px]" strokeWidth={1.65} />
               </button>
@@ -259,10 +249,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <TopBarTooltip
               label={
                 syncConflictCount > 0
-                  ? `외부 동기화 · 충돌 ${syncConflictCount}건`
+                  ? `${t('common.externalSync', '외부 동기화')} · ${syncConflictCount}`
                   : syncedAccountCount > 0
-                  ? `외부 캘린더 동기화 (${syncedAccountCount})`
-                  : '외부 캘린더 · CalDAV 동기화'
+                  ? `${t('common.externalSync', '외부 동기화')} (${syncedAccountCount})`
+                  : t('common.externalSync', '외부 동기화')
               }
               shortcut="S"
               align="right"
@@ -270,13 +260,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               <button
                 type="button"
                 onClick={onOpenExternalSync}
-                aria-label="외부 캘린더 및 CalDAV 동기화 허브"
+                aria-label={t('common.externalSync', '외부 캘린더 및 CalDAV 동기화 허브')}
                 className={`relative h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
                   syncConflictCount > 0
                     ? 'text-amber-300 hover:text-amber-200 hover:bg-white/[0.06]'
                     : syncedAccountCount > 0
-                    ? 'text-neutral-200 hover:text-white hover:bg-white/[0.06]'
-                    : 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+                    ? 'text-neutral-100 hover:text-white hover:bg-white/[0.06]'
+                    : 'text-neutral-300 hover:text-white hover:bg-white/[0.06]'
                 }`}
               >
                 <RefreshCw
@@ -296,11 +286,9 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           {onOpenNotificationSettings && (
             <TopBarTooltip
               label={
-                isNotificationEnabled
-                  ? scheduledAlertCount > 0
-                    ? `알림 엔진 활성 · 예약 ${scheduledAlertCount}건`
-                    : '알림 · 백그라운드 푸시 활성'
-                  : '고급 알림 · 백그라운드 푸시 설정'
+                isNotificationEnabled && scheduledAlertCount > 0
+                  ? `${t('common.notifications', '알림 설정')} (${scheduledAlertCount})`
+                  : t('common.notifications', '알림 설정')
               }
               shortcut="B"
               align="right"
@@ -308,11 +296,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               <button
                 type="button"
                 onClick={onOpenNotificationSettings}
-                aria-label="고급 알림 및 백그라운드 푸시 설정"
+                aria-label={t('common.notifications', '알림 설정')}
                 className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
                   isNotificationEnabled
-                    ? 'text-neutral-200 hover:text-white hover:bg-white/[0.06]'
-                    : 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+                    ? 'text-neutral-100 hover:text-white hover:bg-white/[0.06]'
+                    : 'text-neutral-300 hover:text-white hover:bg-white/[0.06]'
                 }`}
               >
                 <Bell className="w-[14.5px] h-[14.5px]" strokeWidth={1.65} />
@@ -324,8 +312,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <TopBarTooltip
               label={
                 collabRoomCount > 0
-                  ? `라이브 협업 룸 (${collabRoomCount})`
-                  : '라이브 협업 · 실시간 조율 허브'
+                  ? `${t('common.collab', '라이브 협업')} (${collabRoomCount})`
+                  : t('common.collab', '라이브 협업')
               }
               shortcut="R"
               align="right"
@@ -333,11 +321,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               <button
                 type="button"
                 onClick={onOpenCollabHub}
-                aria-label="라이브 협업 및 실시간 시간대 조율 허브"
+                aria-label={t('common.collab', '라이브 협업')}
                 className={`h-7 w-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
                   collabRoomCount > 0
-                    ? 'text-neutral-200 hover:text-white hover:bg-white/[0.06]'
-                    : 'text-neutral-400 hover:text-white hover:bg-white/[0.06]'
+                    ? 'text-neutral-100 hover:text-white hover:bg-white/[0.06]'
+                    : 'text-neutral-300 hover:text-white hover:bg-white/[0.06]'
                 }`}
               >
                 <Users className="w-[14.5px] h-[14.5px]" strokeWidth={1.65} />
@@ -365,11 +353,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           {vaultSlot}
 
           {onOpenCreateEvent && (
-            <TopBarTooltip label={t('calendar.newEvent', '새 일정')} shortcut="N" align="right">
+            <TopBarTooltip label={t('common.newEvent', '새 일정')} shortcut="N" align="right">
               <button
                 type="button"
                 onClick={onOpenCreateEvent}
-                aria-label={t('calendar.newEvent', '새 일정')}
+                aria-label={t('common.newEvent', '새 일정')}
                 className="ml-0.5 h-7 w-7 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.11] hover:border-white/[0.2] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] text-neutral-100 hover:text-white flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
               >
                 <Plus className="w-[15px] h-[15px]" strokeWidth={1.85} />

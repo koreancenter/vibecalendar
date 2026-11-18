@@ -18,6 +18,7 @@ export const ja = {
     undo: '元に戻す',
     loading: '読み込み中...',
     all: 'すべて',
+    unassigned: '未指定',
     externalSync: '外部同期',
     notifications: '通知設定',
     collab: '共同作業',
@@ -37,6 +38,10 @@ export const ja = {
     viewWeekTooltip: '週間ビュー (W)',
     viewDayTooltip: '日間ビュー (D)',
     viewOpsTooltip: '工程ランシート (O)',
+    time: '時間',
+    categoryLabel: 'カテゴリー',
+    repeat: '繰り返し',
+    filterCategory: 'カテゴリーフィルター',
     categories: {
       work: '業務',
       business_trip: '出張・訪問',

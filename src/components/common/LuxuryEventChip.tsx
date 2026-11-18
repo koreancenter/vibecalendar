@@ -1,8 +1,10 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, CheckCircle, Lock } from 'lucide-react';
 import { CalendarEventItem } from '../../types';
 import { ResolvedEventTiming } from '../../shared/timeZoneUtils';
 import { EventLuxuryTheme } from '../../utils/eventTheme';
+import { formatLocalizedEventTitle } from '../../utils/eventLocalization';
 
 export interface EventChecklistStats {
   total: number;
@@ -96,6 +98,8 @@ const LuxuryEventChipComponent: React.FC<LuxuryEventChipProps> = ({
   onMouseEnter,
   onMouseLeave,
 }) => {
+  const { i18n } = useTranslation();
+  const localizedTitle = formatLocalizedEventTitle(event, { locale: i18n.language });
   const proj = theme.project;
   const isCompleted = Boolean(event.isCompleted);
   const isReadOnlyExternal = Boolean(event.externalSync?.readOnly);
@@ -128,19 +132,17 @@ const LuxuryEventChipComponent: React.FC<LuxuryEventChipProps> = ({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onClick={onClick}
-      className={`relative overflow-hidden ${sizeClasses} font-[450] tracking-[0.014em] leading-[1.4] flex items-center gap-2.5 border luxury-event-chip hover:z-20 ${cursorClasses} ${
+      className={`relative overflow-hidden ${sizeClasses} font-medium tracking-[0.014em] leading-[1.4] flex items-center gap-2 border luxury-event-chip hover:z-20 ${cursorClasses} ${
         theme.chipSurfaceClass
-      } ${isSelected && !isDragging ? theme.selectedSurfaceClass : ''} ${
+      } ${!isDragging ? theme.hoverBorderClass : ''} ${
+        isSelected && !isDragging ? theme.selectedSurfaceClass : ''
+      } ${
         isDragging ? 'opacity-30 scale-95 border-dashed border-white/35' : ''
-      } ${isCompleted && !isDragging ? 'opacity-55' : ''} ${siblingDragShieldClass}`}
+      } ${isCompleted && !isDragging ? 'opacity-75' : ''} ${siblingDragShieldClass}`}
     >
-      <span
-        aria-hidden="true"
-        className={`relative z-10 w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
-      />
 
       {timeLabel && (
-        <span className="relative z-10 text-[10.5px] font-[370] text-white/46 shrink-0 tabular-nums tracking-[0.032em]">
+        <span className="relative z-10 text-[10.5px] font-normal text-white/82 shrink-0 tabular-nums tracking-[0.032em]">
           {timeLabel}
         </span>
       )}
@@ -149,35 +151,35 @@ const LuxuryEventChipComponent: React.FC<LuxuryEventChipProps> = ({
         <span
           className={`relative z-10 ${
             size === 'md' ? 'text-[10.5px]' : 'text-[10px]'
-          } font-[440] shrink-0 tracking-[0.03em] ${theme.accentTextClass}`}
+          } font-medium shrink-0 tracking-[0.03em] ${theme.accentTextClass}`}
         >
           {proj.code || proj.name.slice(0, projectCodeMaxLength)}
         </span>
       )}
 
       {hasConflict && (
-        <AlertTriangle className="relative z-10 w-3 h-3 text-amber-300/90 shrink-0" />
+        <AlertTriangle className="relative z-10 w-3 h-3 text-amber-300 shrink-0" />
       )}
 
       {showCompletionIcon && isCompleted && (
-        <CheckCircle className="relative z-10 w-3 h-3 text-emerald-300/90 shrink-0" />
+        <CheckCircle className="relative z-10 w-3 h-3 text-emerald-300 shrink-0" />
       )}
 
       {isMaskedExternal && (
-        <Lock className="relative z-10 w-2.5 h-2.5 text-white/38 shrink-0" />
+        <Lock className="relative z-10 w-2.5 h-2.5 text-white/65 shrink-0" />
       )}
 
       <span
         className={`relative z-10 truncate ${
-          isCompleted ? 'line-through text-white/32' : isMaskedExternal ? 'text-white/65' : 'text-[#f2f4f8]'
+          isCompleted ? 'line-through text-white/60' : isMaskedExternal ? 'text-white/85' : 'text-white'
         }`}
       >
-        {event.title}
+        {localizedTitle}
       </span>
 
       {showChecklistBadge && checklistTotal > 0 && (
         <span
-          className="relative z-10 ml-auto pl-1 text-[10px] font-[360] tracking-[0.04em] text-white/36 tabular-nums shrink-0"
+          className="relative z-10 ml-auto pl-1 text-[10px] font-medium tracking-[0.04em] text-white/75 tabular-nums shrink-0"
           title={`체크리스트 ${checklistDone}/${checklistTotal}`}
         >
           {checklistDone}/{checklistTotal}

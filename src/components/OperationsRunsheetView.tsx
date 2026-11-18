@@ -32,9 +32,14 @@ import {
   CalendarEventViewModel,
   useCalendarEventViewModels,
 } from '../hooks/useCalendarEventViewModels';
+import { useTranslation } from 'react-i18next';
 import { getEventChecklistStats } from './common/LuxuryEventChip';
 import { DayInspectorPanel } from './DayInspectorPanel';
 import { EventDetailContent } from './EventDetailContent';
+import {
+  formatLocalizedEventCategory,
+  formatLocalizedEventTitle,
+} from '../utils/eventLocalization';
 
 type OpsFilterKey = 'all' | 'pending' | 'overdue' | 'checklist' | 'conflict';
 type OpsSubLayout = 'table' | 'board';
@@ -121,6 +126,7 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
   onRequestReverseMilestones,
   onAutoRebalance,
 }) => {
+  const { t, i18n } = useTranslation();
   const [filterKey, setFilterKey] = useState<OpsFilterKey>('all');
   const [subLayout, setSubLayout] = useState<OpsSubLayout>('table');
   const [searchQuery, setSearchQuery] = useState('');
@@ -712,7 +718,7 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
                           {/* 2. 시간 */}
                           <span className="font-mono tabular-nums text-xs text-neutral-300 whitespace-nowrap">
                             {ev.isAllDay
-                              ? '종일'
+                              ? t('calendar.allDay', '종일')
                               : `${vm.timing.localStartTime}–${vm.timing.localEndTime}`}
                           </span>
 
@@ -727,7 +733,7 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
                                   isDone ? 'line-through text-neutral-500' : 'text-neutral-100'
                                 }`}
                               >
-                                {ev.title}
+                                {formatLocalizedEventTitle(ev, { locale: i18n.language })}
                               </span>
                             </div>
 
@@ -740,7 +746,9 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
                                   <span aria-hidden="true">·</span>
                                 </>
                               )}
-                              <span className="shrink-0">{ev.category}</span>
+                              <span className="shrink-0">
+                                {formatLocalizedEventCategory(ev.category, i18n.language)}
+                              </span>
                               {recShort && (
                                 <>
                                   <span aria-hidden="true">·</span>
@@ -875,7 +883,7 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
                                   isDone ? 'line-through text-neutral-500' : 'text-neutral-100'
                                 }`}
                               >
-                                {ev.title}
+                                {formatLocalizedEventTitle(ev, { locale: i18n.language })}
                               </span>
                             </div>
                           </div>
@@ -886,7 +894,7 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
                               ·
                             </span>
                             <span>
-                              {ev.isAllDay ? '종일' : vm.timing.localStartTime}
+                              {ev.isAllDay ? t('calendar.allDay', '종일') : vm.timing.localStartTime}
                             </span>
                             {recShort && (
                               <>
@@ -941,7 +949,6 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
           onDeleteChecklistItem={onDeleteChecklistItem}
           onOpenCreateEvent={onOpenCreateEvent}
           onShareEvent={onShareEvent}
-          emptyGuideText={emptyGuideText}
         />
       </div>
 

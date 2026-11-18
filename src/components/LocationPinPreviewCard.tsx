@@ -276,24 +276,24 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
   return (
     <section
       aria-label="장소 위치 미리보기 및 좌표 정보"
-      className="rounded-xl bg-[#151923] border border-white/[0.08] overflow-hidden"
+      className="space-y-3"
     >
-      {/* 상단 섹션 타이틀 & 편집/자동보완 액션 바 */}
-      <div className="px-3.5 py-2.5 border-b border-white/[0.06] bg-[#121620] flex items-center justify-between gap-2 select-none">
+      {/* 상단 섹션 헤더 & 편집/자동보완 액션 */}
+      <div className="flex items-center justify-between gap-2 select-none">
         <div className="flex items-center gap-1.5 min-w-0">
           <MapPin className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-          <span className="text-xs font-medium text-neutral-200 truncate">
+          <span className="text-xs font-medium text-neutral-300 truncate">
             장소 위치 및 상세 명세
           </span>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {canSuggestAutoResolve && (
             <button
               type="button"
               onClick={onAutoResolve}
               disabled={isAutoResolving}
-              className="h-6 px-2 rounded-md bg-white/[0.04] hover:bg-white/[0.09] disabled:opacity-50 border border-white/[0.08] text-[10.5px] text-neutral-200 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="h-6 px-2 rounded-md text-[11px] text-neutral-300 hover:text-white hover:bg-white/[0.06] disabled:opacity-50 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               title="검색을 통해 정확한 도로명 주소와 WGS84 위경도를 자동 보완합니다"
             >
               {isAutoResolving ? (
@@ -309,10 +309,10 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
             <button
               type="button"
               onClick={onEdit}
-              className="h-6 px-2 rounded-md bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-[10.5px] text-neutral-300 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="h-6 px-2 rounded-md text-[11px] text-neutral-300 hover:text-white hover:bg-white/[0.06] inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               title="장소명 · 상세 주소 · 위경도 직접 편집"
             >
-              <Pencil className="w-2.5 h-2.5 shrink-0" />
+              <Pencil className="w-3 h-3 shrink-0" />
               <span>편집</span>
             </button>
           )}
@@ -326,8 +326,8 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
         className={`relative w-full ${
-          compact ? 'h-40' : 'h-48 sm:h-52'
-        } bg-[#0b0f17] overflow-hidden select-none border-b border-white/[0.07] ${
+          compact ? 'h-36' : 'h-44 sm:h-48'
+        } rounded-lg bg-[#0b0f17] overflow-hidden select-none border border-white/[0.08] ${
           isDragging ? 'cursor-grabbing' : 'cursor-grab'
         }`}
       >
@@ -519,34 +519,19 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
           </svg>
         </div>
 
-        {/* 상단 비네팅 스크림 (오버레이 가독성 확보) */}
+        {/* 상단 비네팅 스크림 (외부 지도 링크 시인성 확보) */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-black/55 to-transparent"
+          className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-black/50 to-transparent"
         />
 
-        {/* 좌측 상단: 핀 장소명 플로팅 콜아웃 */}
-        <div className="pointer-events-none absolute top-2.5 left-2.5 max-w-[42%] sm:max-w-[48%] flex items-start z-10">
-          <div className="px-2.5 py-1.5 rounded-lg bg-[#0e121b]/90 backdrop-blur-xs border border-white/[0.10] shadow-lg min-w-0 max-w-full">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${accentDotClass}`} />
-              <span className="text-[11px] font-semibold text-neutral-100 truncate">
-                {event.location || event.locationAddress || '지정 위치'}
-              </span>
-            </div>
-            <p className="text-[10px] text-neutral-400 truncate mt-0.5">
-              {event.locationAddress || regionalAnchor.regionLabel || '위치 확인'}
-            </p>
-          </div>
-        </div>
-
-        {/* 우측 상단: 외부 네이버 지도 / 카카오맵 / Google 지도 링크 */}
+        {/* 우측 상단: 외부 네이버 지도 / 카카오맵 / Google 지도 링크 (좌측 콜아웃 제거로 겹침 완전 해소) */}
         <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10 flex-wrap justify-end">
           <a
             href={naverMapUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="h-7 px-2.5 rounded-lg bg-[#111520]/92 hover:bg-[#192030] border border-white/[0.12] hover:border-emerald-500/40 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 inline-flex items-center gap-1 shadow-lg transition-colors whitespace-nowrap shrink-0"
+            className="h-6.5 px-2.5 rounded-md bg-[#0e121b]/88 backdrop-blur-xs hover:bg-[#192030] border border-white/[0.11] hover:border-emerald-500/40 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 inline-flex items-center gap-1 shadow-md transition-colors whitespace-nowrap shrink-0"
             title="네이버 지도에서 해당 위치 열기"
           >
             <span>네이버 지도</span>
@@ -556,7 +541,7 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
             href={kakaoMapUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="h-7 px-2.5 rounded-lg bg-[#111520]/92 hover:bg-[#192030] border border-white/[0.12] hover:border-amber-400/40 text-[11px] font-medium text-amber-300 hover:text-amber-200 inline-flex items-center gap-1 shadow-lg transition-colors whitespace-nowrap shrink-0"
+            className="h-6.5 px-2.5 rounded-md bg-[#0e121b]/88 backdrop-blur-xs hover:bg-[#192030] border border-white/[0.11] hover:border-amber-400/40 text-[11px] font-medium text-amber-300 hover:text-amber-200 inline-flex items-center gap-1 shadow-md transition-colors whitespace-nowrap shrink-0"
             title="카카오맵에서 해당 위치 열기"
           >
             <span>카카오맵</span>
@@ -566,7 +551,7 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
             href={googleMapsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="h-7 px-2.5 rounded-lg bg-[#111520]/92 hover:bg-[#192030] border border-white/[0.12] hover:border-white/[0.24] text-[11px] font-medium text-neutral-100 inline-flex items-center gap-1 shadow-lg transition-colors whitespace-nowrap shrink-0"
+            className="h-6.5 px-2.5 rounded-md bg-[#0e121b]/88 backdrop-blur-xs hover:bg-[#192030] border border-white/[0.11] hover:border-white/[0.24] text-[11px] font-medium text-neutral-100 inline-flex items-center gap-1 shadow-md transition-colors whitespace-nowrap shrink-0"
             title="Google 지도에서 해당 위치 열기"
           >
             <span>Google 지도</span>
@@ -574,7 +559,7 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
           </a>
         </div>
 
-        {/* 좌측 하단: 축척(Scale) 표시 바 */}
+        {/* 좌측 하단: 축척(Scale) & 지역 앵커 표시 */}
         <div className="pointer-events-none absolute bottom-2.5 left-2.5 px-2 py-1 rounded-md bg-[#0e121b]/85 border border-white/[0.08] flex items-center gap-2">
           <span className="text-[10px] font-mono tabular-nums text-neutral-300">
             {ZOOM_SCALE_METERS[zoom] || '100m'}
@@ -583,6 +568,11 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
           <span className="text-[9.5px] font-mono tabular-nums text-neutral-500">
             Z{zoom}
           </span>
+          {regionalAnchor.regionLabel && !exactCoords && (
+            <span className="text-[9.5px] text-neutral-400 border-l border-white/[0.10] pl-1.5">
+              {regionalAnchor.regionLabel}
+            </span>
+          )}
         </div>
 
         {/* 우측 하단: 구글 지도 스타일 줌(+/-) & 중심 복귀 컨트롤 */}
@@ -591,7 +581,7 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
             <button
               type="button"
               onClick={handleResetView}
-              className="w-7 h-7 rounded-lg bg-[#111520]/92 hover:bg-[#1a2030] border border-white/[0.12] text-neutral-200 hover:text-white flex items-center justify-center shadow-lg transition-colors cursor-pointer"
+              className="w-7 h-7 rounded-md bg-[#0e121b]/90 hover:bg-[#1a2030] border border-white/[0.12] text-neutral-200 hover:text-white flex items-center justify-center shadow-md transition-colors cursor-pointer"
               title="핀 중심으로 화면 정렬"
               aria-label="핀 중심으로 화면 정렬"
             >
@@ -599,7 +589,7 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
             </button>
           )}
 
-          <div className="flex flex-col rounded-lg bg-[#111520]/92 border border-white/[0.12] divide-y divide-white/[0.09] shadow-lg overflow-hidden">
+          <div className="flex flex-col rounded-md bg-[#0e121b]/90 border border-white/[0.12] divide-y divide-white/[0.09] shadow-md overflow-hidden">
             <button
               type="button"
               onClick={() => setZoom((z) => Math.min(18, z + 1))}
@@ -626,27 +616,30 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
 
       {/* 자동 보완 안내 배너 (발생 시) */}
       {autoResolveNotice && (
-        <div className="px-3.5 py-2 border-b border-white/[0.06] bg-white/[0.02] text-[11px] text-neutral-300">
+        <div className="py-1.5 text-[11px] text-neutral-400">
           {autoResolveNotice}
         </div>
       )}
 
-      {/* 하단 구조화 명세 테이블: [1] 공식 장소명 / [2] 상세 주소 / [3] 지도 바로가기 */}
+      {/* 하단 에디토리얼 헤어라인 명세 리스트 (박스 제거 · 1px 수평 헤어라인 구분) */}
       <div className="divide-y divide-white/[0.06] select-text">
         {/* 1. 공식 장소명 */}
-        <div className="px-3.5 py-2.5 space-y-0.5">
-          <span className="block text-[10.5px] font-medium text-neutral-500">
+        <div className="py-2.5 flex items-start justify-between gap-4">
+          <span className="text-[11px] font-medium text-neutral-300 shrink-0 pt-0.5">
             공식 장소명
           </span>
-          <p className="text-xs sm:text-[13px] font-semibold text-neutral-100 leading-snug break-words">
-            {event.location || '장소명 미기재'}
-          </p>
+          <div className="flex items-center gap-1.5 min-w-0 text-right">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${accentDotClass}`} />
+            <p className="text-[13px] font-medium text-white leading-snug break-words">
+              {event.location || '장소명 미기재'}
+            </p>
+          </div>
         </div>
 
         {/* 2. 상세 주소 */}
-        <div className="px-3.5 py-2.5 space-y-1">
+        <div className="py-2.5 space-y-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[10.5px] font-medium text-neutral-500">
+            <span className="text-[11px] font-medium text-neutral-300">
               상세 주소
             </span>
 
@@ -654,13 +647,13 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
               <button
                 type="button"
                 onClick={handleCopyAddress}
-                className="h-5 px-1.5 rounded bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] text-[10px] text-neutral-300 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none"
+                className="text-[11px] text-neutral-300 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none"
                 title="상세 주소 복사"
               >
                 {isAddressCopied ? (
-                  <Check className="w-2.5 h-2.5 text-emerald-400 shrink-0" />
+                  <Check className="w-3 h-3 text-emerald-400 shrink-0" />
                 ) : (
-                  <Copy className="w-2.5 h-2.5 shrink-0" />
+                  <Copy className="w-3 h-3 shrink-0" />
                 )}
                 <span>{isAddressCopied ? '복사됨' : '주소 복사'}</span>
               </button>
@@ -668,132 +661,120 @@ export const LocationPinPreviewCard: React.FC<LocationPinPreviewCardProps> = ({
           </div>
 
           {event.locationAddress ? (
-            <p className="text-xs text-neutral-200 leading-relaxed break-words">
+            <p className="text-xs text-neutral-100 leading-relaxed break-words">
               {event.locationAddress}
             </p>
           ) : (
-            <p className="text-xs text-neutral-500 leading-relaxed">
+            <p className="text-xs text-neutral-400 leading-relaxed">
               상세 도로명·지번 주소 미입력
             </p>
           )}
         </div>
 
-        {/* 3. 장소 전화번호 (대표 유선 · 현장 담당자 모바일) */}
-        <div className="px-3.5 py-2.5 space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[10.5px] font-medium text-neutral-500">
-              장소 전화번호 (대표 유선 · 담당자 모바일)
-            </span>
-            {onEdit && (
-              <button
-                type="button"
-                onClick={onEdit}
-                className="h-5 px-1.5 rounded bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] text-[10px] text-neutral-400 hover:text-neutral-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none"
-                title="전화번호 및 위치 편집"
-              >
-                <Pencil className="w-2.5 h-2.5 shrink-0" />
-                <span>연락처 관리</span>
-              </button>
-            )}
-          </div>
-
+        {/* 3. 현장 연락처 (대표 유선 · 담당자 모바일) */}
+        <div className="py-2.5">
           {event.locationPhone || event.locationMobilePhone ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
-              {/* 대표 유선 번호 */}
-              <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/[0.07] flex items-center justify-between gap-2 min-w-0">
-                <div className="min-w-0 flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-sky-500/12 border border-sky-500/25 text-sky-400 flex items-center justify-center shrink-0">
-                    <Phone className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="block text-[10px] font-medium text-neutral-500 leading-tight">
-                      대표 유선 번호
-                    </span>
-                    <span className="text-xs font-semibold font-mono tabular-nums text-neutral-100 truncate block mt-0.5">
-                      {event.locationPhone ? formatPhoneDisplay(event.locationPhone) : '미등록'}
-                    </span>
-                  </div>
-                </div>
-
-                {event.locationPhone && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <a
-                      href={`tel:${cleanTelHref(event.locationPhone)}`}
-                      className="h-6.5 px-2 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-[10.5px] font-medium text-sky-300 hover:text-white inline-flex items-center gap-1 transition-colors whitespace-nowrap cursor-pointer"
-                      title="대표 유선 전화 걸기"
-                    >
-                      <PhoneCall className="w-2.5 h-2.5 shrink-0" />
-                      <span>통화</span>
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyPhone(event.locationPhone!, 'landline')}
-                      className="h-6.5 w-6.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.08] text-neutral-300 hover:text-white inline-flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                      title="대표 유선 번호 복사"
-                    >
-                      {copiedPhoneType === 'landline' ? (
-                        <Check className="w-3 h-3 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                    </button>
-                  </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium text-neutral-300">
+                  현장 연락처
+                </span>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={onEdit}
+                    className="text-[11px] text-neutral-300 hover:text-white inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none"
+                    title="전화번호 및 위치 편집"
+                  >
+                    <Pencil className="w-2.5 h-2.5 shrink-0" />
+                    <span>연락처 관리</span>
+                  </button>
                 )}
               </div>
 
-              {/* 현장 담당자 모바일 */}
-              <div className="p-2.5 rounded-xl bg-white/[0.025] border border-white/[0.07] flex items-center justify-between gap-2 min-w-0">
-                <div className="min-w-0 flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500/12 border border-emerald-500/25 text-emerald-400 flex items-center justify-center shrink-0">
-                    <Smartphone className="w-3.5 h-3.5" />
+              <div className="divide-y divide-white/[0.04]">
+                {event.locationPhone && (
+                  <div className="py-1.5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Phone className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span className="text-[11px] text-neutral-300 shrink-0">대표 유선</span>
+                      <span className="text-xs font-medium font-mono tabular-nums text-white truncate">
+                        {formatPhoneDisplay(event.locationPhone)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 select-none">
+                      <a
+                        href={`tel:${cleanTelHref(event.locationPhone)}`}
+                        className="text-[11px] font-medium text-sky-300 hover:text-sky-200 inline-flex items-center gap-1 transition-colors whitespace-nowrap cursor-pointer"
+                        title="대표 유선 전화 걸기"
+                      >
+                        <PhoneCall className="w-3 h-3 shrink-0" />
+                        <span>통화</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyPhone(event.locationPhone!, 'landline')}
+                        className="p-1 text-neutral-300 hover:text-white transition-colors cursor-pointer shrink-0"
+                        title="대표 유선 번호 복사"
+                      >
+                        {copiedPhoneType === 'landline' ? (
+                          <Check className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="block text-[10px] font-medium text-neutral-500 leading-tight">
-                      현장/담당자 모바일
-                    </span>
-                    <span className="text-xs font-semibold font-mono tabular-nums text-neutral-100 truncate block mt-0.5">
-                      {event.locationMobilePhone ? formatPhoneDisplay(event.locationMobilePhone) : '미등록'}
-                    </span>
-                  </div>
-                </div>
+                )}
 
                 {event.locationMobilePhone && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <a
-                      href={`tel:${cleanTelHref(event.locationMobilePhone)}`}
-                      className="h-6.5 px-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-[10.5px] font-medium text-emerald-300 hover:text-white inline-flex items-center gap-1 transition-colors whitespace-nowrap cursor-pointer"
-                      title="담당자 휴대전화 걸기"
-                    >
-                      <PhoneCall className="w-2.5 h-2.5 shrink-0" />
-                      <span>통화</span>
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyPhone(event.locationMobilePhone!, 'mobile')}
-                      className="h-6.5 w-6.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.08] text-neutral-300 hover:text-white inline-flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                      title="휴대전화 번호 복사"
-                    >
-                      {copiedPhoneType === 'mobile' ? (
-                        <Check className="w-3 h-3 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                    </button>
+                  <div className="py-1.5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Smartphone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="text-[11px] text-neutral-300 shrink-0">담당자 모바일</span>
+                      <span className="text-xs font-medium font-mono tabular-nums text-white truncate">
+                        {formatPhoneDisplay(event.locationMobilePhone)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 select-none">
+                      <a
+                        href={`tel:${cleanTelHref(event.locationMobilePhone)}`}
+                        className="text-[11px] font-medium text-emerald-300 hover:text-emerald-200 inline-flex items-center gap-1 transition-colors whitespace-nowrap cursor-pointer"
+                        title="담당자 휴대전화 걸기"
+                      >
+                        <PhoneCall className="w-3 h-3 shrink-0" />
+                        <span>통화</span>
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyPhone(event.locationMobilePhone!, 'mobile')}
+                        className="p-1 text-neutral-300 hover:text-white transition-colors cursor-pointer shrink-0"
+                        title="휴대전화 번호 복사"
+                      >
+                        {copiedPhoneType === 'mobile' ? (
+                          <Check className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
             </div>
           ) : (
-            <div className="py-2 px-3 rounded-lg bg-white/[0.02] border border-white/[0.05] flex items-center justify-between text-xs text-neutral-400">
-              <span className="text-[11px] text-neutral-500">등록된 대표 유선 또는 현장 담당자 휴대전화 번호가 없습니다.</span>
+            <div className="flex items-center justify-between gap-2 text-xs select-none">
+              <span className="text-[11px] text-neutral-400">
+                등록된 유선·담당자 연락처 없음
+              </span>
               {onEdit && (
                 <button
                   type="button"
                   onClick={onEdit}
-                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300 hover:underline cursor-pointer inline-flex items-center gap-1"
+                  className="text-[11px] font-medium text-neutral-200 hover:text-white cursor-pointer inline-flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
                 >
                   <Plus className="w-3 h-3" />
-                  <span>전화번호 등록</span>
+                  <span>연락처 등록</span>
                 </button>
               )}
             </div>

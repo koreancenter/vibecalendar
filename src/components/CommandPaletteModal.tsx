@@ -23,10 +23,12 @@ import {
   Wand2,
   X,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { CalendarEventItem, CalendarViewMode, ProjectItem } from '../types';
 import { useEventHistoryOptional } from '../hooks/useEventHistory';
 import { ReminderLeadMinutes } from '../hooks/useEventReminders';
 import { resolveEventLuxuryTheme } from '../utils/eventTheme';
+import { formatLocalizedEventFields } from '../utils/eventLocalization';
 
 interface CommandPaletteModalProps {
   isOpen: boolean;
@@ -121,6 +123,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenCollabHub,
   collabRoomCount = 0,
 }) => {
+  const { i18n } = useTranslation();
   const historyApi = useEventHistoryOptional();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -548,11 +551,14 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       .filter((ev) => {
         if (!q) return true;
         const proj = ev.projectId ? projectMap.get(ev.projectId) : undefined;
+        const localized = formatLocalizedEventFields(ev, { locale: i18n.language });
         const haystack = [
           ev.title,
+          localized.title,
           ev.date,
           ev.endDate || '',
           ev.category,
+          localized.category,
           ev.location || '',
           ev.locationAddress || '',
           ev.content || '',
@@ -568,14 +574,18 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
     for (const ev of matchedEvents) {
       const theme = resolveEventLuxuryTheme(ev, projects);
-      const timeLabel = ev.isAllDay ? '종일' : `${ev.startTime}–${ev.endTime}`;
-      const dateLabel = ev.endDate ? `${ev.date} ~ ${ev.endDate.slice(5)}` : ev.date;
-      const metaParts = [dateLabel, timeLabel, ev.location || ev.category].filter(Boolean);
+      const localized = formatLocalizedEventFields(ev, { locale: i18n.language });
+      const dateLabel = localized.endDateLabel
+        ? `${localized.dateLabel} ~ ${localized.endDateLabel}`
+        : localized.dateLabel;
+      const metaParts = [dateLabel, localized.timeLabel, ev.location || localized.category].filter(
+        Boolean
+      );
 
       list.push({
         id: `evt-${ev.id}`,
         section: 'event',
-        title: ev.title,
+        title: localized.title,
         subtitle: metaParts.join(' · '),
         dotClass: theme.dotClass,
         onExecute: () => {
@@ -629,6 +639,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
     return list;
   }, [
+    i18n.language,
     query,
     events,
     projects,

@@ -401,7 +401,7 @@ export const PromptMarkdownInput = forwardRef<PromptMarkdownInputRef, PromptMark
             isComposingRef.current = false;
           }}
           aria-label={placeholder}
-          className="w-full bg-transparent text-[13px] text-neutral-100 placeholder-neutral-500 border-0 no-focus-outline px-1 pt-0.5 pb-1.5 resize-none leading-relaxed min-h-[42px] max-h-[168px] overflow-y-auto whitespace-pre-wrap break-words disabled:opacity-50"
+          className="w-full bg-transparent text-[13px] text-white placeholder-neutral-400 border-0 no-focus-outline px-1 pt-0.5 pb-1.5 resize-none leading-relaxed min-h-[42px] max-h-[168px] overflow-y-auto whitespace-pre-wrap break-words disabled:opacity-50"
         />
 
         {/* 숨김 통합 파일 인풋 */}
@@ -432,7 +432,7 @@ export const PromptMarkdownInput = forwardRef<PromptMarkdownInputRef, PromptMark
                     ? 'bg-white/[0.09] text-white'
                     : isListening
                     ? 'bg-rose-500/15 text-rose-300'
-                    : 'text-neutral-400 hover:text-neutral-100 hover:bg-white/[0.05]'
+                    : 'text-neutral-300 hover:text-white hover:bg-white/[0.05]'
                 }`}
                 title="입력 및 첨부 메뉴"
               >
@@ -560,7 +560,7 @@ export const PromptMarkdownInput = forwardRef<PromptMarkdownInputRef, PromptMark
             className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 ${
               canSend
                 ? 'bg-white text-neutral-950 hover:bg-neutral-200 shadow-xs'
-                : 'bg-white/[0.05] text-neutral-600 cursor-not-allowed'
+                : 'bg-white/[0.07] text-neutral-400 cursor-not-allowed'
             }`}
             title="전송 (Enter)"
           >

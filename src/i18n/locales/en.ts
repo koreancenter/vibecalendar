@@ -18,6 +18,7 @@ export const en = {
     undo: 'Undo',
     loading: 'Loading...',
     all: 'All',
+    unassigned: 'Unassigned',
     externalSync: 'External Sync',
     notifications: 'Notifications',
     collab: 'Live Collab',
@@ -37,6 +38,10 @@ export const en = {
     viewWeekTooltip: 'Week View (W)',
     viewDayTooltip: 'Day Agenda (D)',
     viewOpsTooltip: 'Operations Runsheet (O)',
+    time: 'Time',
+    categoryLabel: 'Category',
+    repeat: 'Repeat',
+    filterCategory: 'Filter by Category',
     categories: {
       work: 'Work',
       business_trip: 'Business Trip',

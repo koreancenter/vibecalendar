@@ -10,6 +10,7 @@ import {
 import { useCalendarDragAndDrop } from '../hooks/useCalendarDragAndDrop';
 import { LuxuryEventChip } from './common/LuxuryEventChip';
 import { TimeGridCanvas, TimeGridColumn } from './TimeGridCanvas';
+import { formatLocalizedEventTitle } from '../utils/eventLocalization';
 
 interface WeekGridViewProps {
   selectedDate: string;
@@ -30,9 +31,6 @@ interface WeekGridViewProps {
   onOpenCreateEvent?: (date: string, startTime?: string, endTime?: string) => void;
   projects?: ProjectItem[];
   comparedProjectIds?: string[];
-  emptyGuideText?: string;
-  isWorkspaceEmpty?: boolean;
-  onLoadSampleData?: () => void;
 }
 
 const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
@@ -49,9 +47,6 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
   onOpenCreateEvent,
   projects = [],
   comparedProjectIds = [],
-  emptyGuideText,
-  isWorkspaceEmpty = false,
-  onLoadSampleData,
 }) => {
   const { t, i18n } = useTranslation();
   const weekDays: WeekDayItem[] = useMemo(
@@ -138,11 +133,6 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
     [weekDays, selectedDate, eventsByDate]
   );
 
-  const isWeekEmpty = useMemo(
-    () => !hasAnyAllDay && columns.every((col) => col.events.length === 0),
-    [hasAnyAllDay, columns]
-  );
-
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden select-none bg-[#0c0e14]">
       {/* 1. 주간 요일 헤더 */}
@@ -156,15 +146,15 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
         >
           {secondaryTimeZone && secondaryTimeZone !== viewerTimeZone ? (
             <>
-              <span className="text-[10px] font-mono text-sky-300/70 tabular-nums tracking-tight truncate">
+              <span className="text-[10px] font-mono text-sky-300 tabular-nums tracking-tight truncate">
                 {secondaryShortCode || 'AUX'}
               </span>
-              <span className="text-[10px] font-mono text-white/50 tabular-nums tracking-tight truncate">
+              <span className="text-[10px] font-mono text-white/85 tabular-nums tracking-tight truncate">
                 {viewerShortCode || 'LOC'}
               </span>
             </>
           ) : (
-            <span className="text-[10.5px] text-white/38 tabular-nums tracking-tight truncate">
+            <span className="text-[10.5px] font-medium text-white/75 tabular-nums tracking-tight truncate">
               {viewerShortCode || t('calendar.time', '시간')}
             </span>
           )}
@@ -200,23 +190,23 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
                   <span
                     className={`text-[11px] tracking-[0.02em] ${
                       isDropTarget
-                        ? 'text-white font-[460]'
+                        ? 'text-white font-semibold'
                         : isWeekend
-                        ? 'text-white/34 font-[360]'
-                        : 'text-white/52 font-[420]'
+                        ? 'text-white/68 font-medium'
+                        : 'text-white/82 font-medium'
                     }`}
                   >
                     {day.dayOfWeek}
                   </span>
                   <span
-                    className={`min-w-[22px] h-[22px] px-1.5 rounded-full flex items-center justify-center text-[11.5px] tabular-nums tracking-[0.02em] transition-colors ${
+                    className={`text-[11.5px] tabular-nums tracking-[0.02em] transition-colors ${
                       day.isToday
-                        ? 'bg-white/[0.11] text-[#f5f7fb] ring-1 ring-inset ring-white/[0.26] font-[460]'
+                        ? 'text-white font-semibold'
                         : isDropTarget
-                        ? 'bg-white/[0.15] text-white font-[460]'
+                        ? 'text-white font-semibold'
                         : isSelected
-                        ? 'bg-white/[0.07] text-white/90 ring-1 ring-inset ring-white/[0.12] font-[450]'
-                        : 'text-white/60 font-[380]'
+                        ? 'text-white font-medium'
+                        : 'text-white/86 font-normal'
                     }`}
                   >
                     {day.dayNumber}
@@ -236,7 +226,7 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
               secondaryTimeZone && secondaryTimeZone !== viewerTimeZone
                 ? 'w-24 sm:w-28'
                 : 'w-14 sm:w-16'
-            } border-r border-white/[0.07] p-1.5 text-center text-[10px] font-medium text-neutral-500 flex items-center justify-center shrink-0`}
+            } border-r border-white/[0.07] p-1.5 text-center text-[10px] font-medium text-neutral-300 flex items-center justify-center shrink-0`}
           >
             {t('calendar.allDay', '종일')}
           </div>
@@ -282,7 +272,7 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
                         isDragging={isBeingDragged}
                         isAnyDragging={isCellDragging}
                         draggable
-                        titleAttr={`${ev.title} (드래그하여 다른 날짜로 이동)`}
+                        titleAttr={formatLocalizedEventTitle(ev, { locale: i18n.language })}
                         onDragStart={(e) => handleCellDragStart(e, ev.id)}
                         onDragEnd={handleCellDragEnd}
                         onClick={() => {
@@ -316,10 +306,6 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
         onMoveEventDate={onMoveEventDate}
         onQuickCreateSlot={onOpenCreateEvent}
         onDragHoverDateChange={setTimelineHoverDate}
-        showEmptyGuide={isWeekEmpty && !draggedAllDayId}
-        emptyGuideText={emptyGuideText}
-        isWorkspaceEmpty={isWorkspaceEmpty}
-        onLoadSampleData={onLoadSampleData}
       />
     </div>
   );
@@ -336,13 +322,10 @@ function areWeekGridViewPropsEqual(
     prev.viewerShortCode === next.viewerShortCode &&
     prev.secondaryTimeZone === next.secondaryTimeZone &&
     prev.secondaryShortCode === next.secondaryShortCode &&
-    prev.emptyGuideText === next.emptyGuideText &&
-    prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
     prev.onSelectDate === next.onSelectDate &&
     prev.onSelectEvent === next.onSelectEvent &&
     prev.onMoveEventDate === next.onMoveEventDate &&
     prev.onOpenCreateEvent === next.onOpenCreateEvent &&
-    prev.onLoadSampleData === next.onLoadSampleData &&
     areShallowArraysEqual(prev.events, next.events) &&
     areShallowArraysEqual(prev.projects, next.projects) &&
     areShallowArraysEqual(prev.comparedProjectIds, next.comparedProjectIds)

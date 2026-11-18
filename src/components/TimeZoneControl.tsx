@@ -93,11 +93,11 @@ export const TimeZoneControl: React.FC<TimeZoneControlProps> = ({
           label={`${viewerMeta.cityKo} · ${viewerMeta.shortCode}`}
           shortcut={viewerClock.utcOffsetLabel}
         >
-          <div className="h-7 px-2 flex items-center gap-1.5 text-xs text-neutral-400 select-none whitespace-nowrap">
-            <span className="text-[11.5px] text-neutral-400 tracking-tight">
+          <div className="h-7 px-2 flex items-center gap-1.5 text-xs text-neutral-300 select-none whitespace-nowrap">
+            <span className="text-[11.5px] text-neutral-300 tracking-tight">
               {viewerMeta.cityKo}
             </span>
-            <span className="font-mono tabular-nums text-xs text-neutral-200 font-medium">
+            <span className="font-mono tabular-nums text-xs text-neutral-100 font-medium">
               {viewerClock.time24}
             </span>
           </div>
@@ -116,22 +116,22 @@ export const TimeZoneControl: React.FC<TimeZoneControlProps> = ({
           aria-expanded={isOpen}
           className={`group/tz h-7 px-2 rounded-lg flex items-center gap-1.5 text-xs transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
             isOpen || secondaryMeta
-              ? 'bg-white/[0.06] text-neutral-100 hover:bg-white/[0.09]'
-              : 'text-neutral-400 hover:text-neutral-100 hover:bg-white/[0.05]'
+              ? 'bg-white/[0.06] text-white hover:bg-white/[0.09]'
+              : 'text-neutral-300 hover:text-white hover:bg-white/[0.05]'
           }`}
         >
-          <span className="text-[11.5px] text-neutral-400 group-hover/tz:text-neutral-200 tracking-tight transition-colors">
+          <span className="text-[11.5px] text-neutral-300 group-hover/tz:text-white tracking-tight transition-colors">
             {viewerMeta.cityKo}
           </span>
-          <span className="font-mono tabular-nums text-xs text-neutral-200 group-hover/tz:text-white font-medium transition-colors">
+          <span className="font-mono tabular-nums text-xs text-white font-medium transition-colors">
             {viewerClock.time24}
           </span>
           {secondaryMeta && secondaryClock && (
             <>
-              <span aria-hidden="true" className="text-neutral-600">
+              <span aria-hidden="true" className="text-neutral-500">
                 ·
               </span>
-              <span className="text-[11.5px] text-sky-300/85 tracking-tight">
+              <span className="text-[11.5px] text-sky-300 tracking-tight">
                 {secondaryMeta.cityKo}
               </span>
               <span className="font-mono tabular-nums text-xs text-sky-200 font-medium">

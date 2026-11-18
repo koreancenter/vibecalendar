@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
-import { formatKoreanDateWithDay } from '../shared/dateUtils';
+import { formatLocalizedDate } from '../shared/dateUtils';
 import { hasEventConflict, calculateCompletionStats } from '../shared/scheduleUtils';
 import {
   areShallowArraysEqual,
@@ -9,6 +10,10 @@ import {
 } from '../hooks/useCalendarEventViewModels';
 import { LuxuryEventBlock } from './common/LuxuryEventBlock';
 import { EventDetailContent } from './EventDetailContent';
+
+const INSPECTOR_WIDTH_STORAGE_KEY = 'vibe_day_inspector_width_px';
+const MIN_INSPECTOR_WIDTH = 400;
+const MAX_INSPECTOR_WIDTH = 720;
 
 interface DayInspectorPanelProps {
   selectedDate: string;
@@ -43,7 +48,6 @@ interface DayInspectorPanelProps {
   onDeleteChecklistItem?: (eventId: string, itemId: string) => void;
   onOpenCreateEvent?: (date: string) => void;
   onShareEvent?: (event: CalendarEventItem) => void;
-  emptyGuideText?: string;
 }
 
 const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
@@ -67,10 +71,82 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
   onDeleteChecklistItem,
   onOpenCreateEvent,
   onShareEvent,
-  emptyGuideText,
 }) => {
+  const { t, i18n } = useTranslation();
   const isComparing = comparedProjectIds.length >= 2;
-  const dateTitle = useMemo(() => formatKoreanDateWithDay(selectedDate, false), [selectedDate]);
+  const dateTitle = useMemo(
+    () => formatLocalizedDate(selectedDate, i18n.language),
+    [selectedDate, i18n.language]
+  );
+
+  const [customWidth, setCustomWidth] = useState<number | null>(() => {
+    try {
+      const saved = window.localStorage.getItem(INSPECTOR_WIDTH_STORAGE_KEY);
+      if (!saved) return null;
+      const parsed = Number(saved);
+      if (Number.isFinite(parsed) && parsed >= MIN_INSPECTOR_WIDTH && parsed <= MAX_INSPECTOR_WIDTH) {
+        return Math.round(parsed);
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return null;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const asideRef = useRef<HTMLElement | null>(null);
+
+  const handleResizePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const currentWidth = asideRef.current?.getBoundingClientRect().width ?? 520;
+      resizeStartRef.current = { startX: e.clientX, startWidth: currentWidth };
+      setIsResizing(true);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!resizeStartRef.current) return;
+      const delta = resizeStartRef.current.startX - e.clientX;
+      const maxAllowed = Math.min(MAX_INSPECTOR_WIDTH, Math.round(window.innerWidth * 0.65));
+      const nextWidth = Math.max(
+        MIN_INSPECTOR_WIDTH,
+        Math.min(maxAllowed, Math.round(resizeStartRef.current.startWidth + delta))
+      );
+      setCustomWidth(nextWidth);
+    };
+
+    const handlePointerUp = () => {
+      setIsResizing(false);
+      resizeStartRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [isResizing]);
+
+  useEffect(() => {
+    if (isResizing) return;
+    try {
+      if (customWidth !== null) {
+        window.localStorage.setItem(INSPECTOR_WIDTH_STORAGE_KEY, String(customWidth));
+      } else {
+        window.localStorage.removeItem(INSPECTOR_WIDTH_STORAGE_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [customWidth, isResizing]);
 
   const { byEventId, projectedEvents, viewModels, getViewModel } = useCalendarEventViewModels({
     events,
@@ -112,7 +188,28 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
   );
 
   return (
-    <aside className="w-80 md:w-96 lg:w-[420px] h-full border-l border-white/[0.07] bg-[#11131a] flex flex-col shrink-0 select-none overflow-hidden">
+    <aside
+      ref={asideRef}
+      style={
+        customWidth
+          ? ({ '--inspector-w': `${customWidth}px` } as React.CSSProperties)
+          : undefined
+      }
+      className="relative w-80 md:w-[430px] lg:w-[var(--inspector-w,490px)] xl:w-[var(--inspector-w,540px)] max-w-[65vw] h-full border-l border-white/[0.07] bg-[#11131a] flex flex-col shrink-0 select-none overflow-hidden"
+    >
+      {/* 데스크톱 좌측 경계선 드래그 리사이저 (더블 클릭 시 기본 폭 복원) */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="상세 패널 폭 조절"
+        title="드래그하여 패널 폭 조절 (더블 클릭 시 기본 폭 복원)"
+        onPointerDown={handleResizePointerDown}
+        onDoubleClick={() => setCustomWidth(null)}
+        className={`hidden lg:block absolute left-0 top-0 bottom-0 w-1.5 z-30 cursor-col-resize transition-colors ${
+          isResizing ? 'bg-white/25' : 'hover:bg-white/15'
+        }`}
+      />
+
       {selectedEvent ? (
         <EventDetailContent
           event={selectedEvent}
@@ -136,8 +233,8 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
       ) : (
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           {/* 상단 일자 헤더 (h-10 수평 그리드 정렬) */}
-          <div className="h-10 px-4 border-b border-white/[0.06] bg-[#101218] flex items-center justify-between gap-2 shrink-0">
-            <h4 className="text-xs font-medium text-neutral-300 tracking-tight tabular-nums truncate">
+          <div className="h-10 px-5 border-b border-white/[0.06] bg-[#101218] flex items-center justify-between gap-2 shrink-0">
+            <h4 className="text-xs font-medium text-neutral-100 tracking-tight tabular-nums truncate">
               {dateTitle}
             </h4>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -148,13 +245,13 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
                   className="h-6 px-2.5 rounded-md bg-white text-neutral-950 hover:bg-neutral-200 text-[11px] font-semibold inline-flex items-center gap-1 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
                 >
                   <Plus className="w-3 h-3 shrink-0" />
-                  <span>새 일정</span>
+                  <span>{t('common.newEvent', '새 일정')}</span>
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => onQuickAiPromptForDate(selectedDate)}
-                className="h-6 px-2.5 rounded-md bg-white/[0.07] hover:bg-white/[0.13] text-[11px] text-neutral-100 font-medium transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
+                className="h-6 px-2.5 rounded-md bg-white/[0.08] hover:bg-white/[0.15] text-[11px] text-white font-medium transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
               >
                 일정 지시
               </button>
@@ -162,32 +259,28 @@ const DayInspectorPanelComponent: React.FC<DayInspectorPanelProps> = ({
           </div>
 
           {sortedViewModels.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center px-6">
-              <p className="text-xs font-light text-neutral-500 tracking-wide text-center select-none">
-                {emptyGuideText || '현재 선택한 날짜의 일정이 없습니다'}
-              </p>
-            </div>
+            <div className="flex-1" />
           ) : (
             <>
-              {/* 달성률 요약 바 */}
-              <div className="p-4 border-b border-white/[0.06] bg-[#131620] shrink-0">
+              {/* 달성률 요약 바 (헤어라인 분리) */}
+              <div className="px-5 py-3.5 border-b border-white/[0.06] shrink-0">
                 <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="text-white/46 text-[11px] font-[370] tracking-[0.02em]">오늘 일정 달성률</span>
-                  <span className="text-xs font-[450] text-[#f1f3f7] tabular-nums tracking-[0.03em]">
+                  <span className="text-white/78 text-[11px] font-medium tracking-[0.02em]">오늘 일정 달성률</span>
+                  <span className="text-xs font-semibold text-white tabular-nums tracking-[0.03em]">
                     {completed}/{total} ({rate}%)
                   </span>
                 </div>
-                <div className="w-full h-[1.5px] rounded-full bg-white/[0.07] overflow-hidden">
+                <div className="w-full h-[1.5px] rounded-full bg-white/[0.10] overflow-hidden">
                   <div
                     style={{ width: `${rate}%` }}
-                    className="h-full bg-white/80 rounded-full transition-all duration-200"
+                    className="h-full bg-white/90 rounded-full transition-all duration-200"
                   />
                 </div>
               </div>
 
               {/* 일간 타임라인 요약 목록 */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3">
-                <span className="text-[11px] font-[370] text-white/42 block mb-3 tabular-nums tracking-[0.025em]">
+              <div className="flex-1 px-5 py-4 overflow-y-auto space-y-3">
+                <span className="text-[11px] font-medium text-white/76 block mb-3 tabular-nums tracking-[0.025em]">
                   등록된 일정 ({total}건)
                 </span>
 
@@ -221,7 +314,6 @@ function areDayInspectorPanelPropsEqual(
     prev.selectedDate === next.selectedDate &&
     prev.selectedEvent === next.selectedEvent &&
     prev.viewerTimeZone === next.viewerTimeZone &&
-    prev.emptyGuideText === next.emptyGuideText &&
     prev.onSelectEvent === next.onSelectEvent &&
     prev.onDeleteEvent === next.onDeleteEvent &&
     prev.onToggleComplete === next.onToggleComplete &&

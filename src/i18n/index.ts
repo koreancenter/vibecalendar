@@ -38,4 +38,13 @@ i18n
     },
   });
 
+const syncHtmlLang = (lng?: string) => {
+  if (typeof document === 'undefined') return;
+  const normalized = (lng || 'ko').split('-')[0];
+  document.documentElement.lang = normalized;
+};
+
+syncHtmlLang(i18n.language);
+i18n.on('languageChanged', syncHtmlLang);
+
 export default i18n;

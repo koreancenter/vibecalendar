@@ -7,7 +7,7 @@ import { CalendarCategory, CalendarEventItem, ProjectItem } from '../types';
  * - 프로젝트·카테고리 고유 색상은 좌측 내경에 세공된 2px 수직 주얼 인레이(inlayClass)와 마이크로 포인트에만 응축
  */
 export interface EventLuxuryTheme {
-  /** 카드 좌측 내경에 세공되는 2px 수직 주얼 인레이 바 클래스 */
+  /** 요약 툴팁·타임라인 프리뷰 등에 사용되는 정제된 주얼 강조 클래스 */
   inlayClass: string;
   /** 요약 툴팁·헤더용 정제된 주얼 도트 클래스 */
   dotClass: string;
@@ -15,7 +15,9 @@ export interface EventLuxuryTheme {
   chipSurfaceClass: string;
   /** 주간 · 일간 시간 블록용 쿨 옵시디언 글래스 서피스 클래스 */
   blockSurfaceClass: string;
-  /** 클릭·선택(Selected) 시 활성화되는 정밀 포커스 헤어라인 & 스펙큘러 서피스 */
+  /** 호버 시 활성화되는 연한 프로젝트·카테고리 색 카드 테두리 클래스 */
+  hoverBorderClass: string;
+  /** 클릭·선택(Selected) 시 활성화되는 정밀 포커스 헤어라인 서피스 */
   selectedSurfaceClass: string;
   /** 다중 프로젝트 비교 등 제한적 상황에서만 노출되는 포인트 텍스트 클래스 */
   accentTextClass: string;
@@ -24,24 +26,26 @@ export interface EventLuxuryTheme {
 }
 
 const COOL_OBSIDIAN_CHIP_SURFACE =
-  'bg-[#171b26]/55 hover:bg-[#1e2331]/74 border-white/[0.045] hover:border-white/[0.13]';
+  'bg-[#171b26]/65 border-white/[0.06]';
 
 const COOL_OBSIDIAN_BLOCK_SURFACE =
-  'bg-gradient-to-b from-[#181c27]/76 to-[#12151e]/82 hover:from-[#1f2433]/72 hover:to-[#151924]/78 border-white/[0.075] hover:border-white/[0.15]';
+  'bg-gradient-to-b from-[#181c27]/78 to-[#12151e]/84 border-white/[0.075]';
 
 const COOL_OBSIDIAN_SELECTED_SURFACE =
-  '!from-[#202636]/82 !to-[#171b27]/86 !bg-[#1c2130]/84 !border-white/[0.23]';
+  '!from-[#1e2433]/84 !to-[#161a26]/88 !bg-[#1b202e]/86 border-white/[0.22]';
 
 function createLuxuryPalette(
   inlayClass: string,
   dotClass: string,
-  accentTextClass: string
+  accentTextClass: string,
+  hoverBorderClass: string
 ): Omit<EventLuxuryTheme, 'project'> {
   return {
     inlayClass,
     dotClass,
     chipSurfaceClass: COOL_OBSIDIAN_CHIP_SURFACE,
     blockSurfaceClass: COOL_OBSIDIAN_BLOCK_SURFACE,
+    hoverBorderClass,
     selectedSurfaceClass: COOL_OBSIDIAN_SELECTED_SURFACE,
     accentTextClass,
   };
@@ -53,49 +57,57 @@ function getThemeByProjectHex(hex?: string): Omit<EventLuxuryTheme, 'project'> |
       return createLuxuryPalette(
         'bg-[#e6c875] shadow-[0_0_8px_rgba(230,200,117,0.22)]',
         'bg-[#e6c875]',
-        'text-[#ebd494]'
+        'text-[#ebd494]',
+        'hover:border-[#e6c875]/45'
       );
     case '#6366f1': // 임페리얼 인디고
       return createLuxuryPalette(
         'bg-[#8b96f8] shadow-[0_0_8px_rgba(139,150,248,0.22)]',
         'bg-[#8b96f8]',
-        'text-[#b4bdfc]'
+        'text-[#b4bdfc]',
+        'hover:border-[#8b96f8]/50'
       );
     case '#10b981': // 세이지 에메랄드
       return createLuxuryPalette(
         'bg-[#56d4a8] shadow-[0_0_8px_rgba(86,212,168,0.20)]',
         'bg-[#56d4a8]',
-        'text-[#8ce3c3]'
+        'text-[#8ce3c3]',
+        'hover:border-[#56d4a8]/45'
       );
     case '#3b82f6': // 미드나잇 사파이어
       return createLuxuryPalette(
         'bg-[#73b0fa] shadow-[0_0_8px_rgba(115,176,250,0.20)]',
         'bg-[#73b0fa]',
-        'text-[#a3cbfc]'
+        'text-[#a3cbfc]',
+        'hover:border-[#73b0fa]/50'
       );
     case '#f43f5e': // 로즈 브론즈
       return createLuxuryPalette(
         'bg-[#f28799] shadow-[0_0_8px_rgba(242,135,153,0.20)]',
         'bg-[#f28799]',
-        'text-[#f8b0bc]'
+        'text-[#f8b0bc]',
+        'hover:border-[#f28799]/48'
       );
     case '#a855f7': // 리걸 아메시스트
       return createLuxuryPalette(
         'bg-[#c596f8] shadow-[0_0_8px_rgba(197,150,248,0.20)]',
         'bg-[#c596f8]',
-        'text-[#dcc0fc]'
+        'text-[#dcc0fc]',
+        'hover:border-[#c596f8]/48'
       );
     case '#d97706': // 에스프레소 앰버
       return createLuxuryPalette(
         'bg-[#e3ab5b] shadow-[0_0_8px_rgba(227,171,91,0.20)]',
         'bg-[#e3ab5b]',
-        'text-[#eec68c]'
+        'text-[#eec68c]',
+        'hover:border-[#e3ab5b]/48'
       );
     case '#94a3b8': // 플래티넘 슬레이트
       return createLuxuryPalette(
         'bg-[#cbd5e1]',
         'bg-[#cbd5e1]',
-        'text-neutral-300'
+        'text-neutral-300',
+        'hover:border-[#cbd5e1]/42'
       );
     default:
       return null;
@@ -106,32 +118,38 @@ const CATEGORY_FALLBACK_THEMES: Record<CalendarCategory, Omit<EventLuxuryTheme, 
   '업무': createLuxuryPalette(
     'bg-[#7fa6f8] shadow-[0_0_8px_rgba(127,166,248,0.18)]',
     'bg-[#7fa6f8]',
-    'text-[#adc6fb]'
+    'text-[#adc6fb]',
+    'hover:border-[#7fa6f8]/48'
   ),
   '방문·출장': createLuxuryPalette(
     'bg-[#58d1a8] shadow-[0_0_8px_rgba(88,209,168,0.18)]',
     'bg-[#58d1a8]',
-    'text-[#8be0c3]'
+    'text-[#8be0c3]',
+    'hover:border-[#58d1a8]/45'
   ),
   '식사·모임': createLuxuryPalette(
     'bg-[#dfb573] shadow-[0_0_8px_rgba(223,181,115,0.18)]',
     'bg-[#dfb573]',
-    'text-[#ebd0a3]'
+    'text-[#ebd0a3]',
+    'hover:border-[#dfb573]/45'
   ),
   '개인': createLuxuryPalette(
     'bg-[#b89cf6] shadow-[0_0_8px_rgba(184,156,246,0.18)]',
     'bg-[#b89cf6]',
-    'text-[#d2c0fa]'
+    'text-[#d2c0fa]',
+    'hover:border-[#b89cf6]/48'
   ),
   '행사·세미나': createLuxuryPalette(
     'bg-[#e68fa0] shadow-[0_0_8px_rgba(230,143,160,0.18)]',
     'bg-[#e68fa0]',
-    'text-[#f2b5c1]'
+    'text-[#f2b5c1]',
+    'hover:border-[#e68fa0]/48'
   ),
   '기타': createLuxuryPalette(
     'bg-[#94a3b8]',
     'bg-[#94a3b8]',
-    'text-neutral-300'
+    'text-neutral-300',
+    'hover:border-[#94a3b8]/42'
   ),
 };
 

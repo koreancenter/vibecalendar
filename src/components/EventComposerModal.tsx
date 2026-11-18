@@ -26,7 +26,8 @@ import {
   RecurrenceFrequency,
 } from '../types';
 import { HelpTooltip } from './common/HelpTooltip';
-import { CALENDAR_CATEGORIES, CATEGORY_COLORS } from '../constants/categories';
+import { useTranslation } from 'react-i18next';
+import { CALENDAR_CATEGORIES, CATEGORY_COLORS, getLocalizedCategory } from '../constants/categories';
 import { getProjectThemeClasses } from '../constants/projects';
 import { ManualEventDraft } from '../hooks/useCalendarEvents';
 import { MAX_CUSTOM_LEAD_MINUTES } from '../shared/notificationSchema';
@@ -102,6 +103,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
   onClose,
   onSubmit,
 }) => {
+  const { t } = useTranslation();
   const safeViewerZone = useMemo(
     () =>
       viewerTimeZone && isValidTimeZone(viewerTimeZone)
@@ -546,7 +548,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                         }`}
                       >
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${style.dot}`} />
-                        <span>{cat}</span>
+                        <span>{getLocalizedCategory(cat, t)}</span>
                       </button>
                     );
                   })}

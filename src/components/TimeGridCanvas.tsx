@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useMemo, useCallback } from 'react';
-import { Plus, Sparkles } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { layoutTimeEvents, PositionedEvent } from '../utils/timeGridLayout';
 import { minutesToTime } from '../shared/scheduleUtils';
@@ -47,10 +46,6 @@ interface TimeGridCanvasProps {
   ) => void;
   onQuickCreateSlot?: (date: string, startTime?: string, endTime?: string) => void;
   onDragHoverDateChange?: (date: string | null) => void;
-  showEmptyGuide?: boolean;
-  emptyGuideText?: string;
-  isWorkspaceEmpty?: boolean;
-  onLoadSampleData?: () => void;
 }
 
 const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
@@ -70,10 +65,6 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
   onMoveEventDate,
   onQuickCreateSlot,
   onDragHoverDateChange,
-  showEmptyGuide = false,
-  emptyGuideText,
-  isWorkspaceEmpty = false,
-  onLoadSampleData,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const columnsGridRef = useRef<HTMLDivElement>(null);
@@ -154,45 +145,6 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
 
   return (
     <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-[#0c0e14]">
-      {!isDayMode && showEmptyGuide && emptyGuideText && !activeInteraction && (
-        <div className="absolute inset-0 pl-14 sm:pl-16 pointer-events-none flex items-center justify-center z-20 px-6">
-          {isWorkspaceEmpty && onLoadSampleData ? (
-            <div className="luxury-glass-border relative pointer-events-auto rounded-xl bg-gradient-to-b from-[#181c27]/78 via-[#11141d]/76 to-[#0c0e15]/84 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] px-6 py-5 text-center space-y-3.5 overflow-hidden">
-              <p className="text-[13px] font-medium text-neutral-100 tracking-tight">
-                현재 등록된 일정이 없습니다
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {onQuickCreateSlot && columns[0] && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const targetDate =
-                        columns.find((c) => c.isSelected)?.date || columns[0].date;
-                      onQuickCreateSlot(targetDate, '10:00', '11:00');
-                    }}
-                    className="h-9 px-4 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5 shrink-0" />
-                    <span>새 일정 등록</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={onLoadSampleData}
-                  className="h-9 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.13] border border-white/[0.09] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                  <span>샘플 데이터 불러오기</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-[13px] sm:text-sm font-light text-neutral-500 tracking-wide text-center select-none">
-              {emptyGuideText}
-            </p>
-          )}
-        </div>
-      )}
 
       <div
         ref={scrollContainerRef}
@@ -249,7 +201,7 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                     <span
                       className={`${
                         isDayMode ? 'text-[10.5px]' : 'text-[10px]'
-                      } font-mono tabular-nums text-sky-300/55 leading-tight`}
+                      } font-mono tabular-nums text-sky-300/90 leading-tight`}
                     >
                       {secondaryHourLabel}
                     </span>
@@ -258,7 +210,7 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                     className={`${
                       isDayMode ? 'text-[11px]' : 'text-[10.5px]'
                     } ${
-                      hasDualAxis ? 'font-mono text-white/50' : 'text-white/36 font-[360] block'
+                      hasDualAxis ? 'font-mono text-white/85' : 'text-white/72 font-normal block'
                     } tabular-nums tracking-[0.02em] leading-tight`}
                   >
                     {displayHour}
@@ -363,7 +315,6 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                           pxPerHour) /
                         60
                       }
-                      inlayClass={byEventId.get(activeInteraction.eventId)?.theme.inlayClass}
                     />
                   )}
 
@@ -375,41 +326,6 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                   >
                     <div className="w-2 h-2 rounded-full bg-rose-500 -ml-1" />
                     <div className="flex-1 h-px bg-rose-500/80" />
-                  </div>
-                )}
-
-                {/* 일간 뷰 빈 상태 안내 */}
-                {isDayMode && positioned.length === 0 && !activeInteraction && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-6">
-                    <div className="luxury-glass-border relative pointer-events-auto rounded-xl bg-gradient-to-b from-[#181c27]/78 via-[#11141d]/76 to-[#0c0e15]/84 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] px-6 py-5 text-center space-y-3.5 overflow-hidden">
-                      <p className="text-[13px] font-medium text-neutral-100 tracking-tight">
-                        등록된 시간제 일정이 없습니다
-                      </p>
-                      {(onQuickCreateSlot || (isWorkspaceEmpty && onLoadSampleData)) && (
-                        <div className="flex flex-wrap items-center justify-center gap-2">
-                          {onQuickCreateSlot && (
-                            <button
-                              type="button"
-                              onClick={() => onQuickCreateSlot(col.date, '10:00', '11:00')}
-                              className="h-9 px-4 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
-                            >
-                              <Plus className="w-3.5 h-3.5 shrink-0" />
-                              <span>새 일정 등록</span>
-                            </button>
-                          )}
-                          {isWorkspaceEmpty && onLoadSampleData && (
-                            <button
-                              type="button"
-                              onClick={onLoadSampleData}
-                              className="h-9 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.13] border border-white/[0.09] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                              <span>샘플 데이터 불러오기</span>
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
                   </div>
                 )}
 
@@ -564,15 +480,11 @@ function areTimeGridCanvasPropsEqual(
     prev.pxPerHour === next.pxPerHour &&
     prev.selectedEvent === next.selectedEvent &&
     prev.scrollResetKey === next.scrollResetKey &&
-    prev.showEmptyGuide === next.showEmptyGuide &&
-    prev.emptyGuideText === next.emptyGuideText &&
-    prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
     prev.onSelectDate === next.onSelectDate &&
     prev.onSelectEvent === next.onSelectEvent &&
     prev.onMoveEventDate === next.onMoveEventDate &&
     prev.onQuickCreateSlot === next.onQuickCreateSlot &&
     prev.onDragHoverDateChange === next.onDragHoverDateChange &&
-    prev.onLoadSampleData === next.onLoadSampleData &&
     areTimeGridColumnsEqual(prev.columns, next.columns) &&
     areShallowArraysEqual(prev.projects, next.projects) &&
     areShallowArraysEqual(prev.comparedProjectIds, next.comparedProjectIds)

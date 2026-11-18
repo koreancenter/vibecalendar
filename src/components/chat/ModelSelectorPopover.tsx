@@ -354,25 +354,25 @@ export const ModelSelectorPopover: React.FC<ModelSelectorPopoverProps> = ({
         onClick={() => setIsOpen((prev) => !prev)}
         className={`h-7 px-2 rounded-lg flex items-center gap-1.5 text-xs transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
           isOpen
-            ? 'bg-white/[0.08] text-neutral-100'
-            : 'text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.05]'
+            ? 'bg-white/[0.08] text-white'
+            : 'text-neutral-300 hover:text-white hover:bg-white/[0.05]'
         }`}
         title="AI 모델 선택"
       >
         {isDownloadingCurrent && (
-          <Loader2 className="w-3 h-3 animate-spin text-neutral-300 shrink-0" />
+          <Loader2 className="w-3 h-3 animate-spin text-neutral-200 shrink-0" />
         )}
         <span className="truncate max-w-[112px] sm:max-w-[126px] lg:max-w-[140px] tracking-tight">
           {triggerDisplayLabel}
         </span>
         {isDownloadingCurrent && (
-          <span className="text-[11px] text-neutral-400 font-mono tabular-nums">
+          <span className="text-[11px] text-neutral-300 font-mono tabular-nums">
             {webllmProgress.percent}%
           </span>
         )}
         <ChevronDown
-          className={`w-3 h-3 text-neutral-500 transition-transform duration-150 shrink-0 ${
-            isOpen ? 'rotate-180 text-neutral-200' : ''
+          className={`w-3 h-3 text-neutral-400 transition-transform duration-150 shrink-0 ${
+            isOpen ? 'rotate-180 text-white' : ''
           }`}
         />
       </button>

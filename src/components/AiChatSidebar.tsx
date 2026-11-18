@@ -953,8 +953,8 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
 
       {/* 1. 상단 서브 헤더 (우측 캘린더 요일 헤더 h-10 과 1:1 수평 일치) */}
       <div className="h-10 px-4 border-b border-white/[0.05] flex items-center justify-between bg-[#101218] shrink-0">
-        <h2 className="text-xs font-medium text-neutral-300 tracking-tight whitespace-nowrap shrink-0">
-          일정 컨시어지
+        <h2 className="text-xs font-medium text-neutral-100 tracking-tight whitespace-nowrap shrink-0">
+          {t('agent.title', '일정 컨시어지')}
         </h2>
 
         <div className="flex items-center gap-0.5">
@@ -963,8 +963,8 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
             onClick={toggleTts}
             className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 ${
               isTtsEnabled
-                ? 'text-neutral-300 hover:text-white hover:bg-white/[0.05]'
-                : 'text-neutral-600 hover:text-neutral-300 hover:bg-white/[0.05]'
+                ? 'text-neutral-100 hover:text-white hover:bg-white/[0.05]'
+                : 'text-neutral-400 hover:text-white hover:bg-white/[0.05]'
             }`}
             title={isTtsEnabled ? '음성 안내 끄기' : '음성 안내 켜기'}
           >
@@ -978,7 +978,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
           <button
             type="button"
             onClick={handleClearHistory}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer shrink-0"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer shrink-0"
             title="대화 세션 초기화"
           >
             <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.65} />
@@ -989,11 +989,11 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
       {/* 1-2. 조건부 참조 문맥 바 (일정 선택 시에만 무채색 인라인 노출) */}
       {lastReferencedEvent && (
         <div className="h-8 px-4 bg-[#13161f] border-b border-white/[0.05] flex items-center justify-between text-[11px] shrink-0 gap-2">
-          <div className="flex items-center gap-1.5 min-w-0 text-neutral-400">
-            <span className="text-neutral-500 shrink-0">참조</span>
-            <span aria-hidden="true" className="text-neutral-600">·</span>
+          <div className="flex items-center gap-1.5 min-w-0 text-neutral-300">
+            <span className="text-neutral-400 shrink-0">참조</span>
+            <span aria-hidden="true" className="text-neutral-500">·</span>
             <span
-              className="text-neutral-200 truncate"
+              className="text-neutral-100 truncate"
               title={`${lastReferencedEvent.title} (${lastReferencedEvent.date} ${lastReferencedEvent.startTime}~${lastReferencedEvent.endTime})`}
             >
               {lastReferencedEvent.title}
@@ -1004,21 +1004,21 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
             <button
               type="button"
               onClick={() => void handleSendMessage('방금 말한 그 일정 30분 뒤로 미뤄줘')}
-              className="text-[10px] px-1.5 py-0.5 rounded text-neutral-400 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer tabular-nums whitespace-nowrap shrink-0"
+              className="text-[10px] px-1.5 py-0.5 rounded text-neutral-300 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer tabular-nums whitespace-nowrap shrink-0"
             >
               +30분
             </button>
             <button
               type="button"
               onClick={() => void handleSendMessage('방금 말한 그 일정 1시간 뒤로 미뤄줘')}
-              className="text-[10px] px-1.5 py-0.5 rounded text-neutral-400 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer tabular-nums whitespace-nowrap shrink-0"
+              className="text-[10px] px-1.5 py-0.5 rounded text-neutral-300 hover:text-white hover:bg-white/[0.07] transition-colors cursor-pointer tabular-nums whitespace-nowrap shrink-0"
             >
               +1시간
             </button>
             <button
               type="button"
               onClick={() => void handleSendMessage('방금 말한 그 일정 삭제해줘')}
-              className="text-[10px] px-1.5 py-0.5 rounded text-neutral-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="text-[10px] px-1.5 py-0.5 rounded text-neutral-300 hover:text-rose-300 hover:bg-rose-500/10 transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
               삭제
             </button>
@@ -1043,13 +1043,13 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
               <div
                 className={`max-w-[90%] p-3.5 rounded-2xl text-xs leading-relaxed ${
                   isUser
-                    ? 'bg-[#222634] text-neutral-100 border border-white/[0.1] rounded-br-none'
-                    : 'bg-[#181b24] text-neutral-200 border border-white/[0.07] rounded-bl-none'
+                    ? 'bg-[#222634] text-white border border-white/[0.12] rounded-br-none'
+                    : 'bg-[#181b24] text-neutral-100 border border-white/[0.08] rounded-bl-none'
                 }`}
               >
                 {isUser && msg.referencedEvent && (
-                  <div className="flex items-center gap-1.5 text-[10px] text-neutral-400 mb-2 pb-1.5 border-b border-white/[0.07]">
-                    <Calendar className="w-3 h-3 text-neutral-400 shrink-0" />
+                  <div className="flex items-center gap-1.5 text-[10px] text-neutral-300 mb-2 pb-1.5 border-b border-white/[0.07]">
+                    <Calendar className="w-3 h-3 text-neutral-300 shrink-0" />
                     <span className="truncate">참조 일정 · {msg.referencedEvent.title}</span>
                   </div>
                 )}
@@ -1121,7 +1121,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
                 <MarkdownRenderer content={msg.content} />
               </div>
 
-              <span className="text-[10px] text-neutral-500 px-1 font-mono tabular-nums">
+              <span className="text-[10px] text-neutral-400 px-1 font-mono tabular-nums">
                 {msg.timestamp}
               </span>
 
@@ -1154,14 +1154,14 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
                     : '향후 3개월간 공휴일·업계 주요 일정과 겹치지 않는 행사 개최 후보일을 추천해 줘'
                 )
               }
-              className="px-2.5 py-1 rounded-lg bg-[#161922] hover:bg-[#1c202c] border border-white/[0.07] hover:border-white/[0.15] text-[11px] text-neutral-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+              className="px-2.5 py-1 rounded-lg bg-[#161922] hover:bg-[#1c202c] border border-white/[0.08] hover:border-white/[0.16] text-[11px] text-neutral-200 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
             >
               공휴일·업계 일정 피해서 개최일 추천
             </button>
             <button
               type="button"
               onClick={() => void handleSendMessage('오늘 일정 브리핑과 여유 시간대를 알려줘')}
-              className="px-2.5 py-1 rounded-lg bg-[#161922] hover:bg-[#1c202c] border border-white/[0.07] hover:border-white/[0.15] text-[11px] text-neutral-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+              className="px-2.5 py-1 rounded-lg bg-[#161922] hover:bg-[#1c202c] border border-white/[0.08] hover:border-white/[0.16] text-[11px] text-neutral-200 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
             >
               오늘 일정 및 여유 시간 확인
             </button>

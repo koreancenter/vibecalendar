@@ -116,7 +116,7 @@ export function toCanonicalCategoryKey(cat?: string | null): CanonicalCategoryKe
 
 export function getLocalizedCategory(
   category: string,
-  t: (key: string, defaultValue?: string) => string
+  t: (key: string, defaultValue: string) => string
 ): string {
   const canonical = toCanonicalCategoryKey(category);
   return t(`calendar.categories.${canonical}`, category);

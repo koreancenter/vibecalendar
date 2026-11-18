@@ -54,9 +54,6 @@ interface DayAgendaViewProps {
   onDeleteChecklistItem?: (eventId: string, itemId: string) => void;
   onOpenCreateEvent?: (date: string, startTime?: string, endTime?: string) => void;
   onShareEvent?: (event: CalendarEventItem) => void;
-  emptyGuideText?: string;
-  isWorkspaceEmpty?: boolean;
-  onLoadSampleData?: () => void;
 }
 
 const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
@@ -83,9 +80,6 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
   onDeleteChecklistItem,
   onOpenCreateEvent,
   onShareEvent,
-  emptyGuideText,
-  isWorkspaceEmpty = false,
-  onLoadSampleData,
 }) => {
   const { t, i18n } = useTranslation();
   const isComparing = comparedProjectIds.length >= 2;
@@ -146,24 +140,24 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
             </span>
             {isToday && (
               <>
-                <span aria-hidden="true" className="text-neutral-600">
+                <span aria-hidden="true" className="text-neutral-500">
                   ·
                 </span>
-                <span className="text-[11px] text-neutral-300">{t('common.today', '오늘')}</span>
+                <span className="text-[11px] text-neutral-200">{t('common.today', '오늘')}</span>
               </>
             )}
-            <span aria-hidden="true" className="text-neutral-600 hidden sm:inline">
+            <span aria-hidden="true" className="text-neutral-500 hidden sm:inline">
               ·
             </span>
-            <span className="text-[11px] text-neutral-400 hidden sm:inline tabular-nums">
-              일정 <strong className="text-neutral-200 font-medium">{events.length}</strong>건 (시간제{' '}
+            <span className="text-[11px] text-neutral-300 hidden sm:inline tabular-nums">
+              일정 <strong className="text-white font-medium">{events.length}</strong>건 (시간제{' '}
               {timedEvents.length} · 종일 {allDayEvents.length})
             </span>
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
             {dualAxisLegend && (
-              <span className="text-[10.5px] font-mono text-sky-300/75 tabular-nums hidden lg:inline whitespace-nowrap">
+              <span className="text-[10.5px] font-mono text-sky-300 tabular-nums hidden lg:inline whitespace-nowrap">
                 {dualAxisLegend}
               </span>
             )}
@@ -184,7 +178,7 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
                 </span>
               </button>
             )}
-            <span className="text-[10.5px] text-white/36 tabular-nums tracking-tight hidden xl:inline whitespace-nowrap">
+            <span className="text-[10.5px] text-white/70 tabular-nums tracking-tight hidden xl:inline whitespace-nowrap">
               15분 단위 드래그 조절
             </span>
           </div>
@@ -193,7 +187,7 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
         {/* 종일 일정 고정 바 */}
         {allDayEvents.length > 0 && (
           <div className="bg-[#11141d] border-b border-white/[0.07] px-4 py-2.5 flex items-center gap-3 shrink-0 flex-wrap">
-            <span className="text-[11px] font-[370] text-white/42 shrink-0 tracking-[0.025em]">{t('calendar.allDay', '종일')}</span>
+            <span className="text-[11px] font-medium text-white/75 shrink-0 tracking-[0.025em]">{t('calendar.allDay', '종일')}</span>
             {allDayEvents.map((ev) => {
               const vm = byEventId.get(ev.id) ?? getViewModel(ev);
               const isSelected = selectedEvent?.id === ev.id;
@@ -231,10 +225,6 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
           onSelectEvent={handleSelectCanvasEvent}
           onMoveEventDate={onMoveEventDate}
           onQuickCreateSlot={onOpenCreateEvent}
-          showEmptyGuide={events.length === 0}
-          emptyGuideText={emptyGuideText}
-          isWorkspaceEmpty={isWorkspaceEmpty}
-          onLoadSampleData={onLoadSampleData}
         />
       </div>
 
@@ -260,7 +250,6 @@ const DayAgendaViewComponent: React.FC<DayAgendaViewProps> = ({
         onDeleteChecklistItem={onDeleteChecklistItem}
         onOpenCreateEvent={onOpenCreateEvent ? (d) => onOpenCreateEvent(d) : undefined}
         onShareEvent={onShareEvent}
-        emptyGuideText={emptyGuideText}
       />
     </div>
   );
@@ -276,8 +265,6 @@ function areDayAgendaViewPropsEqual(
     prev.viewerTimeZone === next.viewerTimeZone &&
     prev.secondaryTimeZone === next.secondaryTimeZone &&
     prev.onAutoRebalanceDate === next.onAutoRebalanceDate &&
-    prev.emptyGuideText === next.emptyGuideText &&
-    prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
     prev.onSelectEvent === next.onSelectEvent &&
     prev.onDeleteEvent === next.onDeleteEvent &&
     prev.onToggleComplete === next.onToggleComplete &&
@@ -293,7 +280,6 @@ function areDayAgendaViewPropsEqual(
     prev.onDeleteChecklistItem === next.onDeleteChecklistItem &&
     prev.onOpenCreateEvent === next.onOpenCreateEvent &&
     prev.onShareEvent === next.onShareEvent &&
-    prev.onLoadSampleData === next.onLoadSampleData &&
     areShallowArraysEqual(prev.events, next.events) &&
     areShallowArraysEqual(prev.projects, next.projects) &&
     areShallowArraysEqual(prev.comparedProjectIds, next.comparedProjectIds)

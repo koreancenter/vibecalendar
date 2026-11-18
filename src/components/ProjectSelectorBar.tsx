@@ -10,9 +10,10 @@ import {
   BarChart2,
   CalendarSearch,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ProjectItem, CalendarEventItem, CalendarCategory } from '../types';
 import { getProjectThemeClasses, PROJECT_STATUS_MAP } from '../constants/projects';
-import { CALENDAR_CATEGORIES } from '../constants/categories';
+import { CALENDAR_CATEGORIES, getLocalizedCategory } from '../constants/categories';
 import { calculateCompletionStats } from '../shared/scheduleUtils';
 
 interface ProjectSelectorBarProps {
@@ -73,6 +74,7 @@ export const ProjectSelectorBar: React.FC<ProjectSelectorBarProps> = ({
   onOpenManageProject,
   onShareProject,
 }) => {
+  const { t } = useTranslation();
   const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const [isComparePopoverOpen, setIsComparePopoverOpen] = useState(false);
   const [overlapCursor, setOverlapCursor] = useState(0);
@@ -204,10 +206,10 @@ export const ProjectSelectorBar: React.FC<ProjectSelectorBarProps> = ({
               className={`relative h-full flex items-center text-xs tracking-tight transition-colors duration-150 shrink-0 cursor-pointer whitespace-nowrap ${
                 isAllSelected
                   ? 'text-white font-medium after:content-[""] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[1.5px] after:bg-white/95 after:rounded-full'
-                  : 'text-neutral-500 hover:text-neutral-300 font-normal'
+                  : 'text-neutral-300 hover:text-white font-normal'
               }`}
             >
-              전체
+              {t('common.all', '전체')}
             </button>
 
             {projects.map((proj) => {
@@ -227,7 +229,7 @@ export const ProjectSelectorBar: React.FC<ProjectSelectorBarProps> = ({
                   className={`relative h-full flex items-center gap-1.5 text-xs tracking-tight transition-colors duration-150 shrink-0 cursor-pointer whitespace-nowrap ${
                     isSelected
                       ? `text-white font-medium after:content-[""] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[1.5px] ${underlineColorClass} after:rounded-full`
-                      : 'text-neutral-500 hover:text-neutral-200 font-normal'
+                      : 'text-neutral-300 hover:text-white font-normal'
                   }`}
                   title={
                     isMultiSelectActive
@@ -262,7 +264,7 @@ export const ProjectSelectorBar: React.FC<ProjectSelectorBarProps> = ({
                 className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 ${
                   isMultiSelectActive
                     ? 'bg-white/[0.09] text-white'
-                    : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.05]'
+                    : 'text-neutral-300 hover:text-white hover:bg-white/[0.05]'
                 }`}
                 title={
                   isMultiSelectActive
@@ -278,7 +280,7 @@ export const ProjectSelectorBar: React.FC<ProjectSelectorBarProps> = ({
               type="button"
               onClick={onOpenCreateProject}
               aria-label="새 프로젝트 등록"
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer shrink-0"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer shrink-0"
               title="새 프로젝트 등록"
             >
               <Plus className="w-3.5 h-3.5" strokeWidth={1.65} />
@@ -288,7 +290,7 @@ export const ProjectSelectorBar: React.FC<ProjectSelectorBarProps> = ({
               type="button"
               onClick={onOpenManageProject}
               aria-label="프로젝트 관리"
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer shrink-0"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 cursor-pointer shrink-0"
               title="프로젝트 관리"
             >
               <Settings2 className="w-3.5 h-3.5" strokeWidth={1.65} />
@@ -344,7 +346,7 @@ export const ProjectSelectorBar: React.FC<ProjectSelectorBarProps> = ({
                 type="button"
                 onClick={() => onSelectProject('all')}
                 aria-label="비교 해제"
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-500 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 cursor-pointer shrink-0"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-neutral-300 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 cursor-pointer shrink-0"
                 title="비교 모드 해제"
               >
                 <X className="w-3.5 h-3.5" strokeWidth={1.65} />
@@ -454,10 +456,10 @@ export const ProjectSelectorBar: React.FC<ProjectSelectorBarProps> = ({
               className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors duration-150 cursor-pointer shrink-0 ${
                 isCategoryOpen || isCategoryFiltered
                   ? 'bg-white/[0.09] text-white'
-                  : 'text-neutral-500 hover:text-white hover:bg-white/[0.05]'
+                  : 'text-neutral-300 hover:text-white hover:bg-white/[0.05]'
               }`}
               title={
-                isCategoryFiltered ? `분류 필터: ${selectedCategory}` : '일정 분류 필터'
+                isCategoryFiltered ? `${getLocalizedCategory(selectedCategory, t)}` : t('calendar.filterCategory', '일정 분류 필터')
               }
             >
               <ListFilter className="w-3.5 h-3.5" strokeWidth={1.65} />
@@ -467,7 +469,7 @@ export const ProjectSelectorBar: React.FC<ProjectSelectorBarProps> = ({
               <div className="luxury-glass-border absolute right-0 top-full mt-2 w-40 rounded-xl bg-gradient-to-b from-[#181c27]/88 via-[#11141d]/84 to-[#0c0e15]/92 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] p-1.5 z-50 space-y-0.5 overflow-hidden">
                 {categoryOptions.map((cat) => {
                   const isSelected = selectedCategory === cat;
-                  const label = cat === '전체' ? '전체 분류' : cat;
+                  const label = cat === '전체' ? t('common.all', '전체') : getLocalizedCategory(cat, t);
                   return (
                     <button
                       key={cat}

@@ -1,8 +1,10 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { AlertTriangle, CheckCircle, Circle, Lock } from 'lucide-react';
 import { CalendarEventItem } from '../../types';
 import { ResolvedEventTiming } from '../../shared/timeZoneUtils';
 import { EventLuxuryTheme } from '../../utils/eventTheme';
+import { formatLocalizedEventTimeRange, formatLocalizedEventTitle } from '../../utils/eventLocalization';
 import { formatSecondaryZoneLabel, getEventChecklistStats } from './LuxuryEventChip';
 
 export type LuxuryBlockDragState = 'none' | 'moving-same-date' | 'moved-other-date';
@@ -64,6 +66,8 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
   onClick,
   onToggleComplete,
 }) => {
+  const { i18n } = useTranslation();
+  const localizedTitle = formatLocalizedEventTitle(event, { locale: i18n.language });
   const proj = theme.project;
   const isCompleted = Boolean(event.isCompleted);
   const isReadOnlyExternal = Boolean(event.externalSync?.readOnly);
@@ -78,50 +82,44 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
   const { total: checklistTotal, done: checklistDone } = getEventChecklistStats(event);
 
   if (variant === 'inspector') {
-    const primaryTime = event.isAllDay
-      ? '종일'
-      : timing
-      ? `${timing.localStartTime} – ${timing.localEndTime}`
-      : `${event.startTime} – ${event.endTime}`;
+    const primaryTime = formatLocalizedEventTimeRange(event, i18n.language, timing);
     const secondaryZone = formatSecondaryZoneLabel(event, timing);
 
     return (
       <div
         data-selected={isSelected ? 'true' : undefined}
         onClick={onClick}
-        className={`relative overflow-hidden pl-[24px] pr-4 py-3.5 rounded-[10px] border luxury-event-card hover:z-20 cursor-pointer group flex items-start justify-between gap-3.5 ${
+        className={`relative overflow-hidden px-4 py-3.5 rounded-[10px] border luxury-event-card hover:z-20 cursor-pointer flex items-start justify-between gap-3.5 ${
           theme.blockSurfaceClass
-        } ${isSelected ? theme.selectedSurfaceClass : ''} ${isCompleted ? 'opacity-60' : ''}`}
+        } ${theme.hoverBorderClass} ${isSelected ? theme.selectedSurfaceClass : ''} ${
+          isCompleted ? 'opacity-75' : ''
+        }`}
       >
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute z-10 left-[11px] top-3.5 bottom-3.5 w-[2px] rounded-full ${theme.inlayClass}`}
-        />
 
         <div className="relative z-10 flex-1 min-w-0">
           <div className="flex items-center gap-2 text-[11px] tabular-nums tracking-[0.035em] leading-[1.4] truncate">
             {showProjectBadge && proj && (
               <>
                 <span
-                  className={`font-[440] tracking-[0.03em] shrink-0 ${theme.accentTextClass}`}
+                  className={`font-medium tracking-[0.03em] shrink-0 ${theme.accentTextClass}`}
                   title={proj.name}
                 >
                   {proj.code || proj.name.slice(0, 5)}
                 </span>
-                <span aria-hidden="true" className="text-white/22 shrink-0">
+                <span aria-hidden="true" className="text-white/45 shrink-0">
                   ·
                 </span>
               </>
             )}
 
-            <span className="font-[370] text-white/52 shrink-0">{primaryTime}</span>
+            <span className="font-normal text-white/85 shrink-0">{primaryTime}</span>
 
             {secondaryZone && (
               <>
-                <span aria-hidden="true" className="text-white/20 shrink-0">
+                <span aria-hidden="true" className="text-white/40 shrink-0">
                   ·
                 </span>
-                <span className="font-[350] tracking-[0.025em] text-white/32 truncate">
+                <span className="font-normal tracking-[0.025em] text-white/70 truncate">
                   {secondaryZone}
                 </span>
               </>
@@ -129,10 +127,10 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
 
             {externalProviderShort && (
               <>
-                <span aria-hidden="true" className="text-white/20 shrink-0">
+                <span aria-hidden="true" className="text-white/40 shrink-0">
                   ·
                 </span>
-                <span className="font-[360] tracking-[0.025em] text-white/38 shrink-0">
+                <span className="font-normal tracking-[0.025em] text-white/75 shrink-0">
                   {isMaskedExternal ? `${externalProviderShort} 마스킹` : externalProviderShort}
                 </span>
               </>
@@ -141,33 +139,33 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
             {(checklistTotal > 0 || hasConflict) && (
               <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
                 {checklistTotal > 0 && (
-                  <span className="text-[10.5px] font-[360] tracking-[0.04em] text-white/34 tabular-nums">
+                  <span className="text-[10.5px] font-medium tracking-[0.04em] text-white/75 tabular-nums">
                     {checklistDone}/{checklistTotal}
                   </span>
                 )}
-                {hasConflict && <AlertTriangle className="w-3 h-3 text-amber-300/90" />}
+                {hasConflict && <AlertTriangle className="w-3 h-3 text-amber-300" />}
               </span>
             )}
           </div>
 
           <h5
-            className={`text-[13px] font-[450] tracking-[0.015em] leading-[1.52] mt-2 truncate flex items-center gap-1.5 ${
-              isCompleted ? 'line-through text-white/34' : isMaskedExternal ? 'text-white/68' : 'text-[#f2f4f8]'
+            className={`text-[13px] font-medium tracking-[0.015em] leading-[1.52] mt-2 truncate flex items-center gap-1.5 ${
+              isCompleted ? 'line-through text-white/60' : isMaskedExternal ? 'text-white/85' : 'text-white'
             }`}
           >
-            {isMaskedExternal && <Lock className="w-3 h-3 text-white/40 shrink-0" />}
-            <span className="truncate">{event.title}</span>
+            {isMaskedExternal && <Lock className="w-3 h-3 text-white/65 shrink-0" />}
+            <span className="truncate">{localizedTitle}</span>
           </h5>
 
           {(event.location || event.locationAddress) && (
             <div className="mt-2 space-y-1 min-w-0">
               {event.location && (
-                <p className="text-[11px] font-[380] leading-[1.5] text-white/58 truncate tracking-[0.016em]">
+                <p className="text-[11px] font-normal leading-[1.5] text-white/88 truncate tracking-[0.016em]">
                   {event.location}
                 </p>
               )}
               {event.locationAddress && (
-                <p className="text-[10.5px] font-[350] leading-[1.48] text-white/34 truncate tracking-[0.02em]">
+                <p className="text-[10.5px] font-normal leading-[1.48] text-white/72 truncate tracking-[0.02em]">
                   {event.locationAddress}
                 </p>
               )}
@@ -182,11 +180,11 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
               e.stopPropagation();
               onToggleComplete(event.id);
             }}
-            className="relative z-10 mt-0.5 text-white/28 hover:text-emerald-300 transition-colors cursor-pointer shrink-0"
+            className="relative z-10 mt-0.5 text-white/60 hover:text-emerald-300 transition-colors cursor-pointer shrink-0"
             title={isCompleted ? '완료 해제' : '완료 표시'}
           >
             {isCompleted ? (
-              <CheckCircle className="w-4 h-4 text-emerald-300/90" />
+              <CheckCircle className="w-4 h-4 text-emerald-300" />
             ) : (
               <Circle className="w-4 h-4" />
             )}
@@ -217,19 +215,11 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
       : 'rounded-[8px] px-3 py-0.5'
     : isLargeBlock
     ? isDayMode
-      ? 'rounded-[11px] pl-[26px] pr-4 py-4'
-      : 'rounded-[10px] pl-[24px] pr-4 py-3.5'
+      ? 'rounded-[11px] px-4 py-4'
+      : 'rounded-[10px] px-4 py-3.5'
     : isDayMode
-    ? 'rounded-[10px] pl-[22px] pr-3.5 py-2.5'
-    : 'rounded-[9px] pl-[20px] pr-3 py-2';
-
-  const inlayGeometryClasses = isLargeBlock
-    ? isDayMode
-      ? 'left-[12px] top-4 bottom-4'
-      : 'left-[11px] top-3.5 bottom-3.5'
-    : isDayMode
-    ? 'left-[10px] top-2.5 bottom-2.5'
-    : 'left-[9px] top-2 bottom-2';
+    ? 'rounded-[10px] px-3.5 py-2.5'
+    : 'rounded-[9px] px-3 py-2';
 
   const backgroundShieldClass =
     isAnyInteracting && !isActivelyMoving ? 'pointer-events-none' : '';
@@ -240,11 +230,11 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
       data-selected={isSelected && !isMovedToOtherDate ? 'true' : undefined}
       onMouseDown={onDragMouseDown}
       style={style}
-      className={`group absolute ${paddingClasses} luxury-event-card ${
+      className={`absolute ${paddingClasses} luxury-event-card ${
         isReadOnlyExternal ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
       } z-10 hover:z-20 flex flex-col justify-between overflow-hidden select-none border ${
         theme.blockSurfaceClass
-      } ${
+      } ${!isMovedToOtherDate ? theme.hoverBorderClass : ''} ${
         isSelected && !isMovedToOtherDate ? `${theme.selectedSurfaceClass} !z-30` : ''
       } ${
         isMovedToOtherDate
@@ -252,70 +242,59 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
           : isMovedInSameDate
           ? '!z-50 shadow-2xl ring-1 ring-white/30 opacity-95'
           : ''
-      } ${isCompleted && !isMovedToOtherDate ? 'opacity-55' : ''} ${backgroundShieldClass}`}
+      } ${isCompleted && !isMovedToOtherDate ? 'opacity-75' : ''} ${backgroundShieldClass}`}
     >
-      {/* 상단 리사이즈 핸들 */}
+      {/* 상단 리사이즈 영역 (시각 표시 제거) */}
       {onResizeTopMouseDown && !isReadOnlyExternal && (
         <div
           onMouseDown={onResizeTopMouseDown}
-          className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.05] transition-opacity duration-150"
+          className="absolute top-0 left-0 right-0 h-2 cursor-ns-resize z-20"
           title="위로 당겨 시작 시간 조정"
-        >
-          <div className="w-5 h-0.5 rounded-full bg-white/25" />
-        </div>
+        />
       )}
 
       {isCompactBlock ? (
         <div className="relative z-10 flex items-center gap-2.5 w-full overflow-hidden leading-[1.4] my-auto">
-          <span
-            aria-hidden="true"
-            className={`w-[2px] h-3 rounded-full shrink-0 ${theme.inlayClass}`}
-          />
-          {hasConflict && <AlertTriangle className="w-3 h-3 text-amber-300/90 shrink-0" />}
-          {isCompleted && <CheckCircle className="w-3 h-3 text-emerald-300/90 shrink-0" />}
-          {isMaskedExternal && <Lock className="w-2.5 h-2.5 text-white/40 shrink-0" />}
-          <span className="text-[10.5px] font-[370] text-white/46 shrink-0 tabular-nums tracking-[0.032em]">
+          {hasConflict && <AlertTriangle className="w-3 h-3 text-amber-300 shrink-0" />}
+          {isCompleted && <CheckCircle className="w-3 h-3 text-emerald-300 shrink-0" />}
+          {isMaskedExternal && <Lock className="w-2.5 h-2.5 text-white/65 shrink-0" />}
+          <span className="text-[10.5px] font-normal text-white/82 shrink-0 tabular-nums tracking-[0.032em]">
             {resolvedStart}
           </span>
           <span
-            className={`text-[11.5px] font-[450] truncate tracking-[0.014em] ${
-              isCompleted ? 'line-through text-white/34' : isMaskedExternal ? 'text-white/68' : 'text-[#f2f4f8]'
+            className={`text-[11.5px] font-medium truncate tracking-[0.014em] ${
+              isCompleted ? 'line-through text-white/60' : isMaskedExternal ? 'text-white/85' : 'text-white'
             }`}
           >
-            {event.title}
+            {localizedTitle}
           </span>
         </div>
       ) : (
         <>
-          <span
-            aria-hidden="true"
-            className={`pointer-events-none absolute z-10 w-[2px] rounded-full ${inlayGeometryClasses} ${theme.inlayClass}`}
-          />
-
           <div className="relative z-10 flex flex-col h-full overflow-hidden justify-start min-w-0">
             <div className="flex items-center gap-2 text-[10.5px] sm:text-[11px] tabular-nums leading-[1.4] min-w-0 tracking-[0.035em]">
               {showProjectBadge && proj && (
                 <>
                   <span
-                    className={`font-[440] tracking-[0.03em] shrink-0 ${theme.accentTextClass}`}
+                    className={`font-medium tracking-[0.03em] shrink-0 ${theme.accentTextClass}`}
                     title={proj.name}
                   >
                     {proj.code || proj.name.slice(0, 5)}
                   </span>
-                  <span aria-hidden="true" className="text-white/22 shrink-0">
+                  <span aria-hidden="true" className="text-white/45 shrink-0">
                     ·
                   </span>
                 </>
               )}
 
-              <span className="font-[370] text-white/52 shrink-0">{primaryRangeText}</span>
+              <span className="font-normal text-white/85 shrink-0">{primaryRangeText}</span>
 
               {secondaryZoneText && (
                 <>
-                  <span aria-hidden="true" className="text-white/20 shrink-0">
+                  <span aria-hidden="true" className="text-white/40 shrink-0">
                     ·
                   </span>
-                  <span className="font-[350] tracking-[0.025em] text-white/32 truncate">
+                  <span className="font-normal tracking-[0.025em] text-white/70 truncate">
                     {secondaryZoneText}
                   </span>
                 </>
@@ -325,14 +304,14 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
                 <span className="ml-auto flex items-center gap-1.5 shrink-0 pl-2">
                   {checklistTotal > 0 && (
                     <span
-                      className="text-[10.5px] font-[360] tracking-[0.04em] text-white/34 tabular-nums"
+                      className="text-[10.5px] font-medium tracking-[0.04em] text-white/75 tabular-nums"
                       title={`체크리스트 ${checklistDone}/${checklistTotal}`}
                     >
                       {checklistDone}/{checklistTotal}
                     </span>
                   )}
-                  {hasConflict && <AlertTriangle className="w-3 h-3 text-amber-300/90" />}
-                  {isCompleted && <CheckCircle className="w-3 h-3 text-emerald-300/90" />}
+                  {hasConflict && <AlertTriangle className="w-3 h-3 text-amber-300" />}
+                  {isCompleted && <CheckCircle className="w-3 h-3 text-emerald-300" />}
                 </span>
               )}
             </div>
@@ -340,22 +319,22 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
             <div
               className={`${
                 isDayMode ? 'text-[13px] sm:text-[13.5px]' : 'text-[12px]'
-              } font-[450] leading-[1.52] ${
+              } font-medium leading-[1.52] ${
                 isLargeBlock ? 'mt-2' : 'mt-1.5'
               } tracking-[0.015em] ${
                 heightPx >= 140 ? 'line-clamp-2 break-keep' : 'truncate'
               } flex items-center gap-1.5 ${
-                isCompleted ? 'line-through text-white/34' : isMaskedExternal ? 'text-white/68' : 'text-[#f2f4f8]'
+                isCompleted ? 'line-through text-white/60' : isMaskedExternal ? 'text-white/85' : 'text-white'
               }`}
             >
-              {isMaskedExternal && <Lock className="w-3 h-3 text-white/40 shrink-0" />}
-              <span className="truncate">{event.title}</span>
+              {isMaskedExternal && <Lock className="w-3 h-3 text-white/65 shrink-0" />}
+              <span className="truncate">{localizedTitle}</span>
             </div>
 
             {!isLargeBlock &&
               heightPx >= 72 &&
               (event.location || event.locationAddress) && (
-                <p className="text-[10.5px] font-[370] text-white/44 mt-1.5 truncate leading-[1.45] tracking-[0.016em]">
+                <p className="text-[10.5px] font-normal text-white/80 mt-1.5 truncate leading-[1.45] tracking-[0.016em]">
                   {event.location || event.locationAddress}
                 </p>
               )}
@@ -366,7 +345,7 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
                   <p
                     className={`${
                       isDayMode ? 'text-[11.5px]' : 'text-[11px]'
-                    } text-white/58 font-[380] leading-[1.48] truncate tracking-[0.016em]`}
+                    } text-white/88 font-normal leading-[1.48] truncate tracking-[0.016em]`}
                   >
                     {event.location}
                   </p>
@@ -376,7 +355,7 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
                     <p
                       className={`${
                         isDayMode ? 'text-[11px]' : 'text-[10.5px]'
-                      } text-white/34 font-[350] truncate leading-[1.48] tracking-[0.02em]`}
+                      } text-white/72 font-normal truncate leading-[1.48] tracking-[0.02em]`}
                     >
                       {event.locationAddress}
                     </p>
@@ -387,15 +366,13 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
         </>
       )}
 
-      {/* 하단 리사이즈 핸들 */}
+      {/* 하단 리사이즈 영역 (시각 표시 제거) */}
       {onResizeBottomMouseDown && !isReadOnlyExternal && (
         <div
           onMouseDown={onResizeBottomMouseDown}
-          className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-white/[0.05] transition-opacity duration-150"
+          className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize z-20"
           title="아래로 당겨 종료 시간 조정"
-        >
-          <div className="w-5 h-0.5 rounded-full bg-white/25" />
-        </div>
+        />
       )}
     </div>
   );
@@ -412,7 +389,6 @@ export interface LuxuryTimelineDragPreviewProps {
   endTimeLabel: string;
   topPx: number;
   heightPx: number;
-  inlayClass?: string;
 }
 
 const LuxuryTimelineDragPreviewComponent: React.FC<LuxuryTimelineDragPreviewProps> = ({
@@ -424,7 +400,6 @@ const LuxuryTimelineDragPreviewComponent: React.FC<LuxuryTimelineDragPreviewProp
   endTimeLabel,
   topPx,
   heightPx,
-  inlayClass,
 }) => {
   return (
     <div
@@ -442,22 +417,12 @@ const LuxuryTimelineDragPreviewComponent: React.FC<LuxuryTimelineDragPreviewProp
           : 'bg-white/[0.04] border border-white/20 border-dashed backdrop-blur-xs'
       }`}
     >
-      {isCrossDate && inlayClass && (
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute left-[6px] top-2 bottom-2 w-[2px] rounded-full ${inlayClass}`}
-        />
-      )}
       {isCrossDate && (
-        <span className="pl-1.5 text-[11.5px] font-[450] text-[#f2f4f8] tracking-[0.014em] leading-[1.45] truncate">
+        <span className="text-[11.5px] font-medium text-white tracking-[0.014em] leading-[1.45] truncate">
           {eventTitle}
         </span>
       )}
-      <span
-        className={`${
-          isCrossDate ? 'pl-1.5' : ''
-        } text-[10.5px] font-[370] text-white/60 tabular-nums tracking-[0.032em] leading-[1.4] truncate`}
-      >
+      <span className="text-[10.5px] font-normal text-white/85 tabular-nums tracking-[0.032em] leading-[1.4] truncate">
         {isCrossDate ? `${columnDate.slice(5).replace('-', '.')} · ` : ''}
         {startTimeLabel} – {endTimeLabel}
       </span>

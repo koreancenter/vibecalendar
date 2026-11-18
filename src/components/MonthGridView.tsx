@@ -1,11 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Plus, Sparkles } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { getCalendarGrid, getEventDateSpan } from '../shared/dateUtils';
-import {
-  expandRecurringEventsForRange,
-  formatRecurrenceLabel,
-} from '../shared/recurrenceUtils';
+import { expandRecurringEventsForRange } from '../shared/recurrenceUtils';
 import { hasEventConflict } from '../shared/scheduleUtils';
 import {
   areShallowArraysEqual,
@@ -14,6 +11,7 @@ import {
 import { useCalendarDragAndDrop } from '../hooks/useCalendarDragAndDrop';
 import { useTranslation } from 'react-i18next';
 import { getEventChecklistStats, LuxuryEventChip } from './common/LuxuryEventChip';
+import { formatLocalizedEventFields } from '../utils/eventLocalization';
 
 interface MonthGridViewProps {
   currentYear: number;
@@ -28,9 +26,6 @@ interface MonthGridViewProps {
   onOpenCreateEvent?: (date: string) => void;
   projects?: ProjectItem[];
   comparedProjectIds?: string[];
-  emptyGuideText?: string;
-  isWorkspaceEmpty?: boolean;
-  onLoadSampleData?: () => void;
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -76,11 +71,8 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
   onOpenCreateEvent,
   projects = [],
   comparedProjectIds = [],
-  emptyGuideText,
-  isWorkspaceEmpty = false,
-  onLoadSampleData,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const grid = useMemo(
     () => getCalendarGrid(currentYear, currentMonth),
     [currentYear, currentMonth]
@@ -173,13 +165,6 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
     return set;
   }, [eventsByDate, byEventId, getViewModel]);
 
-  const visibleEventCount = useMemo(
-    () =>
-      grid.reduce((sum, cell) => sum + (eventsByDate.get(cell.date)?.length || 0), 0),
-    [grid, eventsByDate]
-  );
-  const isMonthEmpty = visibleEventCount === 0;
-
   return (
     <div className="flex-1 flex flex-col h-full bg-[#111318] select-none min-h-0">
       {/* 1. 요일 헤더 */}
@@ -189,8 +174,8 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
             key={day + idx}
             className={
               idx === 0 || idx === 6
-                ? 'text-white/32 font-normal tracking-tight'
-                : 'text-white/50 font-medium tracking-tight'
+                ? 'text-white/68 font-medium tracking-tight'
+                : 'text-white/85 font-medium tracking-tight'
             }
           >
             {day}
@@ -200,41 +185,6 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
 
       {/* 2. 날짜 셀 그리드 */}
       <div className="flex-1 min-h-0 relative flex flex-col">
-        {isMonthEmpty && emptyGuideText && !draggedEventId && (
-          <div className="absolute inset-0 z-20 pointer-events-none flex items-center justify-center px-6">
-            {isWorkspaceEmpty && onLoadSampleData ? (
-              <div className="luxury-glass-border relative pointer-events-auto rounded-xl bg-gradient-to-b from-[#181c27]/78 via-[#11141d]/76 to-[#0c0e15]/84 backdrop-blur-xl backdrop-saturate-150 shadow-[0_24px_56px_-12px_rgba(0,0,0,0.78),0_8px_20px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.05)] px-6 py-5 text-center space-y-3.5 overflow-hidden">
-                <p className="text-[13px] font-medium text-neutral-100 tracking-tight">
-                  {t('calendar.emptyWorkspace', '현재 등록된 일정이 없습니다')}
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  {onOpenCreateEvent && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenCreateEvent(selectedDate)}
-                      className="h-9 px-4 rounded-lg bg-white text-neutral-950 hover:bg-neutral-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
-                    >
-                      <Plus className="w-3.5 h-3.5 shrink-0" />
-                      <span>{t('calendar.newEvent', '새 일정 등록')}</span>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={onLoadSampleData}
-                    className="h-9 px-4 rounded-lg bg-white/[0.08] hover:bg-white/[0.13] border border-white/[0.09] text-xs font-medium text-neutral-200 hover:text-white inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-neutral-300 shrink-0" />
-                    <span>{t('calendar.loadSample', '샘플 데이터 불러오기')}</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className="text-[13px] sm:text-sm font-light text-neutral-500 tracking-wide text-center select-none">
-                {emptyGuideText}
-              </p>
-            )}
-          </div>
-        )}
 
         <div
           className={`flex-1 min-h-0 grid grid-cols-7 ${
@@ -258,6 +208,12 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
             const tooltipTiming = activeTooltipVm?.timing;
             const tooltipTheme = activeTooltipVm?.theme;
             const tooltipProject = tooltipTheme?.project;
+            const localizedTooltip = activeTooltipEvent
+              ? formatLocalizedEventFields(activeTooltipEvent, {
+                  locale: i18n.language,
+                  projectedTiming: tooltipTiming,
+                })
+              : null;
             const {
               total: totalChecks,
               done: doneChecks,
@@ -284,7 +240,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                 onDragLeave={(e) => handleCellDragLeave(e, cell.date)}
                 onDrop={(e) => handleCellDrop(e, cell.date)}
                 className={`min-w-0 min-h-0 px-2.5 py-2 flex flex-col transition-colors duration-150 cursor-pointer relative group h-full ${
-                  cell.isCurrentMonth ? 'bg-[#12141b]' : 'bg-[#0e1015] text-white/22'
+                  cell.isCurrentMonth ? 'bg-[#12141b]' : 'bg-[#0e1015] text-white/52'
                 } ${
                   isDragOver
                     ? 'ring-1 ring-inset ring-white/30 bg-white/[0.05] z-30'
@@ -306,17 +262,17 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                   </div>
                 )}
 
-                {/* 날짜 번호(절제된 글래스 링 마커) 및 우측 상단 카운트 · 빠른 추가 버튼 */}
+                {/* 날짜 번호 및 우측 상단 카운트 · 빠른 추가 버튼 */}
                 <div className="flex items-center justify-between mb-2 shrink-0">
                   <span
-                    className={`min-w-[22px] h-[22px] px-1.5 rounded-full inline-flex items-center justify-center text-[11.5px] tabular-nums tracking-[0.02em] transition-colors ${
+                    className={`h-[22px] px-0.5 inline-flex items-center text-[11.5px] tabular-nums tracking-[0.02em] transition-colors ${
                       cell.isToday
-                        ? 'bg-white/[0.11] text-[#f5f7fb] ring-1 ring-inset ring-white/[0.26] font-[460]'
+                        ? 'text-white font-semibold'
                         : isSelected
-                        ? 'bg-white/[0.06] text-white/90 ring-1 ring-inset ring-white/[0.12] font-[450]'
+                        ? 'text-white font-medium'
                         : cell.isCurrentMonth
-                        ? 'text-white/58 font-[380]'
-                        : 'text-white/22 font-[360]'
+                        ? 'text-white/88 font-normal'
+                        : 'text-white/50 font-normal'
                     }`}
                   >
                     {cell.dayNumber}
@@ -351,7 +307,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                                 </span>
                               );
                             })()}
-                          <span className="text-[10.5px] font-[360] text-white/28 tabular-nums tracking-[0.03em]">
+                          <span className="text-[10.5px] font-medium text-white/68 tabular-nums tracking-[0.03em]">
                             {dayEvents.length}
                           </span>
                         </>
@@ -364,7 +320,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                             onSelectDate(cell.date);
                             onOpenCreateEvent(cell.date);
                           }}
-                          className="w-5 h-5 rounded-md flex items-center justify-center text-white/32 hover:text-white hover:bg-white/[0.09] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity duration-150 cursor-pointer shrink-0"
+                          className="w-5 h-5 rounded-md flex items-center justify-center text-white/65 hover:text-white hover:bg-white/[0.09] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity duration-150 cursor-pointer shrink-0"
                           title={`${cell.date} 새 일정 등록`}
                         >
                           <Plus className="w-3 h-3" strokeWidth={1.85} />
@@ -376,13 +332,6 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
 
                 {/* 일정 목록 (최대 3개 표시: 25px 여유 높이 + 미세 웨이트 450/370 + 복합 부양 레이어) */}
                 <div className="flex-1 min-h-0 flex flex-col gap-1.5 pt-0.5 overflow-visible">
-                  {!isMonthEmpty && isSelected && dayEvents.length === 0 && !isDragOver && (
-                    <div className="flex-1 flex items-center justify-center pointer-events-none">
-                      <span className="text-[11px] font-[350] text-white/24 tracking-[0.025em] select-none">
-                        일정 없음
-                      </span>
-                    </div>
-                  )}
                   {dayEvents.slice(0, 3).map((ev, eventIdx) => {
                     const vm = byEventId.get(ev.id) ?? getViewModel(ev);
                     const isBeingDragged = draggedEventId === ev.id;
@@ -433,14 +382,14 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                   })}
 
                   {dayEvents.length > 3 && (
-                    <span className="text-[10.5px] font-[360] text-white/34 tabular-nums pl-2.5 shrink-0 tracking-[0.025em]">
+                    <span className="text-[10.5px] font-medium text-white/74 tabular-nums pl-2.5 shrink-0 tracking-[0.025em]">
                       +{dayEvents.length - 3}건 더보기
                     </span>
                   )}
                 </div>
 
                 {/* 초 럭셔리 에디토리얼 요약 호버 카드 (여유로운 행간·자간 및 미세 웨이트 조판) */}
-                {activeTooltipEvent && hoveredTarget && (
+                {activeTooltipEvent && hoveredTarget && localizedTooltip && (
                   <div
                     role="tooltip"
                     className={`luxury-glass-border pointer-events-none absolute ${getTooltipPositionClasses(
@@ -460,17 +409,17 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                       />
                       <div className="flex-1 min-w-0 flex items-start justify-between gap-2.5">
                         <p
-                          className={`text-[13px] font-[460] leading-[1.54] tracking-[0.015em] line-clamp-2 break-keep ${
+                          className={`text-[13px] font-medium leading-[1.54] tracking-[0.015em] line-clamp-2 break-keep ${
                             activeTooltipEvent.isCompleted
-                              ? 'text-white/40 line-through'
-                              : 'text-[#f2f4f8]'
+                              ? 'text-white/62 line-through'
+                              : 'text-white'
                           }`}
                         >
-                          {activeTooltipEvent.title}
+                          {localizedTooltip.title}
                         </p>
                         {activeTooltipEvent.isCompleted && (
-                          <span className="text-[10px] font-[380] tracking-[0.025em] text-white/42 shrink-0 mt-0.5">
-                            완료
+                          <span className="text-[10px] font-medium tracking-[0.025em] text-white/70 shrink-0 mt-0.5">
+                            {localizedTooltip.statusLabel}
                           </span>
                         )}
                       </div>
@@ -481,20 +430,27 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
 
                     {/* 좌측 고정 라벨 + 단일 좌측 정렬 값 그리드 (여유로운 층간 호흡 gap-y-2.5) */}
                     <div className="grid grid-cols-[58px_1fr] gap-x-3.5 gap-y-2.5 text-[11px] items-baseline">
-                      <span className="font-[360] text-white/38 tracking-[0.025em]">시간</span>
-                      <span className="font-[400] tabular-nums text-[#f1f3f7] tracking-[0.032em] leading-[1.5] whitespace-nowrap">
-                        {activeTooltipEvent.isAllDay
-                          ? '종일'
-                          : tooltipTiming
-                          ? `${tooltipTiming.localStartTime} – ${tooltipTiming.localEndTime}`
-                          : `${activeTooltipEvent.startTime} – ${activeTooltipEvent.endTime}`}
+                      <span className="font-normal text-white/70 tracking-[0.025em]">
+                        {t('calendar.time', '시간')}
+                      </span>
+                      <span className="font-medium tabular-nums text-white tracking-[0.032em] leading-[1.5] whitespace-nowrap">
+                        {localizedTooltip.timeLabel}
+                      </span>
+
+                      <span className="font-normal text-white/70 tracking-[0.025em]">
+                        {t('calendar.categoryLabel', '분류')}
+                      </span>
+                      <span className="font-normal text-white/92 tracking-[0.015em] leading-[1.5] truncate">
+                        {localizedTooltip.category}
                       </span>
 
                       {activeTooltipEvent.recurrence && (
                         <>
-                          <span className="font-[360] text-white/38 tracking-[0.025em]">반복</span>
-                          <span className="font-[380] tabular-nums text-white/74 tracking-[0.02em] leading-[1.5] truncate">
-                            {formatRecurrenceLabel(activeTooltipEvent.recurrence)}
+                          <span className="font-normal text-white/70 tracking-[0.025em]">
+                            {t('calendar.repeat', '반복')}
+                          </span>
+                          <span className="font-normal tabular-nums text-white/90 tracking-[0.02em] leading-[1.5] truncate">
+                            {localizedTooltip.recurrenceLabel}
                           </span>
                         </>
                       )}
@@ -503,14 +459,18 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                         tooltipTiming &&
                         !tooltipTiming.isSameZone && (
                           <>
-                            <span className="font-[360] text-white/38 tracking-[0.025em]">원천</span>
-                            <span className="font-[370] tabular-nums text-white/60 tracking-[0.025em] leading-[1.5] truncate">
+                            <span className="font-normal text-white/70 tracking-[0.025em]">
+                              {t('calendar.timezone', '표준시')}
+                            </span>
+                            <span className="font-normal tabular-nums text-white/85 tracking-[0.025em] leading-[1.5] truncate">
                               {tooltipTiming.sourceRangeWithCode} · {tooltipTiming.sourceMeta.cityKo}
                             </span>
                           </>
                         )}
 
-                      <span className="font-[360] text-white/38 tracking-[0.025em]">프로젝트</span>
+                      <span className="font-normal text-white/70 tracking-[0.025em]">
+                        {t('calendar.project', '프로젝트')}
+                      </span>
                       {tooltipProject ? (
                         <div className="flex items-center gap-2 min-w-0">
                           <span
@@ -518,26 +478,30 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                               tooltipTheme?.dotClass || 'bg-neutral-300'
                             }`}
                           />
-                          <span className="font-[400] text-white/78 truncate tracking-[0.015em] leading-[1.5]">
+                          <span className="font-normal text-white/92 truncate tracking-[0.015em] leading-[1.5]">
                             {tooltipProject.name}
                           </span>
                         </div>
                       ) : (
-                        <span className="font-[360] text-white/34 tracking-[0.02em]">미지정</span>
+                        <span className="font-normal text-white/62 tracking-[0.02em]">
+                          {t('common.unassigned', '미지정')}
+                        </span>
                       )}
 
                       {(activeTooltipEvent.location ||
                         activeTooltipEvent.locationAddress) && (
                         <>
-                          <span className="font-[360] text-white/38 tracking-[0.025em]">장소</span>
+                          <span className="font-normal text-white/70 tracking-[0.025em]">
+                            {t('calendar.location', '장소')}
+                          </span>
                           <div className="min-w-0 space-y-1 text-left">
-                            <p className="font-[400] text-white/80 leading-[1.54] tracking-[0.015em] line-clamp-2 break-keep">
+                            <p className="font-normal text-white/92 leading-[1.54] tracking-[0.015em] line-clamp-2 break-keep">
                               {activeTooltipEvent.location ||
                                 activeTooltipEvent.locationAddress}
                             </p>
                             {activeTooltipEvent.location &&
                               activeTooltipEvent.locationAddress && (
-                                <p className="text-[10.5px] font-[350] text-white/38 leading-[1.5] tracking-[0.02em] line-clamp-2 break-keep">
+                                <p className="text-[10.5px] font-normal text-white/72 leading-[1.5] tracking-[0.02em] line-clamp-2 break-keep">
                                   {activeTooltipEvent.locationAddress}
                                 </p>
                               )}
@@ -545,28 +509,30 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                         </>
                       )}
 
-                      <span className="font-[360] text-white/38 tracking-[0.025em]">체크리스트</span>
+                      <span className="font-normal text-white/70 tracking-[0.025em]">
+                        {t('calendar.checklist', '체크리스트')}
+                      </span>
                       {totalChecks > 0 ? (
                         <div className="min-w-0">
                           <div className="flex items-baseline gap-2 tabular-nums whitespace-nowrap">
-                            <span className="text-[#f1f3f7] font-[450] tracking-[0.03em]">
+                            <span className="text-white font-medium tracking-[0.03em]">
                               {checkRate}%
                             </span>
-                            <span className="text-[10.5px] font-[360] text-white/38 tracking-[0.035em]">
+                            <span className="text-[10.5px] font-normal text-white/72 tracking-[0.035em]">
                               {doneChecks}/{totalChecks}
                             </span>
                           </div>
-                          <div className="mt-2 w-full h-[1.5px] rounded-full bg-white/[0.08] overflow-hidden">
+                          <div className="mt-2 w-full h-[1.5px] rounded-full bg-white/[0.12] overflow-hidden">
                             <div
                               style={{
                                 width: `${Math.max(checkRate > 0 ? 5 : 0, checkRate)}%`,
                               }}
-                              className="h-full rounded-full bg-white/80"
+                              className="h-full rounded-full bg-white/90"
                             />
                           </div>
                         </div>
                       ) : (
-                        <span className="font-[360] text-white/34 tracking-[0.02em]">항목 없음</span>
+                        <span className="font-normal text-white/62 tracking-[0.02em]">항목 없음</span>
                       )}
                     </div>
                   </div>
@@ -590,13 +556,10 @@ function areMonthGridViewPropsEqual(
     prev.selectedDate === next.selectedDate &&
     prev.selectedEvent === next.selectedEvent &&
     prev.viewerTimeZone === next.viewerTimeZone &&
-    prev.emptyGuideText === next.emptyGuideText &&
-    prev.isWorkspaceEmpty === next.isWorkspaceEmpty &&
     prev.onSelectDate === next.onSelectDate &&
     prev.onSelectEvent === next.onSelectEvent &&
     prev.onMoveEventDate === next.onMoveEventDate &&
     prev.onOpenCreateEvent === next.onOpenCreateEvent &&
-    prev.onLoadSampleData === next.onLoadSampleData &&
     areShallowArraysEqual(prev.events, next.events) &&
     areShallowArraysEqual(prev.projects, next.projects) &&
     areShallowArraysEqual(prev.comparedProjectIds, next.comparedProjectIds)

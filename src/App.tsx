@@ -135,6 +135,7 @@ import {
   sharedEventToCalendarItem,
 } from './utils/shareCodec';
 import { getEmptyCalendarGuideText } from './utils/emptyStateGuide';
+import { resolveProjectFocusDate } from './utils/projectFocusDate';
 import {
   downloadWorkspaceBackupFile,
   parseIcsContent,
@@ -1697,6 +1698,100 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
     [setSelectedEvent, setSelectedDate]
   );
 
+  const handleSelectSingleProjectWithJump = useCallback(
+    (projId: string | 'all') => {
+      setSelectedProjectId(projId);
+      if (projId !== 'all') {
+        const targetDate = resolveProjectFocusDate({
+          projectId: projId,
+          projects,
+          events,
+          viewerTimeZone: tzPrefs.viewerTimeZone,
+          viewMode,
+          currentYear,
+          currentMonth,
+          selectedDate,
+        });
+        if (targetDate) {
+          jumpToDate(targetDate);
+        }
+        setSelectedEvent((curr) => (curr && curr.projectId !== projId ? null : curr));
+      }
+    },
+    [
+      currentMonth,
+      currentYear,
+      events,
+      jumpToDate,
+      projects,
+      selectedDate,
+      setSelectedEvent,
+      setSelectedProjectId,
+      tzPrefs.viewerTimeZone,
+      viewMode,
+    ]
+  );
+
+  const handleSelectProjectTab = useCallback(
+    (id: string, multiModifier = false) => {
+      const isMulti = isCompareMode || multiModifier;
+      if (!isMulti) {
+        const isTogglingOff =
+          selectedProjectIds.length === 1 && selectedProjectIds[0] === id;
+        handleProjectClick(id, false);
+        if (!isTogglingOff) {
+          const targetDate = resolveProjectFocusDate({
+            projectId: id,
+            projects,
+            events,
+            viewerTimeZone: tzPrefs.viewerTimeZone,
+            viewMode,
+            currentYear,
+            currentMonth,
+            selectedDate,
+          });
+          if (targetDate) {
+            jumpToDate(targetDate);
+          }
+          setSelectedEvent((curr) => (curr && curr.projectId !== id ? null : curr));
+        }
+        return;
+      }
+
+      const alreadySelected = selectedProjectIds.includes(id);
+      handleProjectClick(id, multiModifier);
+      if (!alreadySelected && selectedProjectIds.length === 0) {
+        const targetDate = resolveProjectFocusDate({
+          projectId: id,
+          projects,
+          events,
+          viewerTimeZone: tzPrefs.viewerTimeZone,
+          viewMode,
+          currentYear,
+          currentMonth,
+          selectedDate,
+        });
+        if (targetDate) {
+          jumpToDate(targetDate);
+        }
+      }
+    },
+    [
+      currentMonth,
+      currentYear,
+      events,
+      handleProjectClick,
+      isCompareMode,
+      jumpToDate,
+      projects,
+      selectedDate,
+      selectedProjectIds,
+      setSelectedEvent,
+      tzPrefs.viewerTimeZone,
+      viewMode,
+    ]
+  );
+
   const handleShareEvent = useCallback((ev: CalendarEventItem) => {
     setShareTarget({ kind: 'event', event: ev });
   }, []);
@@ -2419,7 +2514,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         selectedProjectIds={selectedProjectIds}
         isCompareMode={isCompareMode}
         onSelectProject={setSelectedProjectId}
-        onProjectClick={handleProjectClick}
+        onProjectClick={handleSelectProjectTab}
         onToggleProjectInComparison={toggleProjectInComparison}
         onToggleCompareMode={toggleCompareMode}
         onJumpToDate={jumpToDate}
@@ -2483,9 +2578,6 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 viewerTimeZone={tzPrefs.viewerTimeZone}
                 projects={projects}
                 comparedProjectIds={selectedProjectIds}
-                emptyGuideText={emptyGuideText}
-                isWorkspaceEmpty={isWorkspaceEmpty}
-                onLoadSampleData={handleLoadSampleData}
                 onSelectDate={setSelectedDate}
                 onSelectEvent={handleSelectCalendarEvent}
                 onMoveEventDate={handleMoveEventDate}
@@ -2506,9 +2598,6 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 secondaryShortCode={tzPrefs.secondaryMeta?.shortCode}
                 projects={projects}
                 comparedProjectIds={selectedProjectIds}
-                emptyGuideText={emptyGuideText}
-                isWorkspaceEmpty={isWorkspaceEmpty}
-                onLoadSampleData={handleLoadSampleData}
                 onSelectDate={setSelectedDate}
                 onSelectEvent={handleSelectCalendarEvent}
                 onMoveEventDate={handleMoveEventDate}
@@ -2545,9 +2634,6 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                 onAutoRebalanceDate={(date) => {
                   handleAutoRebalanceSchedule(date);
                 }}
-                emptyGuideText={emptyGuideText}
-                isWorkspaceEmpty={isWorkspaceEmpty}
-                onLoadSampleData={handleLoadSampleData}
               />
             </div>
           )}
@@ -2675,15 +2761,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           jumpToDate(ev.date);
           handleSelectCalendarEvent(ev);
         }}
-        onSelectProject={(projId) => {
-          setSelectedProjectId(projId);
-          if (projId !== 'all') {
-            const proj = projects.find((p) => p.id === projId);
-            if (proj?.startDate) {
-              jumpToDate(proj.startDate);
-            }
-          }
-        }}
+        onSelectProject={handleSelectSingleProjectWithJump}
         onOpenCreateEvent={(prefillTitle) => {
           handleOpenCreateEvent(prefillTitle ? { title: prefillTitle } : undefined);
         }}
@@ -2764,6 +2842,9 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
           } else {
             const created = createProject(data);
             setSelectedProjectId(created.id);
+            if (created.startDate) {
+              jumpToDate(created.startDate);
+            }
           }
         }}
       />
@@ -2776,7 +2857,7 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
         events={events}
         selectedProjectId={selectedProjectId}
         selectedProjectIds={selectedProjectIds}
-        onSelectProject={setSelectedProjectId}
+        onSelectProject={handleSelectSingleProjectWithJump}
         onToggleCompareProject={toggleProjectInComparison}
         onOpenCreateModal={() => {
           setEditingProject(null);

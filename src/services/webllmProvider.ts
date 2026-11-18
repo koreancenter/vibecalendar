@@ -136,7 +136,7 @@ interface NavigatorGpuAdapterLike {
   };
 }
 
-interface NavigatorWithGpu extends Navigator {
+interface NavigatorWithGpu extends Omit<Navigator, 'gpu'> {
   gpu?: {
     requestAdapter: () => Promise<NavigatorGpuAdapterLike | null>;
   };
@@ -157,7 +157,7 @@ export function probeWebGpuDeviceInfo(): Promise<WebGpuDeviceInfo> {
     }
 
     try {
-      const nav = navigator as NavigatorWithGpu;
+      const nav = navigator as unknown as NavigatorWithGpu;
       const adapter = await nav.gpu?.requestAdapter();
       if (!adapter) {
         return {

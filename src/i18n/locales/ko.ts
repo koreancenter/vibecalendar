@@ -18,6 +18,7 @@ export const ko = {
     undo: '실행 취소',
     loading: '불러오는 중...',
     all: '전체',
+    unassigned: '미지정',
     externalSync: '외부 동기화',
     notifications: '알림 설정',
     collab: '라이브 협업',
@@ -37,6 +38,10 @@ export const ko = {
     viewWeekTooltip: '주간 뷰 (W)',
     viewDayTooltip: '일간 뷰 (D)',
     viewOpsTooltip: '공정 런시트 (O)',
+    time: '시간',
+    categoryLabel: '분류',
+    repeat: '반복',
+    filterCategory: '일정 분류 필터',
     categories: {
       work: '업무',
       business_trip: '방문·출장',
