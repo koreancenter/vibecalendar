@@ -89,7 +89,7 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
       <div
         data-selected={isSelected ? 'true' : undefined}
         onClick={onClick}
-        className={`relative overflow-hidden px-4 py-3.5 rounded-[10px] border luxury-event-card hover:z-20 cursor-pointer flex items-start justify-between gap-3.5 ${
+        className={`relative overflow-hidden px-4 py-3.5 rounded-[10px] luxury-event-card hover:z-20 cursor-pointer flex items-start justify-between gap-3.5 ${
           theme.blockSurfaceClass
         } ${theme.hoverBorderClass} ${isSelected ? theme.selectedSurfaceClass : ''} ${
           isCompleted ? 'opacity-75' : ''
@@ -232,13 +232,13 @@ const LuxuryEventBlockComponent: React.FC<LuxuryEventBlockProps> = ({
       style={style}
       className={`absolute ${paddingClasses} luxury-event-card ${
         isReadOnlyExternal ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
-      } z-10 hover:z-20 flex flex-col justify-between overflow-hidden select-none border ${
+      } z-10 hover:z-20 flex flex-col justify-between overflow-hidden select-none ${
         theme.blockSurfaceClass
       } ${!isMovedToOtherDate ? theme.hoverBorderClass : ''} ${
         isSelected && !isMovedToOtherDate ? `${theme.selectedSurfaceClass} !z-30` : ''
       } ${
         isMovedToOtherDate
-          ? 'opacity-25 border-dashed pointer-events-none'
+          ? 'opacity-25 border border-dashed border-white/30 pointer-events-none'
           : isMovedInSameDate
           ? '!z-50 shadow-2xl ring-1 ring-white/30 opacity-95'
           : ''

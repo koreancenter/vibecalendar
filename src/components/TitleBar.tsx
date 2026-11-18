@@ -182,7 +182,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </TopBarTooltip>
       </div>
 
-      {/* Zone 3: 3-클러스터 미니멀 바 — ① 시계 │ ② 글래스 뷰 세그먼트 │ ③ 유틸리티 아이콘 + 새 일정(+) */}
+      {/* Zone 3: 3-클러스터 미니멀 바 — ① 시계 │ ② 새 일정(+) · 글래스 뷰 세그먼트 │ ③ 유틸리티 아이콘 */}
       <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
         {timeZoneSlot}
 
@@ -193,42 +193,57 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           />
         )}
 
-        {/* Cluster 2: 초슬림 다크 글래스 세그먼트 뷰 전환 */}
-        <div
-          className="h-7 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] inline-flex items-center gap-0.5 shrink-0"
-          role="tablist"
-          aria-label="캘린더 뷰 전환"
-        >
-          {[
-            { mode: 'month' as const, label: t('calendar.viewMonth', '월'), tooltip: t('calendar.viewMonthTooltip', '월간 뷰 (M)'), shortcut: 'M' },
-            { mode: 'week' as const, label: t('calendar.viewWeek', '주'), tooltip: t('calendar.viewWeekTooltip', '주간 뷰 (W)'), shortcut: 'W' },
-            { mode: 'agenda' as const, label: t('calendar.viewDay', '일'), tooltip: t('calendar.viewDayTooltip', '일간 뷰 (D)'), shortcut: 'D' },
-            { mode: 'ops' as const, label: t('calendar.viewOps', '공정'), tooltip: t('calendar.viewOpsTooltip', '공정 런시트 (O)'), shortcut: 'O' },
-          ].map(({ mode, label, tooltip, shortcut }) => {
-            const active = viewMode === mode;
-            return (
-              <TopBarTooltip key={mode} label={tooltip} shortcut={shortcut}>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => onChangeViewMode(mode)}
-                  className={`h-6 px-2 sm:px-2.5 rounded-[6px] text-[11.5px] leading-none inline-flex items-center justify-center transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
-                    active
-                      ? 'bg-white/[0.12] text-white font-medium shadow-[0_1px_2px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]'
-                      : 'text-neutral-300 hover:text-white font-normal'
-                  }`}
-                >
-                  {label}
-                </button>
-              </TopBarTooltip>
-            );
-          })}
+        {/* Cluster 2: 새 일정(+) · 초슬림 다크 글래스 세그먼트 뷰 전환 */}
+        <div className="flex items-center gap-2 shrink-0">
+          {onOpenCreateEvent && (
+            <TopBarTooltip label={t('common.newEvent', '새 일정')} shortcut="N">
+              <button
+                type="button"
+                onClick={onOpenCreateEvent}
+                aria-label={t('common.newEvent', '새 일정')}
+                className="h-7 w-7 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.11] hover:border-white/[0.2] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] text-neutral-100 hover:text-white flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
+              >
+                <Plus className="w-[15px] h-[15px]" strokeWidth={1.85} />
+              </button>
+            </TopBarTooltip>
+          )}
+
+          <div
+            className="h-7 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] inline-flex items-center gap-0.5 shrink-0"
+            role="tablist"
+            aria-label="캘린더 뷰 전환"
+          >
+            {[
+              { mode: 'month' as const, label: t('calendar.viewMonth', '월'), tooltip: t('calendar.viewMonthTooltip', '월간 뷰 (M)'), shortcut: 'M' },
+              { mode: 'week' as const, label: t('calendar.viewWeek', '주'), tooltip: t('calendar.viewWeekTooltip', '주간 뷰 (W)'), shortcut: 'W' },
+              { mode: 'agenda' as const, label: t('calendar.viewDay', '일'), tooltip: t('calendar.viewDayTooltip', '일간 뷰 (D)'), shortcut: 'D' },
+              { mode: 'ops' as const, label: t('calendar.viewOps', '공정'), tooltip: t('calendar.viewOpsTooltip', '공정 런시트 (O)'), shortcut: 'O' },
+            ].map(({ mode, label, tooltip, shortcut }) => {
+              const active = viewMode === mode;
+              return (
+                <TopBarTooltip key={mode} label={tooltip} shortcut={shortcut}>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => onChangeViewMode(mode)}
+                    className={`h-6 px-2 sm:px-2.5 rounded-[6px] text-[11.5px] leading-none inline-flex items-center justify-center transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/25 ${
+                      active
+                        ? 'bg-white/[0.12] text-white font-medium shadow-[0_1px_2px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]'
+                        : 'text-neutral-300 hover:text-white font-normal'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                </TopBarTooltip>
+              );
+            })}
+          </div>
         </div>
 
         <span aria-hidden="true" className="h-3 w-px bg-white/[0.07] shrink-0" />
 
-        {/* Cluster 3: 정밀 유틸리티 아이콘 열 (검색 · 내보내기 · 볼트 · 새 일정 앵커) */}
+        {/* Cluster 3: 정밀 유틸리티 아이콘 열 (검색 · 동기화 · 알림 · 협업 · 내보내기 · 언어 · 볼트) */}
         <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {onOpenCommandPalette && (
             <TopBarTooltip label={t('common.search', '통합 검색')} shortcut="⌘K" align="right">
@@ -351,19 +366,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <LanguageSelector />
 
           {vaultSlot}
-
-          {onOpenCreateEvent && (
-            <TopBarTooltip label={t('common.newEvent', '새 일정')} shortcut="N" align="right">
-              <button
-                type="button"
-                onClick={onOpenCreateEvent}
-                aria-label={t('common.newEvent', '새 일정')}
-                className="ml-0.5 h-7 w-7 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.11] hover:border-white/[0.2] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] text-neutral-100 hover:text-white flex items-center justify-center transition-all duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
-              >
-                <Plus className="w-[15px] h-[15px]" strokeWidth={1.85} />
-              </button>
-            </TopBarTooltip>
-          )}
         </div>
       </div>
     </header>

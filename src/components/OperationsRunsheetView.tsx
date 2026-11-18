@@ -11,7 +11,6 @@ import {
   Search,
   Sparkles,
   Table2,
-  Wand2,
   X,
 } from 'lucide-react';
 import { CalendarEventItem, ProjectItem } from '../types';
@@ -84,7 +83,6 @@ interface OperationsRunsheetViewProps {
   onShareEvent?: (event: CalendarEventItem) => void;
   onQuickAiPromptForDate: (date: string) => void;
   onRequestReverseMilestones: (prompt: string) => void;
-  onAutoRebalance?: () => void;
 }
 
 function formatSignedDday(targetDateStr: string, baseTodayStr: string): string {
@@ -124,7 +122,6 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
   onShareEvent,
   onQuickAiPromptForDate,
   onRequestReverseMilestones,
-  onAutoRebalance,
 }) => {
   const { t, i18n } = useTranslation();
   const [filterKey, setFilterKey] = useState<OpsFilterKey>('all');
@@ -437,7 +434,7 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* 서브 레이아웃 전환: 런시트 표 / 준비 보드 */}
+            {/* 서브 레이아웃 전환: 런시트 표 / 준비 보드 (아이콘 전용) */}
             <div
               className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]"
               role="tablist"
@@ -447,59 +444,33 @@ const OperationsRunsheetViewComponent: React.FC<OperationsRunsheetViewProps> = (
                 type="button"
                 role="tab"
                 aria-selected={subLayout === 'table'}
+                aria-label="런시트 표"
+                title="런시트 표"
                 onClick={() => setSubLayout('table')}
-                className={`h-6 px-2 rounded-md text-[11px] inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`w-7 h-6 rounded-md inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                   subLayout === 'table'
-                    ? 'bg-white/[0.11] text-white font-medium'
-                    : 'text-neutral-400 hover:text-neutral-200'
+                    ? 'bg-white/[0.11] text-white'
+                    : 'text-neutral-300 hover:text-white'
                 }`}
               >
-                <Table2 className="w-3 h-3 shrink-0" />
-                <span>런시트 표</span>
+                <Table2 className="w-3.5 h-3.5 shrink-0" />
               </button>
               <button
                 type="button"
                 role="tab"
                 aria-selected={subLayout === 'board'}
+                aria-label="준비 보드"
+                title="준비 보드"
                 onClick={() => setSubLayout('board')}
-                className={`h-6 px-2 rounded-md text-[11px] inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`w-7 h-6 rounded-md inline-flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                   subLayout === 'board'
-                    ? 'bg-white/[0.11] text-white font-medium'
-                    : 'text-neutral-400 hover:text-neutral-200'
+                    ? 'bg-white/[0.11] text-white'
+                    : 'text-neutral-300 hover:text-white'
                 }`}
               >
-                <Columns3 className="w-3 h-3 shrink-0" />
-                <span>준비 보드</span>
+                <Columns3 className="w-3.5 h-3.5 shrink-0" />
               </button>
             </div>
-
-            {onAutoRebalance && (
-              <button
-                type="button"
-                onClick={onAutoRebalance}
-                className={`h-7 px-2.5 rounded-lg text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  (filterTabs.find((t) => t.key === 'conflict')?.count || 0) +
-                    (filterTabs.find((t) => t.key === 'overdue')?.count || 0) >
-                  0
-                    ? 'border border-amber-400/35 bg-amber-400/[0.08] text-amber-200 hover:bg-amber-400/[0.15]'
-                    : 'bg-white/[0.05] hover:bg-white/[0.10] border border-white/[0.09] text-neutral-200'
-                }`}
-                title="겹치는 시간제 일정과 미완료 지연 공정을 빈 업무 시간대(09:00~19:00 우선)로 자동 재배치합니다"
-              >
-                <Wand2 className="w-3 h-3 shrink-0" />
-                <span>충돌·지연 자동 재배치</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={handleTriggerReverseMilestones}
-              className="h-7 px-2.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-[11px] font-medium text-neutral-100 inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-              title="선택된 행사 또는 날짜를 기준으로 D-30 ~ D-Day 역산 공정과 체크리스트를 AI로 자동 생성합니다"
-            >
-              <Sparkles className="w-3 h-3 text-neutral-200 shrink-0" />
-              <span>D-Day 역산 공정 설계</span>
-            </button>
           </div>
         </div>
 
@@ -1022,7 +993,6 @@ function areOperationsRunsheetViewPropsEqual(
     prev.onShareEvent === next.onShareEvent &&
     prev.onQuickAiPromptForDate === next.onQuickAiPromptForDate &&
     prev.onRequestReverseMilestones === next.onRequestReverseMilestones &&
-    prev.onAutoRebalance === next.onAutoRebalance &&
     prev.onLoadSampleData === next.onLoadSampleData &&
     areShallowArraysEqual(prev.events, next.events) &&
     areShallowArraysEqual(prev.selectedDateEvents, next.selectedDateEvents) &&

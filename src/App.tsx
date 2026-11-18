@@ -2678,9 +2678,6 @@ const WorkspaceContent: React.FC<WorkspaceContentProps> = ({
                   onShareEvent={handleShareEvent}
                   onQuickAiPromptForDate={handleQuickAiPromptForDate}
                   onRequestReverseMilestones={(prompt) => handleRequestReverseMilestones(prompt)}
-                  onAutoRebalance={() => {
-                    handleAutoRebalanceSchedule();
-                  }}
                 />
               </React.Suspense>
             </div>

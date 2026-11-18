@@ -123,28 +123,114 @@
   animation: vault-horizontal-shake 180ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
-/* 미니멀리스트 이벤트 카드 · 칩: 단일 테두리 호버 트랜지션 */
+/* 미니멀리스트 이벤트 카드 · 칩: 현대적 1px 방향성 그라데이션 테두리 (입체감) + 단일 호버 트랜지션 */
 .luxury-event-card,
 .luxury-event-chip {
-  transition-property: border-color, opacity;
+  --card-accent: 203 213 225;
+  transition-property: opacity;
   transition-duration: 150ms;
   transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.luxury-accent-gold { --card-accent: 230 200 117; }
+.luxury-accent-indigo { --card-accent: 139 150 248; }
+.luxury-accent-emerald { --card-accent: 86 212 168; }
+.luxury-accent-sapphire { --card-accent: 115 176 250; }
+.luxury-accent-rose { --card-accent: 242 135 153; }
+.luxury-accent-amethyst { --card-accent: 197 150 248; }
+.luxury-accent-amber { --card-accent: 227 171 91; }
+.luxury-accent-slate { --card-accent: 203 213 225; }
+.luxury-accent-work { --card-accent: 127 166 248; }
+.luxury-accent-travel { --card-accent: 88 209 168; }
+.luxury-accent-dining { --card-accent: 223 181 115; }
+.luxury-accent-personal { --card-accent: 184 156 246; }
+.luxury-accent-seminar { --card-accent: 230 143 160; }
+.luxury-accent-other { --card-accent: 148 163 184; }
+
+.luxury-event-card::before,
+.luxury-event-chip::before,
+.luxury-event-card::after,
+.luxury-event-chip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 15;
+  transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.luxury-event-card::before,
+.luxury-event-chip::before {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.21) 0%,
+    rgba(255, 255, 255, 0.08) 34%,
+    rgba(255, 255, 255, 0.025) 68%,
+    rgba(255, 255, 255, 0.085) 100%
+  );
+  opacity: 1;
+}
+
+.luxury-event-card::after,
+.luxury-event-chip::after {
+  background: linear-gradient(
+    145deg,
+    rgb(var(--card-accent) / 0.65) 0%,
+    rgb(var(--card-accent) / 0.28) 40%,
+    rgb(var(--card-accent) / 0.14) 74%,
+    rgb(var(--card-accent) / 0.38) 100%
+  );
+  opacity: 0;
+}
+
+.luxury-event-card:hover:not([data-dragging="true"])::before,
+.luxury-event-chip:hover:not([data-dragging="true"])::before {
+  opacity: 0;
+}
+
+.luxury-event-card:hover:not([data-dragging="true"])::after,
+.luxury-event-chip:hover:not([data-dragging="true"])::after {
+  opacity: 1;
+}
+
+.luxury-event-card[data-selected="true"]::before,
+.luxury-event-chip[data-selected="true"]::before {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.42) 0%,
+    rgba(255, 255, 255, 0.18) 38%,
+    rgba(255, 255, 255, 0.09) 72%,
+    rgba(255, 255, 255, 0.24) 100%
+  );
+}
+
+.luxury-event-card[data-dragging="true"]::before,
+.luxury-event-card[data-dragging="true"]::after,
+.luxury-event-chip[data-dragging="true"]::before,
+.luxury-event-chip[data-dragging="true"]::after {
+  opacity: 0;
+}
+
 .luxury-event-card {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
 }
 
 .luxury-event-card[data-selected="true"] {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.36);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.38);
 }
 
 .luxury-event-chip {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .luxury-event-chip[data-selected="true"] {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.32);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -153,7 +239,11 @@
   }
 
   .luxury-event-card,
-  .luxury-event-chip {
+  .luxury-event-chip,
+  .luxury-event-card::before,
+  .luxury-event-chip::before,
+  .luxury-event-card::after,
+  .luxury-event-chip::after {
     transition: none;
   }
 }

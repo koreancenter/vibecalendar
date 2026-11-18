@@ -132,12 +132,12 @@ const LuxuryEventChipComponent: React.FC<LuxuryEventChipProps> = ({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onClick={onClick}
-      className={`relative overflow-hidden ${sizeClasses} font-medium tracking-[0.014em] leading-[1.4] flex items-center gap-2 border luxury-event-chip hover:z-20 ${cursorClasses} ${
+      className={`relative overflow-hidden ${sizeClasses} font-medium tracking-[0.014em] leading-[1.4] flex items-center gap-2 luxury-event-chip hover:z-20 ${cursorClasses} ${
         theme.chipSurfaceClass
       } ${!isDragging ? theme.hoverBorderClass : ''} ${
         isSelected && !isDragging ? theme.selectedSurfaceClass : ''
       } ${
-        isDragging ? 'opacity-30 scale-95 border-dashed border-white/35' : ''
+        isDragging ? 'opacity-30 scale-95 border border-dashed border-white/35' : ''
       } ${isCompleted && !isDragging ? 'opacity-75' : ''} ${siblingDragShieldClass}`}
     >
 

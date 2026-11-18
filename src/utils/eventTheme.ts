@@ -25,14 +25,13 @@ export interface EventLuxuryTheme {
   project?: ProjectItem;
 }
 
-const COOL_OBSIDIAN_CHIP_SURFACE =
-  'bg-[#171b26]/65 border-white/[0.06]';
+const COOL_OBSIDIAN_CHIP_SURFACE = 'bg-[#171b26]/65';
 
 const COOL_OBSIDIAN_BLOCK_SURFACE =
-  'bg-gradient-to-b from-[#181c27]/78 to-[#12151e]/84 border-white/[0.075]';
+  'bg-gradient-to-b from-[#181c27]/78 to-[#12151e]/84';
 
 const COOL_OBSIDIAN_SELECTED_SURFACE =
-  '!from-[#1e2433]/84 !to-[#161a26]/88 !bg-[#1b202e]/86 border-white/[0.22]';
+  '!from-[#1e2433]/84 !to-[#161a26]/88 !bg-[#1b202e]/86';
 
 function createLuxuryPalette(
   inlayClass: string,
@@ -58,56 +57,56 @@ function getThemeByProjectHex(hex?: string): Omit<EventLuxuryTheme, 'project'> |
         'bg-[#e6c875] shadow-[0_0_8px_rgba(230,200,117,0.22)]',
         'bg-[#e6c875]',
         'text-[#ebd494]',
-        'hover:border-[#e6c875]/45'
+        'luxury-accent-gold'
       );
     case '#6366f1': // 임페리얼 인디고
       return createLuxuryPalette(
         'bg-[#8b96f8] shadow-[0_0_8px_rgba(139,150,248,0.22)]',
         'bg-[#8b96f8]',
         'text-[#b4bdfc]',
-        'hover:border-[#8b96f8]/50'
+        'luxury-accent-indigo'
       );
     case '#10b981': // 세이지 에메랄드
       return createLuxuryPalette(
         'bg-[#56d4a8] shadow-[0_0_8px_rgba(86,212,168,0.20)]',
         'bg-[#56d4a8]',
         'text-[#8ce3c3]',
-        'hover:border-[#56d4a8]/45'
+        'luxury-accent-emerald'
       );
     case '#3b82f6': // 미드나잇 사파이어
       return createLuxuryPalette(
         'bg-[#73b0fa] shadow-[0_0_8px_rgba(115,176,250,0.20)]',
         'bg-[#73b0fa]',
         'text-[#a3cbfc]',
-        'hover:border-[#73b0fa]/50'
+        'luxury-accent-sapphire'
       );
     case '#f43f5e': // 로즈 브론즈
       return createLuxuryPalette(
         'bg-[#f28799] shadow-[0_0_8px_rgba(242,135,153,0.20)]',
         'bg-[#f28799]',
         'text-[#f8b0bc]',
-        'hover:border-[#f28799]/48'
+        'luxury-accent-rose'
       );
     case '#a855f7': // 리걸 아메시스트
       return createLuxuryPalette(
         'bg-[#c596f8] shadow-[0_0_8px_rgba(197,150,248,0.20)]',
         'bg-[#c596f8]',
         'text-[#dcc0fc]',
-        'hover:border-[#c596f8]/48'
+        'luxury-accent-amethyst'
       );
     case '#d97706': // 에스프레소 앰버
       return createLuxuryPalette(
         'bg-[#e3ab5b] shadow-[0_0_8px_rgba(227,171,91,0.20)]',
         'bg-[#e3ab5b]',
         'text-[#eec68c]',
-        'hover:border-[#e3ab5b]/48'
+        'luxury-accent-amber'
       );
     case '#94a3b8': // 플래티넘 슬레이트
       return createLuxuryPalette(
         'bg-[#cbd5e1]',
         'bg-[#cbd5e1]',
         'text-neutral-300',
-        'hover:border-[#cbd5e1]/42'
+        'luxury-accent-slate'
       );
     default:
       return null;
@@ -119,37 +118,37 @@ const CATEGORY_FALLBACK_THEMES: Record<CalendarCategory, Omit<EventLuxuryTheme, 
     'bg-[#7fa6f8] shadow-[0_0_8px_rgba(127,166,248,0.18)]',
     'bg-[#7fa6f8]',
     'text-[#adc6fb]',
-    'hover:border-[#7fa6f8]/48'
+    'luxury-accent-work'
   ),
   '방문·출장': createLuxuryPalette(
     'bg-[#58d1a8] shadow-[0_0_8px_rgba(88,209,168,0.18)]',
     'bg-[#58d1a8]',
     'text-[#8be0c3]',
-    'hover:border-[#58d1a8]/45'
+    'luxury-accent-travel'
   ),
   '식사·모임': createLuxuryPalette(
     'bg-[#dfb573] shadow-[0_0_8px_rgba(223,181,115,0.18)]',
     'bg-[#dfb573]',
     'text-[#ebd0a3]',
-    'hover:border-[#dfb573]/45'
+    'luxury-accent-dining'
   ),
   '개인': createLuxuryPalette(
     'bg-[#b89cf6] shadow-[0_0_8px_rgba(184,156,246,0.18)]',
     'bg-[#b89cf6]',
     'text-[#d2c0fa]',
-    'hover:border-[#b89cf6]/48'
+    'luxury-accent-personal'
   ),
   '행사·세미나': createLuxuryPalette(
     'bg-[#e68fa0] shadow-[0_0_8px_rgba(230,143,160,0.18)]',
     'bg-[#e68fa0]',
     'text-[#f2b5c1]',
-    'hover:border-[#e68fa0]/48'
+    'luxury-accent-seminar'
   ),
   '기타': createLuxuryPalette(
     'bg-[#94a3b8]',
     'bg-[#94a3b8]',
     'text-neutral-300',
-    'hover:border-[#94a3b8]/42'
+    'luxury-accent-other'
   ),
 };
 
