@@ -223,8 +223,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
             return (
               <div
                 key={cell.date}
-                onClick={() => onSelectDate(cell.date)}
-                onDoubleClick={(e) => {
+                onClick={(e) => {
                   const targetEl = e.target as HTMLElement | null;
                   if (
                     targetEl?.closest(
@@ -233,6 +232,7 @@ const MonthGridViewComponent: React.FC<MonthGridViewProps> = ({
                   ) {
                     return;
                   }
+                  setHoveredTarget(null);
                   onSelectDate(cell.date);
                   onOpenCreateEvent?.(cell.date);
                 }}

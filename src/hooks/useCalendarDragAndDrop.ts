@@ -338,18 +338,18 @@ export function useCalendarDragAndDrop({
 
       if (!state) return;
 
+      justDraggedRef.current = true;
+      if (justDraggedTimerRef.current !== null) {
+        window.clearTimeout(justDraggedTimerRef.current);
+      }
+      justDraggedTimerRef.current = window.setTimeout(() => {
+        justDraggedRef.current = false;
+        justDraggedTimerRef.current = null;
+      }, 80);
+
       if (!state.hasMoved) {
         cfg?.onSelectEvent(state.originalEvent);
       } else {
-        justDraggedRef.current = true;
-        if (justDraggedTimerRef.current !== null) {
-          window.clearTimeout(justDraggedTimerRef.current);
-        }
-        justDraggedTimerRef.current = window.setTimeout(() => {
-          justDraggedRef.current = false;
-          justDraggedTimerRef.current = null;
-        }, 80);
-
         if (onMoveEventDateRef.current) {
           const finalStartStr = minutesToTime(state.startMinutes);
           const finalEndStr = minutesToTime(state.endMinutes);

@@ -170,20 +170,20 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
             return (
               <div
                 key={day.date}
-                onClick={() => onSelectDate(day.date)}
-                onDoubleClick={() => {
+                onClick={() => {
                   onSelectDate(day.date);
                   onOpenCreateEvent?.(day.date);
                 }}
                 onDragOver={(e) => handleCellDragOver(e, day.date)}
                 onDragLeave={(e) => handleCellDragLeave(e, day.date)}
                 onDrop={(e) => handleCellDrop(e, day.date)}
+                title={onOpenCreateEvent ? `${day.date} 새 일정 등록` : undefined}
                 className={`flex items-center justify-center px-1 text-center transition-colors duration-150 cursor-pointer ${
                   isDropTarget
                     ? 'bg-white/[0.07] ring-1 ring-inset ring-white/25'
                     : isSelected
                     ? 'bg-white/[0.035]'
-                    : 'hover:bg-white/[0.018]'
+                    : 'hover:bg-white/[0.025]'
                 }`}
               >
                 <div className="flex items-center justify-center gap-1.5">
@@ -238,9 +238,13 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
               return (
                 <div
                   key={day.date}
-                  onDoubleClick={(e) => {
+                  onClick={(e) => {
                     const targetEl = e.target as HTMLElement | null;
-                    if (targetEl?.closest('.luxury-event-chip, .luxury-event-card, button')) {
+                    if (
+                      targetEl?.closest(
+                        '.luxury-event-chip, .luxury-event-card, button, [role="button"]'
+                      )
+                    ) {
                       return;
                     }
                     onSelectDate(day.date);
@@ -249,10 +253,10 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
                   onDragOver={(e) => handleCellDragOver(e, day.date)}
                   onDragLeave={(e) => handleCellDragLeave(e, day.date)}
                   onDrop={(e) => handleCellDrop(e, day.date)}
-                  className={`px-1.5 py-1.5 space-y-1.5 min-h-[34px] transition-colors ${
+                  className={`px-1.5 py-1.5 space-y-1.5 min-h-[34px] transition-colors cursor-pointer ${
                     isCellDropOver
                       ? 'bg-white/[0.07] ring-1 ring-inset ring-white/25'
-                      : ''
+                      : 'hover:bg-white/[0.02]'
                   }`}
                 >
                   {allDayList.map((ev) => {
@@ -275,7 +279,8 @@ const WeekGridViewComponent: React.FC<WeekGridViewProps> = ({
                         titleAttr={formatLocalizedEventTitle(ev, { locale: i18n.language })}
                         onDragStart={(e) => handleCellDragStart(e, ev.id)}
                         onDragEnd={handleCellDragEnd}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           onSelectDate(day.date);
                           onSelectEvent(ev);
                         }}

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useRef, useEffect, useMemo, useCallback, useState } from 'react';
 import { CalendarEventItem, ProjectItem } from '../types';
 import { layoutTimeEvents, PositionedEvent } from '../utils/timeGridLayout';
 import { minutesToTime } from '../shared/scheduleUtils';
@@ -102,6 +102,25 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
     }
   }, [scrollResetKey, startHour, pxPerHour]);
 
+  const [hoveredSlot, setHoveredSlot] = useState<{
+    date: string;
+    startMinutes: number;
+  } | null>(null);
+
+  const computeSnappedSlot = useCallback(
+    (clientY: number, rect: DOMRect) => {
+      const offsetY = Math.max(0, Math.min(rect.height, clientY - rect.top));
+      const rawMinutes = startHour * 60 + (offsetY / pxPerHour) * 60;
+      const snappedStart = Math.max(
+        startHour * 60,
+        Math.min(endHour * 60 - 30, Math.floor(rawMinutes / 15) * 15)
+      );
+      const snappedEnd = Math.min(23 * 60 + 59, snappedStart + 60);
+      return { snappedStart, snappedEnd };
+    },
+    [startHour, endHour, pxPerHour]
+  );
+
   const { activeInteraction, justDraggedRef, startTimelineInteraction } =
     useCalendarDragAndDrop({
       onMoveEventDate,
@@ -116,6 +135,12 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
         onSelectEvent: handleSelectProjectedEvent,
       },
     });
+
+  useEffect(() => {
+    if (activeInteraction) {
+      setHoveredSlot(null);
+    }
+  }, [activeInteraction]);
 
   const hours = useMemo(() => {
     const arr: number[] = [];
@@ -240,12 +265,33 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
             return (
               <div
                 key={col.date}
-                onClick={() => {
-                  if (justDraggedRef.current) return;
-                  onSelectDate?.(col.date);
+                onMouseMove={(e) => {
+                  if (activeInteraction || !onQuickCreateSlot) {
+                    if (hoveredSlot) setHoveredSlot(null);
+                    return;
+                  }
+                  const targetEl = e.target as HTMLElement | null;
+                  if (
+                    targetEl?.closest(
+                      '.luxury-event-card, .luxury-event-chip, button, [role="button"]'
+                    )
+                  ) {
+                    if (hoveredSlot) setHoveredSlot(null);
+                    return;
+                  }
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const { snappedStart } = computeSnappedSlot(e.clientY, rect);
+                  setHoveredSlot((prev) =>
+                    prev?.date === col.date && prev?.startMinutes === snappedStart
+                      ? prev
+                      : { date: col.date, startMinutes: snappedStart }
+                  );
                 }}
-                onDoubleClick={(e) => {
-                  if (justDraggedRef.current || !onQuickCreateSlot) return;
+                onMouseLeave={() => {
+                  setHoveredSlot((prev) => (prev?.date === col.date ? null : prev));
+                }}
+                onClick={(e) => {
+                  if (justDraggedRef.current) return;
                   const targetEl = e.target as HTMLElement | null;
                   if (
                     targetEl?.closest(
@@ -254,15 +300,11 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                   ) {
                     return;
                   }
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const offsetY = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
-                  const rawMinutes = startHour * 60 + (offsetY / pxPerHour) * 60;
-                  const snappedStart = Math.max(
-                    startHour * 60,
-                    Math.min(endHour * 60 - 30, Math.floor(rawMinutes / 15) * 15)
-                  );
-                  const snappedEnd = Math.min(23 * 60 + 59, snappedStart + 60);
                   onSelectDate?.(col.date);
+                  if (!onQuickCreateSlot) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const { snappedStart, snappedEnd } = computeSnappedSlot(e.clientY, rect);
+                  setHoveredSlot(null);
                   onQuickCreateSlot(
                     col.date,
                     minutesToTime(snappedStart),
@@ -271,6 +313,8 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                 }}
                 style={{ height: `${totalHeight}px` }}
                 className={`relative transition-colors duration-150 ${
+                  onQuickCreateSlot ? 'cursor-pointer' : ''
+                } ${
                   isDragTargetCol
                     ? 'bg-white/[0.03] ring-1 ring-inset ring-white/[0.14]'
                     : !isDayMode && col.isSelected
@@ -293,6 +337,35 @@ const TimeGridCanvasComponent: React.FC<TimeGridCanvasProps> = ({
                     />
                   </div>
                 ))}
+
+                {/* 빈 시간 슬롯 호버 시 클릭 가능한 시간대 프리뷰 */}
+                {!activeInteraction &&
+                  hoveredSlot?.date === col.date &&
+                  onQuickCreateSlot &&
+                  (() => {
+                    const slotTopPx =
+                      ((hoveredSlot.startMinutes - startHour * 60) * pxPerHour) / 60;
+                    const slotEndMinutes = Math.min(23 * 60 + 59, hoveredSlot.startMinutes + 60);
+                    const slotHeightPx = Math.max(
+                      24,
+                      ((slotEndMinutes - hoveredSlot.startMinutes) * pxPerHour) / 60
+                    );
+                    return (
+                      <div
+                        aria-hidden="true"
+                        style={{ top: `${slotTopPx}px`, height: `${slotHeightPx}px` }}
+                        className={`pointer-events-none absolute ${
+                          isDayMode
+                            ? 'left-3 right-6 rounded-[10px] px-3.5 py-2'
+                            : 'left-[4.5px] right-[9px] rounded-[9px] px-2.5 py-1.5'
+                        } border border-dashed border-white/[0.16] bg-white/[0.025] z-[5] flex items-start transition-[top] duration-75`}
+                      >
+                        <span className="text-[10.5px] font-medium text-white/70 tabular-nums tracking-[0.03em]">
+                          + {minutesToTime(hoveredSlot.startMinutes)} – {minutesToTime(slotEndMinutes)}
+                        </span>
+                      </div>
+                    );
+                  })()}
 
                 {/* 드래그/리사이즈 중 대상 컬럼에 표시되는 쿨 옵시디언 글래스 프리뷰 카드 */}
                 {activeInteraction &&
