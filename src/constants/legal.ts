@@ -3,6 +3,6 @@ export const CREATOR_ENTITY = {
   networkName: 'Korean Center Global Network',
   fullTitle: 'GOGUMA APP Team - Korean Center Global Network',
   email: 'master@goguma.app',
-  jurisdiction: 'Republic of Korea',
+  jurisdiction: 'Republic of Korea | Bali, Indonesia',
   copyrightYear: '2026',
 } as const;

@@ -641,10 +641,7 @@ export const VaultIntroGate: React.FC<VaultIntroGateProps> = ({
                         className="group flex items-center justify-between gap-4 px-3 py-1.5 text-[12px] text-neutral-300 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 whitespace-nowrap"
                       >
                         <span>{item.label}</span>
-                        <span className="inline-flex items-center gap-0.5 text-[10.5px] text-neutral-500 group-hover:text-neutral-200 transition-colors shrink-0">
-                          <span>이동</span>
-                          <ArrowUpRight className="w-3 h-3" />
-                        </span>
+                        <ArrowUpRight className="w-3 h-3 text-neutral-500 group-hover:text-neutral-200 transition-colors shrink-0" />
                       </a>
                     ))}
                   </div>
@@ -692,10 +689,7 @@ export const VaultIntroGate: React.FC<VaultIntroGateProps> = ({
                         className="group flex items-center justify-between gap-4 px-3 py-1.5 text-[12px] text-neutral-300 hover:text-white hover:bg-white/[0.05] transition-colors duration-150 whitespace-nowrap"
                       >
                         <span>{item.label}</span>
-                        <span className="inline-flex items-center gap-0.5 text-[10.5px] text-neutral-500 group-hover:text-neutral-200 transition-colors shrink-0">
-                          <span>이동</span>
-                          <ArrowUpRight className="w-3 h-3" />
-                        </span>
+                        <ArrowUpRight className="w-3 h-3 text-neutral-500 group-hover:text-neutral-200 transition-colors shrink-0" />
                       </a>
                     ))}
                   </div>
