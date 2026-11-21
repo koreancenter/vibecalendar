@@ -246,8 +246,24 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.32);
 }
 
+@keyframes chip-detected-pulse {
+  0% {
+    background-color: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.36);
+    transform: translateY(-1px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.chip-detected-pulse {
+  animation: chip-detected-pulse 380ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .vault-shake {
+  .vault-shake,
+  .chip-detected-pulse {
     animation: none;
   }
 
@@ -260,5 +276,6 @@
     transition: none;
   }
 }
+
 
 
