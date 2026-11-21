@@ -511,7 +511,7 @@ function normalizeEventList(
           ? ev.endDate
           : undefined;
       const title =
-        typeof ev.title === 'string' && ev.title.trim() ? ev.title.trim() : '새 일정';
+        typeof ev.title === 'string' && ev.title.trim() ? ev.title.trim() : '';
       const { location, locationAddress } = normalizePlaceAndAddress(
         ev.location,
         ev.locationAddress
@@ -566,7 +566,8 @@ function normalizeEventList(
         checklist,
         recurrence,
       };
-    });
+    })
+    .filter((ev) => Boolean(ev.title));
 }
 
 function normalizeVenues(rawList: unknown, defaultDate: string): RecommendedVenue[] {
@@ -584,13 +585,13 @@ function normalizeVenues(rawList: unknown, defaultDate: string): RecommendedVenu
       return {
         id: typeof v.id === 'string' && v.id ? v.id : `venue-${now}-${idx}`,
         name: cleanName || String(v.name).trim(),
-        category: typeof v.category === 'string' ? v.category.trim() : '추천 장소',
+        category: typeof v.category === 'string' ? v.category.trim() : '',
         address: cleanAddr || '',
         lat: normCoords.locationLat,
         lng: normCoords.locationLng,
-        capacityInfo: typeof v.capacityInfo === 'string' ? v.capacityInfo.trim() : '사전 예약 권장',
+        capacityInfo: typeof v.capacityInfo === 'string' ? v.capacityInfo.trim() : '',
         priceRange: typeof v.priceRange === 'string' ? v.priceRange.trim() : undefined,
-        reason: typeof v.reason === 'string' ? v.reason.trim() : '모임 조건에 부합하는 장소입니다.',
+        reason: typeof v.reason === 'string' ? v.reason.trim() : '',
         recommendedDishes: typeof v.recommendedDishes === 'string' ? v.recommendedDishes.trim() : undefined,
         contact: typeof v.contact === 'string' ? v.contact.trim() : undefined,
         targetDate:
@@ -1080,11 +1081,11 @@ function parseRawGeminiAgentResponse(
       targetTitle:
         typeof u.targetTitle === 'string' && u.targetTitle.trim()
           ? u.targetTitle.trim()
-          : '선택 일정',
+          : '',
       diffSummary:
         typeof u.diffSummary === 'string' && u.diffSummary.trim()
           ? u.diffSummary.trim()
-          : '일정 정보가 수정되었습니다.',
+          : '',
       updates,
     };
   };
@@ -1129,12 +1130,6 @@ function parseRawGeminiAgentResponse(
 
   const recommendedVenues = normalizeVenues(parsed.recommendedVenues, targetDate);
 
-  for (const venue of recommendedVenues) {
-    if (!venue.address) {
-      venue.address = '도로명 주소 미기재';
-    }
-  }
-
   const rawTrace =
     parsed.thoughtTrace && typeof parsed.thoughtTrace === 'object'
       ? (parsed.thoughtTrace as Record<string, unknown>)
@@ -1146,24 +1141,24 @@ function parseRawGeminiAgentResponse(
     replyText:
       typeof parsed.replyText === 'string' && parsed.replyText.trim()
         ? parsed.replyText.trim()
-        : '요청하신 작업을 반영했습니다.',
+        : '',
     targetDate,
     thoughtTrace:
-      rawTrace && typeof rawTrace.summary === 'string'
+      rawTrace && typeof rawTrace.summary === 'string' && rawTrace.summary.trim()
         ? {
-            summary: rawTrace.summary,
-            intent: typeof rawTrace.intent === 'string' ? rawTrace.intent : undefined,
+            summary: rawTrace.summary.trim(),
+            intent: typeof rawTrace.intent === 'string' && rawTrace.intent.trim() ? rawTrace.intent.trim() : undefined,
             steps: Array.isArray(rawTrace.steps)
               ? rawTrace.steps
                   .filter((st): st is Record<string, unknown> =>
-                    Boolean(st && typeof st === 'object')
+                    Boolean(st && typeof st === 'object' && typeof st.title === 'string' && st.title.trim())
                   )
                   .slice(0, 5)
                   .map((st, idx) => ({
                     step: typeof st.step === 'number' ? st.step : idx + 1,
-                    title: typeof st.title === 'string' ? st.title : '처리 단계',
+                    title: String(st.title).trim(),
                     status: 'completed' as const,
-                    details: typeof st.details === 'string' ? st.details : undefined,
+                    details: typeof st.details === 'string' && st.details.trim() ? st.details.trim() : undefined,
                   }))
               : undefined,
           }
@@ -1225,10 +1220,8 @@ export async function executeGeminiAgentCommand(
 }
 
 export interface AgentStreamProgressEvent {
-  type: 'stage' | 'partial';
-  stageText?: string;
+  type: 'partial';
   partialReplyText?: string;
-  thoughtSummary?: string;
 }
 
 export async function executeGeminiAgentCommandStream(
@@ -1244,10 +1237,6 @@ export async function executeGeminiAgentCommandStream(
   const { prompt, modelId, image, attachments, context } = reqData;
 
   if (!image && attachments.length === 0 && shouldUseSearchGroundingForPlanning(prompt)) {
-    onStreamUpdate({
-      type: 'stage',
-      stageText: '실시간 공휴일·업계 주요 일정을 웹 검색으로 검증하고 있습니다...',
-    });
     const activeProj =
       context.selectedProjectId !== 'all'
         ? context.projects.find((p) => p.id === context.selectedProjectId)
@@ -1267,14 +1256,6 @@ export async function executeGeminiAgentCommandStream(
 
   const parts = buildAgentPromptParts(reqData);
 
-  onStreamUpdate({
-    type: 'stage',
-    stageText:
-      attachments.length > 0 || image
-        ? '첨부 자료와 행사 문맥을 실시간 판독하고 있습니다...'
-        : '일정 문맥과 시간대 충돌 여부를 분석하고 있습니다...',
-  });
-
   const streamResponse = await ai.models.generateContentStream({
     model: modelId || 'gemini-flash-latest',
     contents: { parts },
@@ -1287,7 +1268,6 @@ export async function executeGeminiAgentCommandStream(
 
   let accumulated = '';
   let lastReplySent = '';
-  let lastSummarySent = '';
 
   for await (const chunk of streamResponse) {
     const delta = chunk.text || '';
@@ -1295,15 +1275,12 @@ export async function executeGeminiAgentCommandStream(
     accumulated += delta;
 
     const partialReply = extractPartialJsonStringField(accumulated, 'replyText');
-    const thoughtSummary = extractPartialJsonStringField(accumulated, 'summary');
 
-    if (partialReply !== lastReplySent || thoughtSummary !== lastSummarySent) {
+    if (partialReply !== lastReplySent) {
       lastReplySent = partialReply;
-      lastSummarySent = thoughtSummary;
       onStreamUpdate({
         type: 'partial',
         partialReplyText: partialReply || undefined,
-        thoughtSummary: thoughtSummary || undefined,
       });
     }
   }

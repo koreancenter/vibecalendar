@@ -235,7 +235,7 @@ export function normalizeLocalModelOutput(
     return {
       success: true,
       actionType: 'GENERAL_CHAT',
-      replyText: cleanedText || '요청을 확인했습니다.',
+      replyText: cleanedText,
       targetDate: fallbackDate,
       queriedEvents: [],
       freeTimeSlots: [],
@@ -274,9 +274,10 @@ export function normalizeLocalModelOutput(
   const promptRecurrenceFallback =
     rawCreatedArr.length === 1 ? inferRecurrenceRuleFromPrompt(prompt) : undefined;
 
-  const createdEvents: CalendarEventItem[] = rawCreatedArr.slice(0, 20).map((ev, idx) => {
-    const title =
-      typeof ev.title === 'string' && ev.title.trim() ? ev.title.trim() : '새 일정';
+  const createdEvents: CalendarEventItem[] = rawCreatedArr
+    .slice(0, 20)
+    .map((ev, idx) => {
+      const title = typeof ev.title === 'string' && ev.title.trim() ? ev.title.trim() : '';
     const { location, locationAddress } = normalizePlaceAndAddress(
       ev.location,
       ev.locationAddress
@@ -341,7 +342,8 @@ export function normalizeLocalModelOutput(
       checklist,
       recurrence: normalizeRecurrenceRule(ev.recurrence) || promptRecurrenceFallback,
     };
-  });
+  })
+  .filter((ev) => Boolean(ev.title));
 
   const queriedEvents = isQuery
     ? context.existingEvents
@@ -412,9 +414,8 @@ export function normalizeLocalModelOutput(
 
     return {
       id: u.id.trim(),
-      targetTitle: typeof u.targetTitle === 'string' ? u.targetTitle : '선택 일정',
-      diffSummary:
-        typeof u.diffSummary === 'string' ? u.diffSummary : '일정 정보가 수정되었습니다.',
+      targetTitle: typeof u.targetTitle === 'string' ? u.targetTitle.trim() : '',
+      diffSummary: typeof u.diffSummary === 'string' ? u.diffSummary.trim() : '',
       updates,
     };
   };
@@ -461,11 +462,11 @@ export function normalizeLocalModelOutput(
           return {
             id: `local-venue-${now}-${idx}`,
             name: cleanName || String(v.name).trim(),
-            category: typeof v.category === 'string' ? v.category.trim() : '추천 장소',
-            address: cleanAddr || '도로명 주소 미기재',
-            capacityInfo: typeof v.capacityInfo === 'string' ? v.capacityInfo.trim() : '예약 권장',
+            category: typeof v.category === 'string' ? v.category.trim() : '',
+            address: cleanAddr || '',
+            capacityInfo: typeof v.capacityInfo === 'string' ? v.capacityInfo.trim() : '',
             priceRange: typeof v.priceRange === 'string' ? v.priceRange.trim() : undefined,
-            reason: typeof v.reason === 'string' ? v.reason.trim() : '추천 장소입니다.',
+            reason: typeof v.reason === 'string' ? v.reason.trim() : '',
             targetDate,
           };
         })
@@ -477,7 +478,7 @@ export function normalizeLocalModelOutput(
     replyText:
       typeof parsed.replyText === 'string' && parsed.replyText.trim()
         ? parsed.replyText.trim()
-        : '요청을 처리했습니다.',
+        : '',
     targetDate,
     queriedEvents,
     freeTimeSlots,

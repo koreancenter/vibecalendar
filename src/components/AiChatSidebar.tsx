@@ -37,7 +37,6 @@ import {
 import { WebLlmLoadProgress } from '../services/webllmProvider';
 import {
   detectConflictAndSuggest,
-  shouldUseSearchGroundingForPlanning,
 } from '../shared/scheduleUtils';
 import { isInternalOrVirtualLocation } from '../shared/locationUtils';
 import {
@@ -116,21 +115,10 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
     viewerTimeZone && isValidTimeZone(viewerTimeZone)
       ? viewerTimeZone
       : detectBrowserTimeZone();
-  const [messages, setMessages] = useState<AgentMessage[]>([
-    {
-      id: 'msg-welcome',
-      role: 'assistant',
-      content:
-        '안녕하세요. 자연어 일정 지시와 초대장·식순·표·음성 첨부는 물론, 공휴일·업계 주요 일정과 겹치지 않는 최적 개최 후보일 추천이나 모임 장소 탐색도 이 대화창에서 바로 요청하실 수 있습니다.',
-      timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-    },
-  ]);
+  const [messages, setMessages] = useState<AgentMessage[]>([]);
 
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loadingStageText, setLoadingStageText] = useState(
-    '요청 의도와 프로젝트 문맥을 분석하고 있습니다...'
-  );
   const [streamingReplyText, setStreamingReplyText] = useState('');
   const [addedVenueIds, setAddedVenueIds] = useState<Set<string>>(new Set());
   const [addedGroundedIds, setAddedGroundedIds] = useState<Set<string>>(new Set());
@@ -432,15 +420,10 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
       textContent: att.textContent,
     }));
 
-    const fallbackDisplayLabel =
-      currentAttachments.length === 1
-        ? `'${currentAttachments[0].name}' 파일의 일정을 분석하여 반영해 줘`
-        : `첨부된 ${currentAttachments.length}개 자료의 일정을 분석하여 반영해 줘`;
-
     const userMsg: AgentMessage = {
       id: `msg-user-${Date.now()}`,
       role: 'user',
-      content: text || fallbackDisplayLabel,
+      content: text,
       timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
       attachments: messageAttachments.length > 0 ? messageAttachments : undefined,
       referencedEvent: lastReferencedEvent,
@@ -468,33 +451,8 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
     setAttachments([]);
     promptInputRef.current?.clear();
 
-    const stages =
-      currentAttachments.length > 0
-        ? [
-            '첨부 자료의 텍스트·표·일정 데이터를 판독하고 있습니다...',
-            '일정 구조화 및 시간대 충돌 여부를 검증하고 있습니다...',
-            '캘린더 반영 카드를 구성하고 있습니다...',
-          ]
-        : shouldUseSearchGroundingForPlanning(text)
-        ? [
-            '실시간 공휴일·업계 주요 일정을 검색하고 있습니다...',
-            '기존 캘린더 일정과 겹치지 않는 후보일을 대조하고 있습니다...',
-            '개최 후보일 브리핑 카드를 정리하고 있습니다...',
-          ]
-        : [
-            '요청 의도와 프로젝트 문맥을 분석하고 있습니다...',
-            '일정 시간대 및 충돌 여부를 점검하고 있습니다...',
-            '캘린더 반영 결과를 정리하고 있습니다...',
-          ];
-    setLoadingStageText(stages[0]);
     setStreamingReplyText('');
     setLoading(true);
-
-    let stageIdx = 0;
-    const stageTimer = window.setInterval(() => {
-      stageIdx = Math.min(stages.length - 1, stageIdx + 1);
-      setLoadingStageText(stages[stageIdx]);
-    }, 2200);
 
     try {
       const apiAttachments = currentAttachments.map((att) => ({
@@ -535,16 +493,8 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
         (prog) => setWebllmProgress(prog.percent >= 100 ? null : prog),
         {
           cloudAvailable: geminiEnabled !== false,
-          onCloudGroundingRoute: () => {
-            showToast('실시간 공휴일·웹 검색 검증을 위해 Cloud 검색 그라운딩으로 조회합니다.');
-          },
-          onStreamUpdate: ({ stageText, partialReplyText, thoughtSummary }) => {
-            if (stageText) {
-              setLoadingStageText(stageText);
-            } else if (thoughtSummary && !partialReplyText) {
-              setLoadingStageText(thoughtSummary);
-            }
-            if (partialReplyText) {
+          onStreamUpdate: ({ partialReplyText }) => {
+            if (partialReplyText !== undefined) {
               setStreamingReplyText(partialReplyText);
             }
           },
@@ -650,7 +600,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
       const assistantMsg: AgentMessage = {
         id: assistantMsgId,
         role: 'assistant',
-        content: enhancedResponse.replyText || '요청이 처리되었습니다.',
+        content: enhancedResponse.replyText || '',
         timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
         response: enhancedResponse,
         referencedEvent: currentActiveEvent,
@@ -837,7 +787,6 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
-      window.clearInterval(stageTimer);
       setStreamingReplyText('');
       setLoading(false);
     }
@@ -889,10 +838,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
 
     const typed = prompt.trim();
     if (typed) {
-      const nextQuery = shouldUseSearchGroundingForPlanning(typed)
-        ? typed
-        : `향후 3개월간 '${typed}' 기획 시 참고할 공휴일·업계 주요 일정과 최적 개최 후보일을 추천해 줘`;
-      void handleSendMessage(nextQuery);
+      void handleSendMessage(typed);
       return;
     }
 
@@ -908,15 +854,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
     setLastReferencedEvent(null);
     setAttachments([]);
     setAddedGroundedIds(new Set());
-    setMessages([
-      {
-        id: `msg-welcome-${Date.now()}`,
-        role: 'assistant',
-        content:
-          '새로운 대화 세션이 시작되었습니다. 자연어 일정 등록·수정, 문서·표·이미지·음성 첨부, 또는 공휴일·업계 일정을 고려한 개최 후보일 추천을 바로 요청해 보세요.',
-        timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
+    setMessages([]);
     showToast('대화 기록 및 세션 문맥이 초기화되었습니다.');
   };
 
@@ -1035,91 +973,100 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
           const fileAttachments =
             msg.attachments?.filter((a) => !(a.kind === 'image' && a.previewUrl)) || [];
 
+          const hasBubbleBody =
+            msg.content.trim().length > 0 ||
+            Boolean(msg.imageUrl) ||
+            imageAttachments.length > 0 ||
+            fileAttachments.length > 0 ||
+            Boolean(isUser && msg.referencedEvent);
+
           return (
             <div
               key={msg.id}
               className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} space-y-1.5`}
             >
-              <div
-                className={`max-w-[90%] p-3.5 rounded-2xl text-xs leading-relaxed ${
-                  isUser
-                    ? 'bg-[#222634] text-white border border-white/[0.12] rounded-br-none'
-                    : 'bg-[#181b24] text-neutral-100 border border-white/[0.08] rounded-bl-none'
-                }`}
-              >
-                {isUser && msg.referencedEvent && (
-                  <div className="flex items-center gap-1.5 text-[10px] text-neutral-300 mb-2 pb-1.5 border-b border-white/[0.07]">
-                    <Calendar className="w-3 h-3 text-neutral-300 shrink-0" />
-                    <span className="truncate">참조 일정 · {msg.referencedEvent.title}</span>
-                  </div>
-                )}
+              {hasBubbleBody && (
+                <div
+                  className={`max-w-[90%] p-3.5 rounded-2xl text-xs leading-relaxed ${
+                    isUser
+                      ? 'bg-[#222634] text-white border border-white/[0.12] rounded-br-none'
+                      : 'bg-[#181b24] text-neutral-100 border border-white/[0.08] rounded-bl-none'
+                  }`}
+                >
+                  {isUser && msg.referencedEvent && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-neutral-300 mb-2 pb-1.5 border-b border-white/[0.07]">
+                      <Calendar className="w-3 h-3 text-neutral-300 shrink-0" />
+                      <span className="truncate">참조 일정 · {msg.referencedEvent.title}</span>
+                    </div>
+                  )}
 
-                {/* 구버전 단일 이미지 호환 */}
-                {msg.imageUrl && imageAttachments.length === 0 && (
-                  <div className="mb-2.5 rounded-xl overflow-hidden border border-white/10 max-w-xs">
-                    <img
-                      src={msg.imageUrl}
-                      alt="첨부된 사진"
-                      referrerPolicy="no-referrer"
-                      className="w-full max-h-56 object-cover"
-                    />
-                  </div>
-                )}
+                  {/* 구버전 단일 이미지 호환 */}
+                  {msg.imageUrl && imageAttachments.length === 0 && (
+                    <div className="mb-2.5 rounded-xl overflow-hidden border border-white/10 max-w-xs">
+                      <img
+                        src={msg.imageUrl}
+                        alt="첨부된 사진"
+                        referrerPolicy="no-referrer"
+                        className="w-full max-h-56 object-cover"
+                      />
+                    </div>
+                  )}
 
-                {/* 멀티모달 이미지 썸네일 그리드 */}
-                {imageAttachments.length > 0 && (
-                  <div
-                    className={`mb-2.5 grid gap-1.5 ${
-                      imageAttachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'
-                    }`}
-                  >
-                    {imageAttachments.map((imgAtt) => (
-                      <button
-                        key={imgAtt.id}
-                        type="button"
-                        onClick={() => setPreviewTarget(imgAtt)}
-                        className="rounded-xl overflow-hidden border border-white/10 hover:border-white/25 transition-colors cursor-pointer text-left"
-                        title={`${imgAtt.name} 크게 보기`}
-                      >
-                        <img
-                          src={imgAtt.previewUrl}
-                          alt={imgAtt.name}
-                          referrerPolicy="no-referrer"
-                          className="w-full max-h-48 object-cover"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  {/* 멀티모달 이미지 썸네일 그리드 */}
+                  {imageAttachments.length > 0 && (
+                    <div
+                      className={`mb-2.5 grid gap-1.5 ${
+                        imageAttachments.length > 1 ? 'grid-cols-2' : 'grid-cols-1'
+                      }`}
+                    >
+                      {imageAttachments.map((imgAtt) => (
+                        <button
+                          key={imgAtt.id}
+                          type="button"
+                          onClick={() => setPreviewTarget(imgAtt)}
+                          className="rounded-xl overflow-hidden border border-white/10 hover:border-white/25 transition-colors cursor-pointer text-left"
+                          title={`${imgAtt.name} 크게 보기`}
+                        >
+                          <img
+                            src={imgAtt.previewUrl}
+                            alt={imgAtt.name}
+                            referrerPolicy="no-referrer"
+                            className="w-full max-h-48 object-cover"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-                {/* 문서 / 표 / ICS / 오디오 / 클립보드 첨부 목록 */}
-                {fileAttachments.length > 0 && (
-                  <div className="mb-2.5 space-y-1">
-                    {fileAttachments.map((att) => (
-                      <button
-                        key={att.id}
-                        type="button"
-                        onClick={() => setPreviewTarget(att)}
-                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-black/25 hover:bg-black/40 border border-white/[0.07] transition-colors cursor-pointer text-left"
-                        title="클릭하여 첨부 내용 보기"
-                      >
-                        <AttachmentKindIcon
-                          kind={att.kind}
-                          className="w-3.5 h-3.5 text-neutral-300 shrink-0"
-                        />
-                        <span className="text-[11px] font-medium text-neutral-100 truncate flex-1">
-                          {att.name}
-                        </span>
-                        <span className="text-[10px] text-neutral-400 tabular-nums shrink-0">
-                          {att.metaLabel || formatFileSize(att.sizeBytes)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  {/* 문서 / 표 / ICS / 오디오 / 클립보드 첨부 목록 */}
+                  {fileAttachments.length > 0 && (
+                    <div className="mb-2.5 space-y-1">
+                      {fileAttachments.map((att) => (
+                        <button
+                          key={att.id}
+                          type="button"
+                          onClick={() => setPreviewTarget(att)}
+                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-black/25 hover:bg-black/40 border border-white/[0.07] transition-colors cursor-pointer text-left"
+                          title="클릭하여 첨부 내용 보기"
+                        >
+                          <AttachmentKindIcon
+                            kind={att.kind}
+                            className="w-3.5 h-3.5 text-neutral-300 shrink-0"
+                          />
+                          <span className="text-[11px] font-medium text-neutral-100 truncate flex-1">
+                            {att.name}
+                          </span>
+                          <span className="text-[10px] text-neutral-400 tabular-nums shrink-0">
+                            {att.metaLabel || formatFileSize(att.sizeBytes)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
-                <MarkdownRenderer content={msg.content} />
-              </div>
+                  {msg.content.trim().length > 0 && <MarkdownRenderer content={msg.content} />}
+                </div>
+              )}
 
               <span className="text-[10px] text-neutral-400 px-1 font-mono tabular-nums">
                 {msg.timestamp}
@@ -1143,7 +1090,7 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
           );
         })}
 
-        {messages.length === 1 && !loading && (
+        {messages.length === 0 && !loading && (
           <div className="flex flex-wrap gap-1.5 pt-0.5">
             <button
               type="button"
@@ -1170,15 +1117,13 @@ export const AiChatSidebar: React.FC<AiChatSidebarProps> = ({
 
         {loading && (
           <div className="flex items-start">
-            <div className="max-w-[92%] p-3 rounded-2xl bg-[#181b24] border border-white/[0.08] text-xs text-neutral-200 space-y-2">
-              <div className="flex items-center gap-2 text-neutral-400">
-                <Loader2 className="w-3.5 h-3.5 text-neutral-200 animate-spin shrink-0" />
-                <span className="text-[11px]">{loadingStageText}</span>
-              </div>
-              {streamingReplyText && (
-                <div className="pt-1.5 border-t border-white/[0.06] text-xs text-neutral-100 leading-relaxed whitespace-pre-wrap break-words">
+            <div className="max-w-[92%] p-3 rounded-2xl bg-[#181b24] border border-white/[0.08] text-xs text-neutral-200">
+              {streamingReplyText ? (
+                <div className="text-xs text-neutral-100 leading-relaxed whitespace-pre-wrap break-words">
                   {streamingReplyText}
                 </div>
+              ) : (
+                <Loader2 className="w-3.5 h-3.5 text-neutral-300 animate-spin" />
               )}
             </div>
           </div>

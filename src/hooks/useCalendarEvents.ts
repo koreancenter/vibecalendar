@@ -1312,14 +1312,17 @@ export function useCalendarEvents({
         );
       }
 
-      showToast(
-        res.replyText || 'AI 요청이 반영되었습니다.',
-        didMutate
-          ? () => {
-              undoStepRef.current();
-            }
-          : undefined
-      );
+      const toastText = res.replyText?.trim() || (didMutate ? '캘린더에 반영되었습니다.' : '');
+      if (toastText) {
+        showToast(
+          toastText,
+          didMutate
+            ? () => {
+                undoStepRef.current();
+              }
+            : undefined
+        );
+      }
       return newlyCreated;
     },
     [

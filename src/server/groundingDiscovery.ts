@@ -153,15 +153,11 @@ function normalizeSuggestions(
         advisory:
           typeof item.advisory === 'string' && item.advisory.trim()
             ? item.advisory.trim()
-            : kind === 'holiday'
-            ? '회피 권장'
-            : kind === 'recommended_date'
-            ? '최적 후보'
-            : '참고',
+            : undefined,
         description:
           typeof item.description === 'string' && item.description.trim()
             ? item.description.trim()
-            : '행사 기획 시 참고할 수 있는 일정입니다.',
+            : '',
         location,
         locationAddress,
       };
@@ -270,29 +266,9 @@ export async function executeGroundedDateDiscovery(
     replyText:
       typeof parsed.replyText === 'string' && parsed.replyText.trim()
         ? parsed.replyText.trim()
-        : 'Google 검색을 통해 관련 공휴일 및 업계 주요 일정을 분석했습니다.',
+        : '',
     targetDate,
-    thoughtTrace: {
-      summary: `Google Search 실시간 그라운딩으로 향후 ${input.rangeMonths}개월(${input.selectedDate} ~ ${endRangeDate}) 공휴일 및 업계 일정을 대조했습니다.`,
-      intent: 'SUGGEST_DATES (Google Search Grounding)',
-      steps: [
-        {
-          step: 1,
-          title: '웹 검색 질의',
-          status: 'completed',
-          details:
-            searchQueries.length > 0
-              ? searchQueries.join(' · ')
-              : `${input.selectedDate} ~ ${endRangeDate} 공휴일 및 업계 일정 조회`,
-        },
-        {
-          step: 2,
-          title: '캘린더 충돌 대조',
-          status: 'completed',
-          details: `탐색 구간 ${input.rangeMonths}개월 · 기존 일정 ${input.existingEvents.length}건 및 후보 일자 ${groundedSuggestions.length}건 검토`,
-        },
-      ],
-    },
+    thoughtTrace: null,
     groundedSuggestions,
     groundingSources,
     searchQueries,

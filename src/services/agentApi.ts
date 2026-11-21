@@ -119,14 +119,11 @@ export interface AgentAttachmentPayload {
 }
 
 export interface AgentStreamUpdate {
-  stageText?: string;
   partialReplyText?: string;
-  thoughtSummary?: string;
 }
 
 export interface SendAgentCommandOptions {
   cloudAvailable?: boolean;
-  onCloudGroundingRoute?: () => void;
   onStreamUpdate?: (update: AgentStreamUpdate) => void;
 }
 
@@ -162,10 +159,6 @@ export async function sendAgentCommand(
     options?.cloudAvailable !== false && Boolean(clientCloudApiKey && verifiedCloudModels.length > 0);
   const routeToCloudForGrounding =
     modelSelection.provider !== 'cloud' && wantsLiveWebGrounding && canUseCloudGrounding;
-
-  if (routeToCloudForGrounding) {
-    options?.onCloudGroundingRoute?.();
-  }
 
   if (modelSelection.provider !== 'cloud' && !routeToCloudForGrounding) {
     if (modelSelection.provider === 'ollama') {
@@ -247,15 +240,12 @@ export async function sendAgentCommand(
           const payloadStr = dataLines.join('\n');
           try {
             const parsed = JSON.parse(payloadStr) as Record<string, unknown>;
-            if (eventType === 'stage' || eventType === 'partial') {
+            if (eventType === 'partial') {
               options.onStreamUpdate?.({
-                stageText: typeof parsed.stageText === 'string' ? parsed.stageText : undefined,
                 partialReplyText:
                   typeof parsed.partialReplyText === 'string'
                     ? parsed.partialReplyText
                     : undefined,
-                thoughtSummary:
-                  typeof parsed.thoughtSummary === 'string' ? parsed.thoughtSummary : undefined,
               });
             } else if (eventType === 'done') {
               finalResponse = parsed as unknown as AgentCommandResponse;

@@ -133,9 +133,8 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
               })}
             </div>
           ) : (
-            <div className="p-3 bg-[#202430]/60 rounded-lg text-center text-xs text-neutral-400 space-y-0.5">
+            <div className="p-3 bg-[#202430]/60 rounded-lg text-center text-xs text-neutral-400">
               <p className="text-neutral-300 font-medium">등록된 일정이 없습니다.</p>
-              <p className="text-[10px] text-neutral-500">여유 시간대에 새로운 일정을 등록해 보세요.</p>
             </div>
           )}
 
@@ -192,9 +191,11 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
                 key={`${patch.id}-${idx}`}
                 className="bg-[#202430] p-2.5 rounded-lg border border-white/[0.06] space-y-1"
               >
-                <div className="text-xs font-semibold text-white">
-                  {patch.targetTitle || '일정'}
-                </div>
+                {patch.targetTitle && (
+                  <div className="text-xs font-semibold text-white">
+                    {patch.targetTitle}
+                  </div>
+                )}
                 {(patch.updates?.date ||
                   patch.updates?.startTime ||
                   patch.updates?.timeZone) && (
@@ -249,7 +250,7 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
 
       {/* 3. 일정 삭제 완료 카드 (DELETE_EVENT - 단건 및 다중 일괄 삭제 지원) */}
       {(resp.actionType === 'DELETE_EVENT' || deletedIds.length > 0) && (
-        <div className="bg-[#181b24] border border-rose-500/25 rounded-xl p-3 space-y-1.5">
+        <div className="bg-[#181b24] border border-rose-500/25 rounded-xl p-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-300">
               <CheckCircle2 className="w-3.5 h-3.5 text-rose-400" />
@@ -259,12 +260,6 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
               {deletedIds.length > 1 ? `${deletedIds.length}건 삭제됨` : '삭제됨'}
             </span>
           </div>
-          <p className="text-[11px] text-neutral-300 bg-[#202430] p-2 rounded-lg border border-white/[0.06]">
-            {resp.replyText ||
-              (deletedIds.length > 1
-                ? `${deletedIds.length}건의 일정이 캘린더에서 일괄 제거되었습니다.`
-                : '선택한 일정이 캘린더에서 제거되었습니다.')}
-          </p>
         </div>
       )}
 
@@ -292,28 +287,38 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <h4 className="text-xs font-semibold text-white leading-tight">{venue.name}</h4>
-                    <span className="text-[10px] text-amber-300/90 shrink-0">
-                      {venue.category}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1 text-[11px] text-neutral-300">
-                    <div className="flex items-center gap-1 text-neutral-400">
-                      <MapPin className="w-3 h-3 text-neutral-500 shrink-0" />
-                      <span className="truncate">{venue.address}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-emerald-400 font-medium">
-                      <Users className="w-3 h-3 shrink-0" />
-                      <span>{venue.capacityInfo}</span>
-                    </div>
-                    {venue.priceRange && (
-                      <div className="text-[10px] text-neutral-400">가격대: {venue.priceRange}</div>
+                    {venue.category && (
+                      <span className="text-[10px] text-amber-300/90 shrink-0">
+                        {venue.category}
+                      </span>
                     )}
                   </div>
 
-                  <p className="text-[11px] text-neutral-300 bg-black/20 p-2 rounded-lg leading-relaxed">
-                    {venue.reason}
-                  </p>
+                  {(venue.address || venue.capacityInfo || venue.priceRange) && (
+                    <div className="space-y-1 text-[11px] text-neutral-300">
+                      {venue.address && (
+                        <div className="flex items-center gap-1 text-neutral-400">
+                          <MapPin className="w-3 h-3 text-neutral-500 shrink-0" />
+                          <span className="truncate">{venue.address}</span>
+                        </div>
+                      )}
+                      {venue.capacityInfo && (
+                        <div className="flex items-center gap-1 text-emerald-400 font-medium">
+                          <Users className="w-3 h-3 shrink-0" />
+                          <span>{venue.capacityInfo}</span>
+                        </div>
+                      )}
+                      {venue.priceRange && (
+                        <div className="text-[10px] text-neutral-400">가격대: {venue.priceRange}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {venue.reason && (
+                    <p className="text-[11px] text-neutral-300 bg-black/20 p-2 rounded-lg leading-relaxed">
+                      {venue.reason}
+                    </p>
+                  )}
 
                   <button
                     type="button"
@@ -450,9 +455,11 @@ export const AgentResponseCards: React.FC<AgentResponseCardsProps> = ({
                       {item.title}
                     </div>
 
-                    <p className="text-[11px] text-neutral-400 leading-relaxed">
-                      {item.description}
-                    </p>
+                    {item.description && (
+                      <p className="text-[11px] text-neutral-400 leading-relaxed">
+                        {item.description}
+                      </p>
+                    )}
                     {(item.location || item.locationAddress) && (
                       <div className="flex items-start gap-1 text-[10px] text-neutral-400 pt-0.5">
                         <MapPin className="w-3 h-3 text-neutral-500 shrink-0 mt-0.5" />

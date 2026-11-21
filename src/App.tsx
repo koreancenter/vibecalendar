@@ -3891,20 +3891,32 @@ export default function App() {
 
   if (urlE2eeSharePass) {
     return (
-      <>
+      <React.Suspense
+        fallback={
+          <div className="h-screen w-screen bg-[#080a10] text-neutral-400 flex items-center justify-center text-xs font-sans">
+            워크스페이스를 불러오는 중...
+          </div>
+        }
+      >
         <StandaloneYjsSharePassScreen
           invite={urlE2eeSharePass}
           onExitToWorkspace={handleExitUrlE2eeSharePassToWorkspace}
           onImportWorkspaceView={handleImportFromStandaloneE2eeSharePass}
         />
         <OfflineStatusBanner />
-      </>
+      </React.Suspense>
     );
   }
 
   if (urlCollabInvite) {
     return (
-      <>
+      <React.Suspense
+        fallback={
+          <div className="h-screen w-screen bg-[#080a10] text-neutral-400 flex items-center justify-center text-xs font-sans">
+            협업 룸을 불러오는 중...
+          </div>
+        }
+      >
         <StandaloneCollabScreen
           invite={urlCollabInvite}
           onExitToWorkspace={handleExitUrlCollabToWorkspace}
@@ -3912,7 +3924,7 @@ export default function App() {
           onImportRunsheet={handleImportRunsheetFromStandaloneCollab}
         />
         <OfflineStatusBanner />
-      </>
+      </React.Suspense>
     );
   }
 

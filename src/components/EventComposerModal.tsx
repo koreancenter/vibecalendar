@@ -114,7 +114,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
 
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<CalendarCategory>('업무');
-  const [date, setDate] = useState(seed.date);
+  const [date, setDate] = useState(seed?.date || '');
   const [endDate, setEndDate] = useState('');
   const [showEndDateInput, setShowEndDateInput] = useState(false);
   const [isAllDay, setIsAllDay] = useState(false);
@@ -129,8 +129,8 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
 
   // 점진적 공개(Progressive Disclosure): 메모 및 사전 체크리스트
   const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
-  const [locationPhone, setLocationPhone] = useState(seed.locationPhone || '');
-  const [locationMobilePhone, setLocationMobilePhone] = useState(seed.locationMobilePhone || '');
+  const [locationPhone, setLocationPhone] = useState(seed?.locationPhone || '');
+  const [locationMobilePhone, setLocationMobilePhone] = useState(seed?.locationMobilePhone || '');
   const [content, setContent] = useState('');
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [newCheckText, setNewCheckText] = useState('');
@@ -148,26 +148,26 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    setTitle(seed.title || '');
-    setCategory(seed.category || '업무');
-    setDate(seed.date);
-    setEndDate(seed.endDate || '');
-    setShowEndDateInput(Boolean(seed.endDate));
-    setIsAllDay(Boolean(seed.isAllDay));
-    const initStart = seed.startTime || '10:00';
-    const initEnd = seed.endTime || computeNextHourSlot(initStart);
+    setTitle(seed?.title || '');
+    setCategory(seed?.category || '업무');
+    setDate(seed?.date || '');
+    setEndDate(seed?.endDate || '');
+    setShowEndDateInput(Boolean(seed?.endDate));
+    setIsAllDay(Boolean(seed?.isAllDay));
+    const initStart = seed?.startTime || '10:00';
+    const initEnd = seed?.endTime || computeNextHourSlot(initStart);
     setStartTime(initStart);
     setEndTime(initEnd);
     setTimeZone(safeViewerZone);
-    setProjectId(seed.projectId || '');
+    setProjectId(seed?.projectId || '');
 
-    const initialLocQuery = formatCombinedLocation(seed.location, seed.locationAddress, ' · ');
+    const initialLocQuery = formatCombinedLocation(seed?.location, seed?.locationAddress, ' · ');
     setLocationQuery(initialLocQuery);
     setResolvedGeo(null);
 
-    setIsDetailsExpanded(Boolean(seed.locationPhone || seed.locationMobilePhone));
-    setLocationPhone(seed.locationPhone || '');
-    setLocationMobilePhone(seed.locationMobilePhone || '');
+    setIsDetailsExpanded(Boolean(seed?.locationPhone || seed?.locationMobilePhone));
+    setLocationPhone(seed?.locationPhone || '');
+    setLocationMobilePhone(seed?.locationMobilePhone || '');
     setContent('');
     setChecklist([]);
     setNewCheckText('');
