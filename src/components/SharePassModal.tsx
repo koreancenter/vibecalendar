@@ -861,7 +861,7 @@ export const SharePassModal: React.FC<SharePassModalProps> = ({
                         ? '예: 정문 회전교차로 앞 비상등 대기 부탁드립니다'
                         : '수신자에게 전달할 메모를 입력하세요'
                     }
-                    className="w-full h-8.5 px-3 pr-7 rounded-xl bg-[#141722] border border-white/[0.08] focus:border-white/20 text-xs text-white placeholder:text-neutral-500 outline-none transition-colors"
+                    className="w-full h-8.5 px-3 pr-7 rounded-xl bg-[#141722] border border-white/[0.08] text-xs text-white placeholder:text-neutral-500 outline-none"
                   />
                   {senderNote && (
                     <button

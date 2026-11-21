@@ -64,9 +64,22 @@
   scrollbar-width: none;
 }
 
-*:focus-visible {
-  outline: 2px solid rgba(99, 102, 241, 0.6);
-  outline-offset: -1px;
+@layer base {
+  *:not(input):not(textarea):not(select):focus-visible {
+    outline: 2px solid rgba(99, 102, 241, 0.6);
+    outline-offset: -1px;
+  }
+
+  input:focus,
+  input:focus-visible,
+  textarea:focus,
+  textarea:focus-visible,
+  select:focus,
+  select:focus-visible {
+    outline: none;
+    outline-offset: 0;
+    box-shadow: none;
+  }
 }
 
 .no-focus-outline,

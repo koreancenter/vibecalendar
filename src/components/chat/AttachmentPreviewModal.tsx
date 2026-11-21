@@ -229,7 +229,7 @@ export const DirectPasteSnippetModal: React.FC<DirectPasteSnippetModalProps> = (
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="문서 제목 (선택)"
-            className="w-full bg-[#141722] border border-white/[0.08] focus:border-white/[0.22] rounded-xl px-3.5 py-2 text-white placeholder-neutral-500 text-xs outline-hidden transition-colors"
+            className="w-full bg-[#141722] border border-white/[0.08] rounded-xl px-3.5 py-2 text-white placeholder-neutral-500 text-xs outline-none"
           />
 
           <textarea
@@ -238,7 +238,7 @@ export const DirectPasteSnippetModal: React.FC<DirectPasteSnippetModalProps> = (
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="클립보드 텍스트나 표를 붙여넣으세요 (Ctrl+V / ⌘V)..."
-            className="w-full bg-[#141722] border border-white/[0.08] focus:border-white/[0.22] rounded-xl p-3.5 text-neutral-100 placeholder-neutral-500 text-xs font-mono leading-relaxed resize-none outline-hidden transition-colors"
+            className="w-full bg-[#141722] border border-white/[0.08] rounded-xl p-3.5 text-neutral-100 placeholder-neutral-500 text-xs font-mono leading-relaxed resize-none outline-none"
           />
         </div>
 

@@ -365,7 +365,7 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({
               )}
             </div>
 
-            <div className="h-10 px-3 rounded-xl bg-black/30 focus-within:bg-black/45 border border-white/[0.08] focus-within:border-white/[0.2] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] flex items-center gap-1.5 transition-colors">
+            <div className="h-10 px-3 rounded-xl bg-black/30 border border-white/[0.08] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] flex items-center gap-1.5">
               <input
                 ref={inputRef}
                 id="cloud-gemini-api-key-input"

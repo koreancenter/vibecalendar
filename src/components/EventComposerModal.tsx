@@ -526,7 +526,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                   }}
                   placeholder="일정 제목 입력 (Ctrl + Enter 빠른 등록)"
                   title="일정 제목 (Ctrl + Enter 또는 ⌘ + Enter로 즉시 등록)"
-                  className="w-full h-9.5 px-3.5 rounded-lg bg-white/[0.03] border border-white/[0.10] focus:border-white/28 text-sm font-medium text-white placeholder:text-neutral-500 outline-hidden transition-colors"
+                  className="w-full h-9.5 px-3.5 rounded-lg bg-white/[0.03] border border-white/[0.10] text-sm font-medium text-white placeholder:text-neutral-500 outline-none"
                 />
               </div>
 
@@ -620,7 +620,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                       }
                       if (formError) setFormError(null);
                     }}
-                    className="h-8.5 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark] shrink-0"
+                    className="h-8.5 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 outline-none [color-scheme:dark] shrink-0"
                   />
 
                   {showEndDateInput && (
@@ -635,7 +635,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                           setEndDate(e.target.value);
                           if (formError) setFormError(null);
                         }}
-                        className="h-8.5 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                        className="h-8.5 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 outline-none [color-scheme:dark]"
                       />
                       <button
                         type="button"
@@ -659,7 +659,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                         value={startTime}
                         aria-label="시작 시간"
                         onChange={(e) => handleStartTimeChange(e.target.value)}
-                        className="h-8.5 px-2 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                        className="h-8.5 px-2 rounded-lg bg-white/[0.03] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 outline-none [color-scheme:dark]"
                       />
                       <span className="text-xs text-neutral-500">–</span>
                       <input
@@ -670,7 +670,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                           setEndTime(e.target.value);
                           if (formError) setFormError(null);
                         }}
-                        className="h-8.5 px-2 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                        className="h-8.5 px-2 rounded-lg bg-white/[0.03] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 outline-none [color-scheme:dark]"
                       />
                     </div>
                   )}
@@ -760,7 +760,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                       onChange={(e) => setRecurrenceUntil(e.target.value)}
                       title="반복 종료일 (미지정 시 계속 반복)"
                       aria-label="반복 종료일"
-                      className="h-7 px-2 rounded-md bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-[11.5px] font-mono tabular-nums text-neutral-200 outline-hidden [color-scheme:dark] shrink-0"
+                      className="h-7 px-2 rounded-md bg-white/[0.03] border border-white/[0.09] text-[11.5px] font-mono tabular-nums text-neutral-200 outline-none [color-scheme:dark] shrink-0"
                     />
                   )}
 
@@ -825,7 +825,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                           if (formError) setFormError(null);
                         }}
                         aria-label="커스텀 알림 분 입력"
-                        className="h-7 w-16 px-2 rounded-md bg-white/[0.03] border border-white/[0.12] focus:border-white/28 text-[11.5px] font-mono tabular-nums text-neutral-100 outline-hidden"
+                        className="h-7 w-16 px-2 rounded-md bg-white/[0.03] border border-white/[0.12] text-[11.5px] font-mono tabular-nums text-neutral-100 outline-none"
                       />
                       <span className="text-[11px] text-neutral-400 whitespace-nowrap">분 전</span>
                     </div>
@@ -880,7 +880,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                       }
                     }}
                     placeholder="장소명 또는 도로명 주소 검색 (Enter로 좌표 탐색)"
-                    className="w-full h-9.5 pl-8.5 pr-15 rounded-lg bg-white/[0.03] border border-white/[0.10] focus:border-white/28 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden transition-colors"
+                    className="w-full h-9.5 pl-8.5 pr-15 rounded-lg bg-white/[0.03] border border-white/[0.10] text-xs text-neutral-100 placeholder:text-neutral-500 outline-none"
                   />
                   <div className="absolute right-1.5 flex items-center gap-0.5">
                     {locationQuery && (
@@ -970,7 +970,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                         value={locationPhone}
                         onChange={(e) => setLocationPhone(e.target.value)}
                         placeholder="예: 02-588-4100"
-                        className="w-full h-8 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-500 outline-hidden"
+                        className="w-full h-8 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-500 outline-none"
                       />
                     </div>
                     <div>
@@ -983,7 +983,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                         value={locationMobilePhone}
                         onChange={(e) => setLocationMobilePhone(e.target.value)}
                         placeholder="예: 010-8492-3104"
-                        className="w-full h-8 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-500 outline-hidden"
+                        className="w-full h-8 px-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-500 outline-none"
                       />
                     </div>
                   </div>
@@ -994,7 +994,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     placeholder="담당자 연락처, 반입 동선, 특이사항 기록..."
-                    className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden resize-none leading-relaxed"
+                    className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.09] text-xs text-neutral-100 placeholder:text-neutral-500 outline-none resize-none leading-relaxed"
                   />
 
                   {/* 사전 체크리스트 */}
@@ -1013,7 +1013,7 @@ export const EventComposerModal: React.FC<EventComposerModalProps> = ({
                             }
                           }}
                           placeholder="사전 준비 항목 입력 후 Enter"
-                          className="w-full h-8 pl-8 pr-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-500 outline-hidden transition-colors"
+                          className="w-full h-8 pl-8 pr-2.5 rounded-lg bg-white/[0.03] border border-white/[0.09] text-xs text-neutral-100 placeholder:text-neutral-500 outline-none"
                         />
                       </div>
                       <button

@@ -340,7 +340,7 @@ export const CollabHubModal: React.FC<CollabHubModalProps> = ({
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
               maxLength={32}
-              className="h-7 w-28 px-2 rounded-md bg-[#090b10] border border-white/[0.09] focus:border-white/25 text-xs text-white outline-none"
+              className="h-7 w-28 px-2 rounded-md bg-[#090b10] border border-white/[0.09] text-xs text-white outline-none"
             />
             {nameInput.trim() !== profile.displayName && (
               <button
@@ -379,7 +379,7 @@ export const CollabHubModal: React.FC<CollabHubModalProps> = ({
                       setJoinError(null);
                     }}
                     placeholder="https://...?spass=sp_...#sk=... 또는 ?collab=rm_...#rk=... 붙여넣기"
-                    className="h-9 flex-1 px-3 rounded-lg bg-[#090b10] border border-white/[0.1] focus:border-white/25 text-xs text-white placeholder:text-neutral-500 outline-none"
+                    className="h-9 flex-1 px-3 rounded-lg bg-[#090b10] border border-white/[0.1] text-xs text-white placeholder:text-neutral-500 outline-none"
                   />
                   <button
                     type="submit"
@@ -688,7 +688,7 @@ export const CollabHubModal: React.FC<CollabHubModalProps> = ({
                     value={proposalTitle}
                     onChange={(e) => setProposalTitle(e.target.value)}
                     placeholder="예: 글로벌 파트너십 킥오프 미팅"
-                    className="h-9 w-full px-3 rounded-lg bg-[#090b10] border border-white/[0.1] focus:border-white/25 text-xs text-white outline-none"
+                    className="h-9 w-full px-3 rounded-lg bg-[#090b10] border border-white/[0.1] text-xs text-white outline-none"
                   />
                 </div>
                 <div>
@@ -715,7 +715,7 @@ export const CollabHubModal: React.FC<CollabHubModalProps> = ({
                   value={proposalLocation}
                   onChange={(e) => setProposalLocation(e.target.value)}
                   placeholder="예: Google Meet 또는 코엑스 컨퍼런스룸"
-                  className="h-9 w-full px-3 rounded-lg bg-[#090b10] border border-white/[0.1] focus:border-white/25 text-xs text-white outline-none"
+                  className="h-9 w-full px-3 rounded-lg bg-[#090b10] border border-white/[0.1] text-xs text-white outline-none"
                 />
               </div>
 
@@ -801,7 +801,7 @@ export const CollabHubModal: React.FC<CollabHubModalProps> = ({
                       ? `${selectedRunsheetProject.name} 현장 런시트`
                       : '공동 진행 런시트'
                   }
-                  className="h-9 w-full px-3 rounded-lg bg-[#090b10] border border-white/[0.1] focus:border-white/25 text-xs text-white outline-none"
+                  className="h-9 w-full px-3 rounded-lg bg-[#090b10] border border-white/[0.1] text-xs text-white outline-none"
                 />
                 <span className="mt-1 block text-[11px] text-neutral-500 tabular-nums">
                   총 {runsheetTargetEvents.length}개 일정 및 하위 체크리스트가 초기 동기화됩니다.

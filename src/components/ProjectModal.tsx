@@ -205,7 +205,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                     }
                   }}
                   placeholder="예: 2026 하반기 차세대 R&D 협약 10/1~11/30 (파트너: 루미에르 미래기술원)"
-                  className="flex-1 bg-[#13151f] border border-white/[0.08] hover:border-white/[0.14] focus:border-white/[0.22] rounded-xl px-3.5 py-2.5 text-white placeholder-neutral-500 text-xs transition-colors outline-hidden"
+                  className="flex-1 bg-[#13151f] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-white placeholder-neutral-500 text-xs outline-none"
                 />
                 <button
                   type="button"
@@ -257,8 +257,8 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
               placeholder="예: 2026 하반기 글로벌 파트너스 살롱"
-              className={`w-full bg-[#13151f] border hover:border-white/[0.14] focus:border-indigo-400/50 rounded-xl px-3.5 py-2.5 text-white placeholder-neutral-500 text-xs transition-all outline-hidden font-medium ${
-                isAiApplied ? 'border-indigo-400/70 ring-1 ring-indigo-400/30' : 'border-white/[0.08]'
+              className={`w-full bg-[#13151f] border rounded-xl px-3.5 py-2.5 text-white placeholder-neutral-500 text-xs outline-none font-medium ${
+                isAiApplied ? 'border-white/[0.24]' : 'border-white/[0.08]'
               }`}
             />
           </div>
@@ -294,7 +294,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                 }}
                 maxLength={8}
                 placeholder="예: VIP-NET, Q4-DEV"
-                className="w-full bg-[#13151f] border border-white/[0.08] hover:border-white/[0.14] focus:border-indigo-400/50 rounded-xl px-3.5 py-2.5 text-white placeholder-neutral-500 font-mono uppercase text-xs transition-colors outline-hidden"
+                className="w-full bg-[#13151f] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-white placeholder-neutral-500 font-mono uppercase text-xs outline-none"
               />
             </div>
 
@@ -305,7 +305,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as ProjectStatus)}
-                className="w-full bg-[#13151f] border border-white/[0.08] hover:border-white/[0.14] focus:border-indigo-400/50 rounded-xl px-3.5 py-2.5 text-white text-xs transition-colors outline-hidden cursor-pointer"
+                className="w-full bg-[#13151f] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-white text-xs outline-none cursor-pointer"
               >
                 {Object.entries(PROJECT_STATUS_MAP).map(([key, val]) => (
                   <option key={key} value={key} className="bg-[#13151f] text-white">
@@ -327,7 +327,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
               value={clientOrOrg}
               onChange={(e) => setClientOrOrg(e.target.value)}
               placeholder="예: 산학협력단, 프라이빗 파트너십"
-              className="w-full bg-[#13151f] border border-white/[0.08] hover:border-white/[0.14] focus:border-indigo-400/50 rounded-xl px-3.5 py-2.5 text-white placeholder-neutral-500 text-xs transition-colors outline-hidden"
+              className="w-full bg-[#13151f] border border-white/[0.08] rounded-xl px-3.5 py-2.5 text-white placeholder-neutral-500 text-xs outline-none"
             />
           </div>
 
@@ -343,7 +343,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full bg-[#13151f] border border-white/[0.08] hover:border-white/[0.14] focus:border-indigo-400/50 rounded-xl px-3.5 py-2 text-white text-xs font-mono transition-colors outline-hidden cursor-pointer"
+                  className="w-full bg-[#13151f] border border-white/[0.08] rounded-xl px-3.5 py-2 text-white text-xs font-mono outline-none cursor-pointer"
                 />
               </div>
               <div className="space-y-1.5">
@@ -355,7 +355,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full bg-[#13151f] border border-white/[0.08] hover:border-white/[0.14] focus:border-indigo-400/50 rounded-xl px-3.5 py-2 text-white text-xs font-mono transition-colors outline-hidden cursor-pointer"
+                  className="w-full bg-[#13151f] border border-white/[0.08] rounded-xl px-3.5 py-2 text-white text-xs font-mono outline-none cursor-pointer"
                 />
               </div>
             </div>
@@ -429,7 +429,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="프로젝트의 주요 목표, 산출물 또는 협력 사항을 메모하세요..."
-              className="w-full bg-[#13151f] border border-white/[0.08] hover:border-white/[0.14] focus:border-indigo-400/50 rounded-xl p-3 text-white placeholder-neutral-500 text-xs transition-colors resize-none outline-hidden leading-relaxed"
+              className="w-full bg-[#13151f] border border-white/[0.08] rounded-xl p-3 text-white placeholder-neutral-500 text-xs resize-none outline-none leading-relaxed"
             />
           </div>
 

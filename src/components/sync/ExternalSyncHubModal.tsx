@@ -726,7 +726,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                                             })
                                           }
                                           placeholder={`외부 일정 (${cal.name})`}
-                                          className="w-full h-8 px-2.5 rounded-md bg-[#0c0e14] border border-white/[0.08] text-xs text-neutral-200 focus:border-white/25 outline-none"
+                                          className="w-full h-8 px-2.5 rounded-md bg-[#0c0e14] border border-white/[0.08] text-xs text-neutral-200 outline-none"
                                         />
                                       </div>
                                     ) : (
@@ -872,7 +872,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                     value={caldavServerUrl}
                     onChange={(e) => setCaldavServerUrl(e.target.value)}
                     placeholder="https://caldav.icloud.com"
-                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white font-mono focus:border-white/30 outline-none"
+                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white font-mono outline-none"
                   />
                 </div>
 
@@ -886,7 +886,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                     value={caldavUsername}
                     onChange={(e) => setCaldavUsername(e.target.value)}
                     placeholder="user@icloud.com"
-                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white focus:border-white/30 outline-none"
+                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white outline-none"
                   />
                 </div>
 
@@ -900,7 +900,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                     value={caldavPassword}
                     onChange={(e) => setCaldavPassword(e.target.value)}
                     placeholder="xxxx-xxxx-xxxx-xxxx"
-                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white focus:border-white/30 outline-none"
+                    className="w-full h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white outline-none"
                   />
                 </div>
 
@@ -913,7 +913,7 @@ export const ExternalSyncHubModal: React.FC<ExternalSyncHubModalProps> = ({
                     value={caldavLabel}
                     onChange={(e) => setCaldavLabel(e.target.value)}
                     placeholder="예: 개인 iCloud 캘린더 (미입력 시 서버 주소로 자동 지정)"
-                    className="flex-1 h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white placeholder:text-neutral-500 focus:border-white/30 outline-none"
+                    className="flex-1 h-8.5 px-3 rounded-lg bg-[#0c0e14] border border-white/[0.1] text-xs text-white placeholder:text-neutral-500 outline-none"
                   />
                 </div>
               </div>

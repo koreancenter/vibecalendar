@@ -614,7 +614,7 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
                   }}
                   placeholder={'•'.repeat(pinLength)}
                   autoFocus
-                  className="w-full h-10 px-3.5 rounded-xl bg-[#0c0e14] border border-white/[0.1] text-sm text-white tracking-[0.35em] tabular-nums focus:border-white/30 outline-none"
+                  className="w-full h-10 px-3.5 rounded-xl bg-[#0c0e14] border border-white/[0.1] text-sm text-white tracking-[0.35em] tabular-nums outline-none"
                 />
               </div>
 
@@ -632,7 +632,7 @@ export const VaultControlMenu: React.FC<VaultControlMenuProps> = ({
                     setPinError(null);
                   }}
                   placeholder={'•'.repeat(pinLength)}
-                  className="w-full h-10 px-3.5 rounded-xl bg-[#0c0e14] border border-white/[0.1] text-sm text-white tracking-[0.35em] tabular-nums focus:border-white/30 outline-none"
+                  className="w-full h-10 px-3.5 rounded-xl bg-[#0c0e14] border border-white/[0.1] text-sm text-white tracking-[0.35em] tabular-nums outline-none"
                 />
               </div>
             </div>

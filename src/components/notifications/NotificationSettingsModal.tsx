@@ -406,7 +406,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
                     setCustomInputError(null);
                   }}
                   placeholder="직접 입력 (예: 25, 45, 90)"
-                  className="h-8 w-52 pl-3 pr-9 rounded-lg bg-[#0b0d13] border border-white/[0.09] focus:border-white/25 text-xs text-white placeholder:text-neutral-500 tabular-nums outline-none"
+                  className="h-8 w-52 pl-3 pr-9 rounded-lg bg-[#0b0d13] border border-white/[0.09] text-xs text-white placeholder:text-neutral-500 tabular-nums outline-none"
                 />
                 <span className="absolute right-3 text-[11px] text-neutral-500 pointer-events-none">
                   분 전

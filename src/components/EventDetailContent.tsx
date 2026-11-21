@@ -766,7 +766,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                   if (coreError) setCoreError(null);
                 }}
                 autoFocus
-                className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-medium text-neutral-100 outline-hidden"
+                className="w-full h-9 px-3 rounded-lg bg-[#0e1118] border border-white/[0.09] text-xs font-medium text-neutral-100 outline-none"
               />
             </div>
 
@@ -782,7 +782,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                       setEndDateDraft('');
                     }
                   }}
-                  className="w-full h-9 px-2.5 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                  className="w-full h-9 px-2.5 rounded-lg bg-[#0e1118] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 outline-none [color-scheme:dark]"
                 />
               </div>
               <div>
@@ -792,7 +792,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                   min={dateDraft}
                   value={endDateDraft}
                   onChange={(e) => setEndDateDraft(e.target.value)}
-                  className="w-full h-9 px-2.5 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                  className="w-full h-9 px-2.5 rounded-lg bg-[#0e1118] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 outline-none [color-scheme:dark]"
                 />
               </div>
             </div>
@@ -814,14 +814,14 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                     type="time"
                     value={startTimeDraft}
                     onChange={(e) => setStartTimeDraft(e.target.value)}
-                    className="h-8 px-2 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                    className="h-8 px-2 rounded-lg bg-[#0e1118] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 outline-none [color-scheme:dark]"
                   />
                   <span className="text-neutral-500">–</span>
                   <input
                     type="time"
                     value={endTimeDraft}
                     onChange={(e) => setEndTimeDraft(e.target.value)}
-                    className="h-8 px-2 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                    className="h-8 px-2 rounded-lg bg-[#0e1118] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 outline-none [color-scheme:dark]"
                   />
                 </div>
               )}
@@ -842,7 +842,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                       setRecurrenceUntilDraft('');
                     }
                   }}
-                  className="w-full h-8.5 px-2 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 outline-hidden cursor-pointer"
+                  className="w-full h-8.5 px-2 rounded-lg bg-[#0e1118] border border-white/[0.09] text-xs text-neutral-100 outline-none cursor-pointer"
                 >
                   {RECURRENCE_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value} className="bg-[#12151e] text-neutral-100">
@@ -860,7 +860,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                     min={dateDraft}
                     value={recurrenceUntilDraft}
                     onChange={(e) => setRecurrenceUntilDraft(e.target.value)}
-                    className="w-full h-8.5 px-2.5 rounded-lg bg-[#0e1118] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 outline-hidden [color-scheme:dark]"
+                    className="w-full h-8.5 px-2.5 rounded-lg bg-[#0e1118] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 outline-none [color-scheme:dark]"
                   />
                 </div>
               )}
@@ -1241,7 +1241,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                       }
                     }}
                     placeholder="커스텀 분 입력 (예: 25, 45, 90)"
-                    className="h-7 flex-1 min-w-0 px-2.5 rounded-lg bg-[#0d1017] border border-white/[0.08] focus:border-white/22 text-[11px] font-mono tabular-nums text-neutral-100 placeholder:text-neutral-500 outline-hidden"
+                    className="h-7 flex-1 min-w-0 px-2.5 rounded-lg bg-[#0d1017] border border-white/[0.08] text-[11px] font-mono tabular-nums text-neutral-100 placeholder:text-neutral-500 outline-none"
                   />
                   <button
                     type="button"
@@ -1426,7 +1426,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                   onChange={(e) => setContentDraft(e.target.value)}
                   autoFocus
                   placeholder="담당자 연락처, 견적·세팅 지침, 반입 동선 기록..."
-                  className="w-full p-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs sm:text-sm text-neutral-100 placeholder:text-neutral-500 outline-hidden resize-y leading-relaxed"
+                  className="w-full p-3 rounded-lg bg-[#0d1017] border border-white/[0.09] text-xs sm:text-sm text-neutral-100 placeholder:text-neutral-500 outline-none resize-y leading-relaxed"
                 />
                 <div className="flex items-center justify-end gap-1.5">
                   <button
@@ -1523,7 +1523,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                       onChange={(e) => setLocDraft(e.target.value)}
                       placeholder="예: 아스트라 타워 서관 3층 대회의실"
                       autoFocus
-                      className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-600 outline-hidden"
+                      className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] text-xs text-neutral-100 placeholder:text-neutral-600 outline-none"
                     />
                   </div>
 
@@ -1536,7 +1536,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                       value={addrDraft}
                       onChange={(e) => setAddrDraft(e.target.value)}
                       placeholder="예: 서울특별시 성동구 에테르대로 142"
-                      className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs text-neutral-100 placeholder:text-neutral-600 outline-hidden"
+                      className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] text-xs text-neutral-100 placeholder:text-neutral-600 outline-none"
                     />
                   </div>
 
@@ -1551,7 +1551,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                         value={phoneDraft}
                         onChange={(e) => setPhoneDraft(e.target.value)}
                         placeholder="예: 02-588-4100"
-                        className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-hidden"
+                        className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-none"
                       />
                     </div>
 
@@ -1565,7 +1565,7 @@ export const EventDetailContent: React.FC<EventDetailContentProps> = ({
                         value={mobilePhoneDraft}
                         onChange={(e) => setMobilePhoneDraft(e.target.value)}
                         placeholder="예: 010-8492-3104"
-                        className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] focus:border-white/25 text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-hidden"
+                        className="w-full h-9 px-3 rounded-lg bg-[#0d1017] border border-white/[0.09] text-xs font-mono tabular-nums text-neutral-100 placeholder:text-neutral-600 outline-none"
                       />
                     </div>
                   </div>
